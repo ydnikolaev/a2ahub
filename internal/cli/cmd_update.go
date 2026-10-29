@@ -42,7 +42,11 @@ const defaultUpdateRepo = release.DefaultUpdateRepo
 // UpdateCommand implements `a2a update` (OP-217): resolve -> verify -> swap,
 // fail-closed at every step, plus `--check`/`--json` report-only modes.
 type UpdateCommand struct {
-	binaryVersion     string
+	binaryVersion string
+	// build is the binary's full identity (D-040). A local build is left in
+	// place: it is never downloaded over, because `make deliver` is how new
+	// code reaches it. The zero value is a release build.
+	build             version.Build
 	projectConfigPath string
 	machineConfigPath string
 	projectRoot       string
@@ -132,6 +136,13 @@ func NewUpdateCommand(binaryVersion, projectConfigPath, machineConfigPath, proje
 	}
 }
 
+// WithBuild sets the binary's full identity and returns the command. Without
+// it the command behaves as a release build, as it always has.
+func (c *UpdateCommand) WithBuild(b version.Build) *UpdateCommand {
+	c.build = b
+	return c
+}
+
 // Name implements cli.Command.
 func (c *UpdateCommand) Name() string { return "update" }
 
@@ -143,13 +154,16 @@ func (c *UpdateCommand) Synopsis() string {
 // updateJSON is the `--json` machine-readable shape (spec 19 T1 flag
 // table), with additive managed-component outcomes on a full P49 update.
 type updateJSON struct {
-	Current         string                `json:"current"`
-	Latest          string                `json:"latest"`
-	UpdateAvailable bool                  `json:"update_available"`
-	Floor           string                `json:"floor"`
-	FloorSpace      string                `json:"floor_space"`
-	Required        bool                  `json:"required"`
-	Components      []updateComponentJSON `json:"components,omitempty"`
+	Current         string `json:"current"`
+	Latest          string `json:"latest"`
+	UpdateAvailable bool   `json:"update_available"`
+	Floor           string `json:"floor"`
+	FloorSpace      string `json:"floor_space"`
+	Required        bool   `json:"required"`
+	// LocalBuild is set only for a build `make deliver` put on this machine
+	// (D-040 point 5); a release's JSON keeps its bytes.
+	LocalBuild bool                  `json:"local_build,omitempty"`
+	Components []updateComponentJSON `json:"components,omitempty"`
 }
 
 type updateComponentJSON struct {
@@ -176,6 +190,24 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a update [--check] [--json] [--yes] [--allow-unsigned]")
 		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
+	}
+
+	// A local build neither downloads nor swaps: new code arrives with
+	// `make deliver`, and the released binary is one install.sh away (T5).
+	if c.build.IsLocal() {
+		if *jsonFlag {
+			enc := json.NewEncoder(stdio.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(updateJSON{Current: c.build.Version, LocalBuild: true}); err != nil {
+				_, _ = fmt.Fprintf(stdio.Stderr, "update: cannot encode JSON output: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+		stamp := c.build
+		stamp.Commit = shortSHA(stamp.Commit)
+		_, _ = fmt.Fprintf(stdio.Stdout, "a2a: local build %s — left in place; new code arrives with make deliver. To return to the released binary: sh scripts/install.sh\n", stamp.Stamp())
+		return 0
 	}
 
 	// Project/machine config are best-effort, same tolerant convention

@@ -216,7 +216,7 @@ func TestLifecycleVerbsThroughWriteFunnel(t *testing.T) {
 			ownSystem, args := c.seed(t, mirrorDir)
 
 			fakeHost := host.NewFakeHost()
-			funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+			funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 			hostCfg := e2eHostConfig(ownSystem, fx.RemoteURL())
 
 			cmd := c.build(funnel, mirrorDir, ownSystem, hostCfg)
@@ -250,7 +250,7 @@ func TestBlockUnblockDirectConstruction(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "beta", 2, id, "accept", "beta")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	hostCfg := e2eHostConfig("beta", fx.RemoteURL())
 
 	blockCmd := cli.NewBlockCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), hostCfg, e2eActorResolver("agent", "bot"))
@@ -305,7 +305,7 @@ func TestRespondVerifyDisputeDirectConstruction(t *testing.T) {
 		seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
 
 		fakeHost := host.NewFakeHost()
-		funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+		funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 
 		respondCmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), e2eHostConfig("beta", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
@@ -330,7 +330,7 @@ func TestRespondVerifyDisputeDirectConstruction(t *testing.T) {
 		seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
 
 		fakeHost := host.NewFakeHost()
-		funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+		funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 
 		respondCmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), e2eHostConfig("beta", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 		io, _, errOut := newIO()
@@ -358,7 +358,7 @@ func TestCloseFromRespondedDirectConstruction(t *testing.T) {
 	seedAcceptedQuestion(t, mirrorDir, id, "beta")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 
 	respondCmd := cli.NewRespondCommand(funnel, mirrorDir, "fixture-space", "beta", e2eManifest(), e2eHostConfig("beta", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	io, _, errOut := newIO()
@@ -390,7 +390,7 @@ func TestRespondIdempotentRetryReturnsAlreadyOpenDirectConstruction(t *testing.T
 	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	hostCfg := e2eHostConfig("beta", fx.RemoteURL())
 	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
 

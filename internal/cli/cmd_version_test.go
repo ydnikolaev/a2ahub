@@ -15,6 +15,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // requireFrozenStampOnStdout holds the ONE contract every already-installed
@@ -439,5 +440,78 @@ func TestVersionCommand_UsageNamesTheWorkLoops(t *testing.T) {
 	}
 	if want := "workflow: run `a2a docs work-loops` for the walkthrough"; !strings.Contains(errOut.String(), want) {
 		t.Errorf("stderr lacks %q:\n%s", want, errOut.String())
+	}
+}
+
+const buildTestSHA = "0123456789abcdef0123456789abcdef01234567"
+
+// TestVersionCommand_JSONCarriesBuild: `version --json` gains a `build` key
+// naming the channel and commit, with and without a project (D-040, T3).
+func TestVersionCommand_JSONCarriesBuild(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, channelVar, wantChannel string
+		withStore                     bool
+	}{
+		{"release with a store", "", "release", true},
+		{"local with a store", "local", "local", true},
+		{"local without a project", "local", "local", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := version.NewBuild("0.27.0", buildTestSHA, tc.channelVar)
+			cmd := &cli.VersionCommand{Stamp: b.Stamp(), BinaryVersion: "0.27.0", Build: b, Now: func() time.Time { return now }}
+			if tc.withStore {
+				cmd.Store = versionStore(t, "0.27.0", now, nil)
+			}
+			io, out, _ := newIO()
+			if code := cmd.Run(context.Background(), []string{"--json"}, io); code != 0 {
+				t.Fatalf("code = %d", code)
+			}
+			var report struct {
+				Binary string `json:"binary"`
+				Build  *struct {
+					Channel string `json:"channel"`
+					Commit  string `json:"commit"`
+				} `json:"build"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+				t.Fatalf("json.Unmarshal: %v (stdout=%s)", err, out.String())
+			}
+			if report.Binary != "0.27.0" || report.Build == nil || report.Build.Channel != tc.wantChannel || report.Build.Commit != buildTestSHA {
+				t.Fatalf("report = %+v (build %+v), want binary 0.27.0, channel %s, commit %s", report, report.Build, tc.wantChannel, buildTestSHA)
+			}
+		})
+	}
+}
+
+// TestVersionCommand_LocalBuildStampAndText: a local build's first line is the
+// local stamp and the human report says so; a release's stdout is untouched.
+func TestVersionCommand_LocalBuildStampAndText(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	store := versionStore(t, "0.27.0", now, nil)
+
+	local := version.NewBuild("0.27.0", buildTestSHA, "local")
+	cmd := &cli.VersionCommand{Stamp: local.Stamp(), BinaryVersion: "0.27.0", Build: local, Store: store, Now: func() time.Time { return now }}
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), nil, io); code != 0 {
+		t.Fatalf("code = %d", code)
+	}
+	if got, want := strings.TrimSpace(out.String()), "a2a 0.27.0 (local, "+buildTestSHA+")"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if !strings.Contains(errOut.String(), "local build of 0.27.0 ("+buildTestSHA[:12]+")") {
+		t.Fatalf("report does not say this is a local build:\n%s", errOut.String())
+	}
+
+	release := version.NewBuild("0.27.0", buildTestSHA, "")
+	cmd = &cli.VersionCommand{Stamp: release.Stamp(), BinaryVersion: "0.27.0", Build: release, Store: store, Now: func() time.Time { return now }}
+	io, out, errOut = newIO()
+	cmd.Run(context.Background(), nil, io)
+	requireFrozenStampOnStdout(t, out.String(), release.Stamp())
+	if strings.Contains(errOut.String(), "local build") {
+		t.Fatalf("a release build was described as local:\n%s", errOut.String())
 	}
 }

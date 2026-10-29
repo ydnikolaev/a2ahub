@@ -277,7 +277,7 @@ func TestFunnelSubmitRefusesUnresolvedAttachmentBeforeAnyGitAction(t *testing.T)
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	_, err = funnel.Submit(t.Context(), req)
 	if !errors.Is(err, ErrAttachmentUnresolvable) {
@@ -318,7 +318,7 @@ func TestFunnelSubmitAcceptsAttachmentCommittedToTheSpace(t *testing.T) {
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(t.Context(), req)
 	if err != nil {
@@ -345,7 +345,7 @@ func TestFunnelSubmitWithNoAttachmentsIsUnaffected(t *testing.T) {
 	req := newTestSubmitRequest(fx, "axon", l)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(t.Context(), req)
 	if err != nil {
@@ -419,7 +419,7 @@ func TestFunnelSubmitDeliveryPossessionRefusesBeforeUnreachableHostIsConsulted(t
 		findCalls++
 		return nil, transportErr
 	}
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	_, err = funnel.Submit(t.Context(), req)
 	if !errors.Is(err, ErrHandoffDeliverableUnresolvable) {
@@ -458,7 +458,7 @@ func TestFunnelSubmitPossessionRefusesBeforeUnreachableHostIsConsulted(t *testin
 		findCalls++
 		return nil, transportErr
 	}
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	_, err = funnel.Submit(t.Context(), req)
 	if !errors.Is(err, ErrAttachmentUnresolvable) {
@@ -520,7 +520,7 @@ func TestFunnelSubmitReplayOfAlreadyMergedWriteIsNotBlockedByPossession(t *testi
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	first, err := funnel.Submit(t.Context(), req)
 	if err != nil {

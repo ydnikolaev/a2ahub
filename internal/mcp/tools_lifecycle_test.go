@@ -393,7 +393,7 @@ func respondWithRealValidation(t *testing.T, parentID string, in RespondInput) (
 	validator := NewSubmitValidatorAdapter(engine, "beta", resolver, legality)
 
 	fakeHost = host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, validator, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, validator, testBuild("0.1.0"))
 	hostCfg := testHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 

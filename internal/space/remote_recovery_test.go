@@ -102,7 +102,7 @@ func TestPrepareRecoverableSubmissionRequiresFrozenBaseCommit(t *testing.T) {
 	t.Parallel()
 
 	operationKey := "op-v1-" + strings.Repeat("a", 64)
-	_, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	_, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), SubmitRequest{
 			System: "atlas", Verb: "contract-publish", ArtifactID: "XC-atlas-demo",
 			ArtifactIDs: []string{"XC-atlas-demo"}, OperationKey: operationKey,
@@ -131,7 +131,7 @@ func TestSubmitPreparedRepairsLostPushAcknowledgementWithoutSecondCommitOrPush(t
 		FakeHost: host.NewFakeHost(),
 		reader:   matchingRemoteRecoveryReader(prepared),
 	}
-	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
+	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(
 		context.Background(),
 		prepared,
 		SubmissionRuntime{
@@ -174,7 +174,7 @@ func TestSubmitPreparedNeverReplacesAPriorProvenPR(t *testing.T) {
 		ArtifactIDs:     prepared.ArtifactIDs(),
 		RemainingAction: RemainingActionObserveProviderOutcome,
 	}
-	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
+	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(
 		context.Background(), prepared, SubmissionRuntime{
 			RepoDir: "/cache/acme-space", RemoteURL: "https://github.com/acme/space.git",
 			TargetIdentity: "acme/space", CurrentSpaceFloor: "0.19.0", PriorResult: prior,
@@ -229,7 +229,7 @@ func TestSubmitPreparedBindsPriorPRToExactProviderIdentity(t *testing.T) {
 			fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
 				return host.CheckStatusResult{State: "queued", HeadSHA: tt.statusHead}, nil
 			}
-			result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
+			result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(
 				context.Background(), prepared, SubmissionRuntime{
 					RepoDir: "/cache/acme-space", RemoteURL: "https://github.com/acme/space.git",
 					TargetIdentity: "acme/space", CurrentSpaceFloor: "0.19.0", PriorResult: prior,
@@ -486,7 +486,7 @@ func testRemoteRecoveryPrepared(t *testing.T) PreparedSubmission {
 		Repo:      host.Repo{Owner: "acme", Name: "space"}, BaseBranch: "main",
 		PRTitle: "Publish XC-atlas-demo@2.0.0", PRBody: "Publish XC-atlas-demo@2.0.0",
 	}
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, PreparationContext{
 			TargetIdentity: "acme/space", ObservedSpaceFloor: "0.19.0", FeatureFloor: "0.19.0",
 			SchemaFloor: "0.19.0", ProfileFloor: "0.19.0", ProducerCompatibility: "0.19.0",

@@ -29,6 +29,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 const githubAPIBaseURL = "https://api.github.com"
@@ -144,8 +145,8 @@ func cacheDirOf(p Paths) string { return filepath.Join(p.ProjectRoot, ".a2a", "c
 // composed once at cmd/a2a. That graph routes an explicit space for every
 // multi-space call; MCP never composes or silently selects a space itself.
 // The result is a ready-to-Serve Server with the full §7.7 tool set.
-func NewServerFromConfig(ctx context.Context, p Paths, binaryVersion string, injectedWork ...WorkToolDeps) (*Server, error) {
-	return newServerFromConfig(ctx, p, binaryVersion, nil, nil, nil, injectedWork...)
+func NewServerFromConfig(ctx context.Context, p Paths, build version.Build, injectedWork ...WorkToolDeps) (*Server, error) {
+	return newServerFromConfig(ctx, p, build, nil, nil, nil, injectedWork...)
 }
 
 // ContractOperationsFactory is cmd/a2a's production composition seam. It is
@@ -173,8 +174,8 @@ type DataOperationsFactory func(ActorResolver) (DataToolDeps, error)
 // internal/mcp owns only transport registration. It delegates to
 // NewServerFromConfigWithOperations with a nil data factory, so a2a_data
 // stays degraded exactly as it did before that constructor existed.
-func NewServerFromConfigWithContractOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory) (*Server, error) {
-	return NewServerFromConfigWithOperations(ctx, p, binaryVersion, work, buildContractOperations, nil, nil)
+func NewServerFromConfigWithContractOperations(ctx context.Context, p Paths, build version.Build, work WorkToolDeps, buildContractOperations ContractOperationsFactory) (*Server, error) {
+	return NewServerFromConfigWithOperations(ctx, p, build, work, buildContractOperations, nil, nil)
 }
 
 // NewServerFromConfigWithOperations is the production constructor used by
@@ -186,14 +187,14 @@ func NewServerFromConfigWithContractOperations(ctx context.Context, p Paths, bin
 // open resolves each connected space's host (one per space); cmd/a2a builds it
 // once and injects it, the way it injects the two factories. A nil open falls
 // back to the package's default GitHub opener.
-func NewServerFromConfigWithOperations(ctx context.Context, p Paths, binaryVersion string, work WorkToolDeps, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, open host.Opener) (*Server, error) {
+func NewServerFromConfigWithOperations(ctx context.Context, p Paths, build version.Build, work WorkToolDeps, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, open host.Opener) (*Server, error) {
 	if buildContractOperations == nil {
 		return nil, fmt.Errorf("mcp: production contract dependency factory must be injected by cmd/a2a")
 	}
-	return newServerFromConfig(ctx, p, binaryVersion, buildContractOperations, buildDataOperations, open, work)
+	return newServerFromConfig(ctx, p, build, buildContractOperations, buildDataOperations, open, work)
 }
 
-func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, open host.Opener, injectedWork ...WorkToolDeps) (*Server, error) {
+func newServerFromConfig(ctx context.Context, p Paths, build version.Build, buildContractOperations ContractOperationsFactory, buildDataOperations DataOperationsFactory, open host.Opener, injectedWork ...WorkToolDeps) (*Server, error) {
 	if open == nil {
 		open = defaultHostOpener()
 	}
@@ -206,7 +207,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		return nil, fmt.Errorf("mcp: load machine config: %w", err)
 	}
 
-	store, err := buildStore(ctx, cfg, machine, p, binaryVersion)
+	store, err := buildStore(ctx, cfg, machine, p, build)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
@@ -221,8 +222,8 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		// write tools have nothing to target, so this phase registers
 		// none — mirrors the CLI's own "no connected space" refusal, just
 		// surfaced as an absent tool rather than a runtime error.
-		registerSpaceFree(registry, store, AdaptDeps{BinaryVersion: binaryVersion, ProjectConfigPath: p.ProjectConfig})
-		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
+		registerSpaceFree(registry, store, AdaptDeps{BinaryVersion: build.Version, ProjectConfigPath: p.ProjectConfig})
+		return NewServer(registry, "a2a-mcp", build.Version, nil), nil
 	}
 	if len(injectedWork) != 1 {
 		return nil, fmt.Errorf("mcp: production work dependencies must be injected by cmd/a2a")
@@ -256,7 +257,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		}
 	}
 
-	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, binaryVersion, open)
+	write, submitDeps, newDeps, err := buildWriteDeps(ctx, cfg, machine, p, build, open)
 	if err != nil {
 		// An unreachable space must not cost the agent its READ tools.
 		//
@@ -276,7 +277,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		fmt.Fprintf(os.Stderr,
 			"a2a mcp: write tools unavailable — could not reach the space (%v).\n"+
 				"a2a mcp: serving local read/contract tools over the mirror; re-start once the space is reachable.\n", err)
-		registerSpaceFree(registry, store, AdaptDeps{BinaryVersion: binaryVersion, ProjectConfigPath: p.ProjectConfig})
+		registerSpaceFree(registry, store, AdaptDeps{BinaryVersion: build.Version, ProjectConfigPath: p.ProjectConfig})
 		registry.Register(workTool)
 		if contractOperations.complete() {
 			ref := cfg.Spaces[0]
@@ -293,7 +294,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 				Inspection: contractOperations.Inspection,
 			}, true)
 		}
-		return NewServer(registry, "a2a-mcp", binaryVersion, nil), nil
+		return NewServer(registry, "a2a-mcp", build.Version, nil), nil
 	}
 	// P7 (one agent, one space): EVERY write family now resolves its own
 	// target per call, so this install is no longer how a multi-space
@@ -320,8 +321,8 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 		write.Funnel = ambiguousSpaceFunnel{connected: spaceIDs(cfg.Spaces)}
 	}
 	registry = BuildRegistryWithOperations(store, write, submitDeps, newDeps, contractOperations, dataOperations,
-		AdaptDeps{BinaryVersion: binaryVersion, ProjectConfigPath: p.ProjectConfig}, workDeps)
-	srv := NewServer(registry, "a2a-mcp", binaryVersion, nil)
+		AdaptDeps{BinaryVersion: build.Version, ProjectConfigPath: p.ProjectConfig}, workDeps)
+	srv := NewServer(registry, "a2a-mcp", build.Version, nil)
 
 	// The session refreshes its mirror before every non-contract write/read
 	// tool call. P6 contract reads are explicitly offline, while contract
@@ -363,7 +364,7 @@ func newServerFromConfig(ctx context.Context, p Paths, binaryVersion string, bui
 	return srv, nil
 }
 
-func buildStore(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string) (*cache.Store, error) {
+func buildStore(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, build version.Build) (*cache.Store, error) {
 	mirrors := make([]cache.SpaceMirror, 0, len(cfg.Spaces))
 	for _, ref := range cfg.Spaces {
 		dir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
@@ -382,7 +383,7 @@ func buildStore(ctx context.Context, cfg space.ProjectConfig, machine space.Mach
 	// P19: a2a_read surfaces the update advisory on its text body from this
 	// store's UpdateNotice (checker inert here — MCP reads are cache-read-only
 	// for the notice per T3; sync/statusline/update --check refresh the cache).
-	cache.ConfigureUpdateNotice(store, binaryVersion, machine.Defaults)
+	cache.ConfigureUpdateNotice(store, build, machine.Defaults)
 	return store, nil
 }
 
@@ -401,7 +402,7 @@ func buildStore(ctx context.Context, cfg space.ProjectConfig, machine space.Mach
 // the caller sees (a DIFFERENT space's build failure is stored and surfaced
 // only if THAT space is later resolved — never at server start, never for
 // the space actually in use).
-func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string, open host.Opener) (WriteDeps, SubmitDeps, NewDeps, error) {
+func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, build version.Build, open host.Opener) (WriteDeps, SubmitDeps, NewDeps, error) {
 	corpus, err := schema.Load()
 	if err != nil {
 		return WriteDeps{}, SubmitDeps{}, NewDeps{}, err
@@ -426,7 +427,7 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 	}
 	bySpace := make(map[string]spaceBuild, len(cfg.Spaces))
 	for _, ref := range cfg.Spaces {
-		write, submitDeps, newDeps, buildErr := buildWriteDepsForSpace(ctx, cfg, machine, p, binaryVersion, ref, engine, open)
+		write, submitDeps, newDeps, buildErr := buildWriteDepsForSpace(ctx, cfg, machine, p, build, ref, engine, open)
 		bySpace[ref.ID] = spaceBuild{write: write, submit: submitDeps, newDeps: newDeps, err: buildErr}
 	}
 
@@ -574,7 +575,7 @@ func SetCloneOrFetchForBuildTest(f func(ctx context.Context, dir, repoURL string
 // for an unreachable-origin failure, surfaced only when that space is
 // later resolved. A timeout on the PRIMARY space remains fatal, exactly as
 // an unreachable primary already was before this bound existed.
-func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, binaryVersion string, ref space.Ref, engine *validate.Engine, open host.Opener) (WriteDeps, SubmitDeps, NewDeps, error) {
+func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, p Paths, build version.Build, ref space.Ref, engine *validate.Engine, open host.Opener) (WriteDeps, SubmitDeps, NewDeps, error) {
 	mirrorDir := space.ResolveMirrorLocation(p.ProjectRoot, ref, machine)
 	fetchCtx, cancel := context.WithTimeout(ctx, buildWriteDepsSpaceTimeout)
 	fetchErr := cloneOrFetchForBuild(fetchCtx, mirrorDir, ref.RepoURL, readMirrorCredential(ctx, ref.ID, machine))
@@ -630,7 +631,7 @@ func buildWriteDepsForSpace(ctx context.Context, cfg space.ProjectConfig, machin
 	resolver := NewMirrorResolver(mirrorDir, manifest)
 	legality := NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	funnel := space.NewWriteFunnel(h, validator, binaryVersion)
+	funnel := space.NewWriteFunnel(h, validator, build)
 
 	hostCfg := SubmitHostConfig{
 		RemoteURL: ref.RepoURL, Repo: repo,

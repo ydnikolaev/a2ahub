@@ -123,3 +123,27 @@ func FormatSegment(current, latest, floor, floorSpace string) (string, Grade) {
 		return "", g
 	}
 }
+
+// InfoFor is Info for a specific build (D-040 point 5). A release or dev build
+// gets exactly Info's answer. A LOCAL build is a gated build of private main:
+// private main already holds every public release's notes, so "a newer release
+// exists" is never advice to it, and the next delivery stamps the new version.
+// It therefore never reports update_available and renders no advisory. A floor
+// above its stamp is still required (the space refuses its writes), but the
+// remedy is a delivery, not `a2a update`: a dated note for the floor's version
+// must already be in main, so the delivered build is merely stale.
+func InfoFor(b version.Build, latest, floor, floorSpace string) NoticeInfo {
+	info := Info(b.Version, latest, floor, floorSpace)
+	if !b.IsLocal() {
+		return info
+	}
+	info.UpdateAvailable = false
+	if !info.Required {
+		info.Grade, info.Segment, info.Sentence = GradeNone, "", ""
+		return info
+	}
+	info.Grade = GradeRequired
+	info.Segment = fmt.Sprintf("UPDATE REQUIRED (%s pins %s; run make deliver)", floorSpace, floor)
+	info.Sentence = fmt.Sprintf("update required: %s pins v%s; this local build is v%s — run `make deliver` in the a2ahub checkout", floorSpace, floor, b.Version)
+	return info
+}

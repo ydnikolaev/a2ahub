@@ -130,14 +130,14 @@ func (c *dataCore) submitterFor(manifest space.Manifest) (expressSubmitter, erro
 	resolver := cli.NewMirrorResolver(c.mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(c.mirrorDir, c.ownSystem, manifest)
 	validator := cli.NewSubmitValidatorAdapter(c.engine, c.ownSystem, resolver, legality)
-	return space.NewWriteFunnel(c.host, validator, c.binary), nil
+	return space.NewWriteFunnel(c.host, validator, c.build), nil
 }
 
 func (c *dataCore) awaitPR(ctx context.Context, req space.AwaitRequest) (space.AwaitResult, error) {
 	if c.awaitMerge != nil {
 		return c.awaitMerge(ctx, req)
 	}
-	return space.NewAwaiter(c.host).Await(ctx, req)
+	return space.NewAwaiter(c.host, c.build).Await(ctx, req)
 }
 
 func (c *dataCore) pendingMarker() cli.PendingMarker {

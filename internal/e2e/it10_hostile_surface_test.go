@@ -82,7 +82,7 @@ func TestIT10MCPFilesystemAndProtocolHistoryFailClosed(t *testing.T) {
 
 	t.Run("protocol history delete has no public authority", func(t *testing.T) {
 		t.Parallel()
-		funnel := space.NewWriteFunnel(nil, nil, "0.18.2")
+		funnel := space.NewWriteFunnel(nil, nil, testBuild("0.18.2"))
 		_, err := funnel.Submit(t.Context(), space.SubmitRequest{
 			System: "axon", Verb: "contract-publish", ArtifactID: "XC-axon-orders",
 			Repo: hostRepoForIT10(),

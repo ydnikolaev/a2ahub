@@ -33,7 +33,7 @@ func TestFunnel_OpenPRMergedIsMerged(t *testing.T) {
 		}, nil
 	}
 
-	result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+	result, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}

@@ -42,7 +42,7 @@ func TestDeliverBlobSingleCommit(t *testing.T) {
 	req := newTestBlobWriteRequest(fx, "axon", blobID, payload)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := DeliverBlob(t.Context(), req, funnel)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestDeliverBlobIdempotentRerunRepairsSamePR(t *testing.T) {
 	req := newTestBlobWriteRequest(fx, "axon", blobID, payload)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	first, err := DeliverBlob(t.Context(), req, funnel)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestDeliverBlobRefusesMissingFields(t *testing.T) {
 	t.Parallel()
 
 	fx := spacefixture.New(t, "axon")
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 
 	base := newTestBlobWriteRequest(fx, "axon", "BL-axon-20260811-ef56", map[string][]byte{"a": []byte("x")})
 
@@ -158,7 +158,7 @@ func TestDeliverBlobRefusesReservedSidecarName(t *testing.T) {
 
 	fx := spacefixture.New(t, "axon")
 	req := newTestBlobWriteRequest(fx, "axon", "BL-axon-20260811-gh78", map[string][]byte{"blob.json": []byte(`{"forged":true}`)})
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 
 	if _, err := DeliverBlob(t.Context(), req, funnel); !errors.Is(err, ErrBlobDeliveryInvalid) {
 		t.Fatalf("DeliverBlob(reserved sidecar name) = %v, want ErrBlobDeliveryInvalid", err)
@@ -185,7 +185,7 @@ func TestDeliverBlobRefusesTooManyEntries(t *testing.T) {
 	// (DeliverBlob's own doc comment) — a nil RepoDir/RemoteURL funnel call
 	// would itself fail loudly if this ever regressed to check the ceiling
 	// AFTER attempting a git action.
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 
 	_, err := DeliverBlob(t.Context(), req, funnel)
 	if !errors.Is(err, ErrBlobTooManyEntries) {

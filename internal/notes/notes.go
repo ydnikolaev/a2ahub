@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"regexp"
@@ -208,4 +209,43 @@ func Exactly(all []ReleaseNotes, version string) (ReleaseNotes, bool) {
 		}
 	}
 	return ReleaseNotes{}, false
+}
+
+// ErrNoReleasedNote is returned by LastReleased when no note carries a real
+// release date, so there is no last release to name.
+var ErrNoReleasedNote = errors.New("notes: no dated release note")
+
+// LastReleased returns the highest version (by version.OlderThan order) among
+// the notes whose Released is a real date, which is the last published
+// release: scripts/check-release-record.sh refuses a real date on a version
+// with no matching tag, and an authored-ahead note carries UnreleasedSentinel.
+// It is the stamp `make deliver` puts on a local build (D-040), derived from
+// the tree being built so no tag or network is read. It errors when no note is
+// dated, and on an unparseable version rather than skipping it.
+func LastReleased(all []ReleaseNotes) (string, error) {
+	const op = "LastReleased"
+	best := ""
+	for _, rn := range all {
+		if rn.Released == UnreleasedSentinel {
+			continue
+		}
+		if best == "" {
+			if _, err := version.OlderThan(rn.Version, rn.Version); err != nil {
+				return "", &Error{Op: op, Input: rn.Version, Err: err}
+			}
+			best = rn.Version
+			continue
+		}
+		older, err := version.OlderThan(best, rn.Version)
+		if err != nil {
+			return "", &Error{Op: op, Input: rn.Version, Err: err}
+		}
+		if older {
+			best = rn.Version
+		}
+	}
+	if best == "" {
+		return "", &Error{Op: op, Err: ErrNoReleasedNote}
+	}
+	return best, nil
 }

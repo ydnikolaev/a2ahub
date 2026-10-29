@@ -40,6 +40,9 @@ type VersionCommand struct {
 	Stamp string
 	// BinaryVersion is the bare semver the floor comparisons use.
 	BinaryVersion string
+	// Build is the binary's channel and commit (D-040). The zero value reports
+	// no build key, for callers that never set it.
+	Build version.Build
 	// Store is optional BY DESIGN: `a2a version` must answer outside a
 	// project, with no config on disk, which is why the dispatch table has
 	// always built it without dependencies. A nil store means the space and
@@ -73,7 +76,7 @@ func (c *VersionCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	if c.Store == nil {
 		if *jsonOut {
-			return c.emitJSON(stdio, cache.VersionReport{Binary: c.BinaryVersion, Spaces: []cache.SpaceVersion{}})
+			return c.emitJSON(stdio, cache.VersionReport{Binary: c.BinaryVersion, Spaces: []cache.SpaceVersion{}, Build: c.buildInfo()})
 		}
 		_, _ = fmt.Fprintln(stdio.Stdout, c.Stamp)
 		_, _ = fmt.Fprintln(stdio.Stderr)
@@ -87,11 +90,24 @@ func (c *VersionCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		capabilities = func(spaceID string) (host.Capabilities, error) { return c.Capabilities(ctx, spaceID) }
 	}
 	report := c.Store.VersionReport(c.BinaryVersion, spaceWorkflowPin, capabilities)
+	report.Build = c.buildInfo()
 	if *jsonOut {
 		return c.emitJSON(stdio, report)
 	}
 	c.render(stdio, report)
 	return 0
+}
+
+// buildInfo is the JSON `build` object, nil when the caller set no Build.
+func (c *VersionCommand) buildInfo() *cache.BuildInfo {
+	if c.Build.Version == "" {
+		return nil
+	}
+	commit := c.Build.Commit
+	if commit == "" {
+		commit = "unknown"
+	}
+	return &cache.BuildInfo{Channel: c.Build.Channel, Commit: commit}
 }
 
 func (c *VersionCommand) emitJSON(stdio IO, report cache.VersionReport) int {
@@ -126,6 +142,9 @@ func (c *VersionCommand) render(stdio IO, report cache.VersionReport) {
 	out := stdio.Stderr
 	_, _ = fmt.Fprintln(out)
 	_, _ = fmt.Fprintf(out, "binary    %s\n", report.Binary)
+	if c.Build.IsLocal() {
+		_, _ = fmt.Fprintf(out, "          local build of %s (%s) — delivered by make deliver; not a published release\n", c.Build.Version, shortSHA(c.Build.Commit))
+	}
 
 	// THE UNMEASURED CASE IS ITS OWN SENTENCE, TWICE OVER. "latest 0.24.0" when
 	// 0.24.0 is simply the last thing anyone happened to cache is a different
@@ -325,3 +344,14 @@ func templatePhrase(sp cache.SpaceVersion) string {
 // a workflow file is spelled, and a test can hand VersionReport a fixed pin
 // with no checkout on disk.
 var spaceWorkflowPin = space.WorkflowVersion
+
+// shortSHA cuts a commit to the 12 characters prose uses; "" reads "unknown".
+func shortSHA(sha string) string {
+	if sha == "" {
+		return "unknown"
+	}
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
+}

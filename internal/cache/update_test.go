@@ -3,11 +3,13 @@ package cache
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // seedUpdateCache writes a T3 update-check.json at dir/update-check.json
@@ -170,4 +172,59 @@ func TestStatuslineRefreshNeeded_UpdateNotEnabled(t *testing.T) {
 	if store.StatuslineRefreshNeeded() {
 		t.Fatal("disabled update notice requested refresh")
 	}
+}
+
+// TestUpdateNotice_LocalBuild is D-040 / AC-10: a local build is never told a
+// newer release exists (the next `make deliver` stamps it), but a space's
+// floor above the stamped version still renders the required notice, with the
+// `make deliver` remedy instead of `a2a update`.
+func TestUpdateNotice_LocalBuild(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	local := version.Build{Version: "0.1.2", Commit: "0123456789abcdef", Channel: version.ChannelLocal}
+
+	t.Run("no advisory for a newer release", func(t *testing.T) {
+		t.Parallel()
+		cachePath := seedUpdateCache(t, t.TempDir(), "0.3.0", now)
+		store := NewStore("axon", t.TempDir(), nil, func() time.Time { return now }, 0)
+		store.EnableUpdateNotice("0.1.2", cachePath, time.Hour, nil)
+		store.updateBuild = local
+
+		n := store.UpdateNotice()
+		if n.Grade != release.GradeNone || n.UpdateAvailable || n.Segment != "" || n.Sentence != "" {
+			t.Fatalf("a local build got an update advisory: %+v", n)
+		}
+		if n.Latest != "0.3.0" {
+			t.Fatalf("Latest = %q, want the cached fact kept (0.3.0)", n.Latest)
+		}
+	})
+
+	t.Run("a release build still gets it", func(t *testing.T) {
+		t.Parallel()
+		cachePath := seedUpdateCache(t, t.TempDir(), "0.3.0", now)
+		store := NewStore("axon", t.TempDir(), nil, func() time.Time { return now }, 0)
+		store.EnableUpdateNotice("0.1.2", cachePath, time.Hour, nil)
+		store.updateBuild = version.Build{Version: "0.1.2", Commit: "0123456789abcdef", Channel: version.ChannelRelease}
+
+		if n := store.UpdateNotice(); n.Grade != release.GradeAvailable || !n.UpdateAvailable {
+			t.Fatalf("a release build lost its advisory: %+v", n)
+		}
+	})
+
+	t.Run("a space floor above the stamp is required, remedy make deliver", func(t *testing.T) {
+		t.Parallel()
+		cachePath := seedUpdateCache(t, t.TempDir(), "0.3.0", now)
+		spaces := []SpaceMirror{{SpaceID: "sp-high", Manifest: space.Manifest{MinBinaryVersion: "0.4.0"}}}
+		store := NewStore("axon", t.TempDir(), spaces, func() time.Time { return now }, 0)
+		store.EnableUpdateNotice("0.1.2", cachePath, time.Hour, nil)
+		store.updateBuild = local
+
+		n := store.UpdateNotice()
+		if n.Grade != release.GradeRequired || !n.Required || n.UpdateAvailable {
+			t.Fatalf("want required without update_available, got %+v", n)
+		}
+		if !strings.Contains(n.Sentence, "make deliver") {
+			t.Fatalf("Sentence = %q, want the make deliver remedy", n.Sentence)
+		}
+	})
 }

@@ -55,7 +55,7 @@ func TestPrepareSubmissionFreezesFinalBytesWithoutSideEffects(t *testing.T) {
 		return nil, nil
 	}
 	validator := &recordingPreparedValidator{}
-	funnel := NewWriteFunnel(fake, validator, "0.19.0")
+	funnel := NewWriteFunnel(fake, validator, testBuild("0.19.0"))
 
 	prepared, err := funnel.PrepareSubmission(context.Background(), req, testPreparationContext("0.19.0"))
 	if err != nil {
@@ -98,7 +98,7 @@ func TestPreparedJournalRoundTripSubmitsExactFrozenRequest(t *testing.T) {
 	req.ArtifactIDs = []string{req.ArtifactID}
 	req.PRTitle = "frozen title"
 	req.PRBody = "frozen body"
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestPreparedJournalRoundTripSubmitsExactFrozenRequest(t *testing.T) {
 	req.PRTitle, req.PRBody, req.ArtifactID = "changed title", "changed body", "XQ-axon-20990101-nope"
 	fake := host.NewFakeHost()
 	resumeValidator := &recordingPreparedValidator{}
-	restarted := NewWriteFunnel(fake, resumeValidator, "9.9.9")
+	restarted := NewWriteFunnel(fake, resumeValidator, testBuild("9.9.9"))
 	result, err := restarted.SubmitPrepared(context.Background(), decoded, SubmissionRuntime{
 		RepoDir: fx.Clone("axon"), RemoteURL: fx.RemoteURL(), TargetIdentity: "acme/getvisa",
 		CurrentSpaceFloor: "0.19.0",
@@ -177,7 +177,7 @@ func TestPreparedSubmissionKeepsAnEmptyFileAWrite(t *testing.T) {
 	req.MinBinaryVersion = "0.19.0"
 	req.ArtifactIDs = []string{req.ArtifactID}
 	req.Files = append(req.Files, FileWrite{Path: "axon/provides/.gitkeep", Content: []byte{}})
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -185,7 +185,7 @@ func TestPreparedSubmissionKeepsAnEmptyFileAWrite(t *testing.T) {
 	}
 	// Submit the in-memory value: a journal round trip decodes an empty
 	// payload as non-nil and would hide the defect.
-	result, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
+	result, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(
 		context.Background(), prepared, SubmissionRuntime{
 			RepoDir: fx.Clone("axon"), RemoteURL: fx.RemoteURL(), TargetIdentity: "acme/getvisa",
 			CurrentSpaceFloor: "0.19.0",
@@ -231,7 +231,7 @@ func TestSubmitPreparedRefusesCorruptionTargetAndFloorBeforeHost(t *testing.T) {
 	req := newTestSubmitRequest(fx, "axon", layout)
 	req.MinBinaryVersion = "0.19.0"
 	req.ArtifactIDs = []string{req.ArtifactID}
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -264,7 +264,7 @@ func TestSubmitPreparedRefusesCorruptionTargetAndFloorBeforeHost(t *testing.T) {
 				hostReads.Add(1)
 				return nil, nil
 			}
-			result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").SubmitPrepared(context.Background(), candidate, runtime)
+			result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(context.Background(), candidate, runtime)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("SubmitPrepared error = %v, want %v", err, tc.wantErr)
 			}
@@ -294,7 +294,7 @@ func TestPrepareSubmissionRejectsCallerStampAndInvalidFinalBytes(t *testing.T) {
 		candidate := req
 		candidate.Files = cloneFiles(req.Files)
 		candidate.Files[1].Content = appendProducerStamp(candidate.Files[1].Content, "0.19.0")
-		if _, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+		if _, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 			context.Background(), candidate, testPreparationContext("0.19.0"),
 		); !errors.Is(err, ErrPreparedProducerConflict) {
 			t.Fatalf("PrepareSubmission error = %v, want ErrPreparedProducerConflict", err)
@@ -306,7 +306,7 @@ func TestPrepareSubmissionRejectsCallerStampAndInvalidFinalBytes(t *testing.T) {
 		finalFailure := errors.New("generated stamp is not accepted by final schema")
 		validator := &recordingPreparedValidator{finalErr: finalFailure}
 		fake := host.NewFakeHost()
-		if _, err := NewWriteFunnel(fake, validator, "0.19.0").PrepareSubmission(
+		if _, err := NewWriteFunnel(fake, validator, testBuild("0.19.0")).PrepareSubmission(
 			context.Background(), req, testPreparationContext("0.19.0"),
 		); !errors.Is(err, finalFailure) {
 			t.Fatalf("PrepareSubmission error = %v, want final validation failure", err)
@@ -331,7 +331,7 @@ func TestPreparedJournalRejectsDeleteAuthorityAndCorruption(t *testing.T) {
 	req := newTestSubmitRequest(fx, "atlas", layout)
 	req.MinBinaryVersion = "0.19.0"
 	req.ArtifactIDs = []string{req.ArtifactID}
-	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0"))
 	prepared, err := funnel.PrepareSubmission(context.Background(), req, PreparationContext{
 		TargetIdentity: "acme/getvisa", ObservedSpaceFloor: "0.19.0",
 		FeatureFloor: "0.19.0", SchemaFloor: "0.19.0", ProfileFloor: "0.19.0",
@@ -394,7 +394,7 @@ func TestPreparedJournalRevalidatesSectionAfterChecksumRewrite(t *testing.T) {
 	}
 	req := newTestSubmitRequest(fx, "atlas", layout)
 	req.MinBinaryVersion = "0.19.0"
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -443,7 +443,7 @@ func TestPreparedJournalDigestCoversTheCommitMessageBase(t *testing.T) {
 		req := newTestSubmitRequest(fx, "atlas", layout)
 		req.MinBinaryVersion = "0.19.0"
 		req.ApprovedGates = gates
-		prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+		prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 			context.Background(), req, testPreparationContext("0.19.0"),
 		)
 		if err != nil {
@@ -484,7 +484,7 @@ func TestSubmitPreparedDoesNotReevaluateFrozenBytesAgainstMutableValidator(t *te
 	}
 	req := newTestSubmitRequest(fx, "atlas", layout)
 	req.MinBinaryVersion = "0.19.0"
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -496,7 +496,7 @@ func TestSubmitPreparedDoesNotReevaluateFrozenBytesAgainstMutableValidator(t *te
 	fake.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) {
 		return &host.PRInfo{Number: 19, URL: "https://example.invalid/pr/19", State: "open"}, nil
 	}
-	result, err := NewWriteFunnel(fake, validator, "0.19.0").SubmitPrepared(
+	result, err := NewWriteFunnel(fake, validator, testBuild("0.19.0")).SubmitPrepared(
 		context.Background(), prepared, SubmissionRuntime{
 			RepoDir: fx.Clone("atlas"), RemoteURL: fx.RemoteURL(), TargetIdentity: "acme/getvisa",
 			CurrentSpaceFloor: "0.19.0",
@@ -521,7 +521,7 @@ func TestOperationalConfidencePreparationFailsClosedWithoutFinalValidator(t *tes
 	}
 	req := newTestSubmitRequest(fx, "atlas", layout)
 	req.MinBinaryVersion = "0.19.0"
-	_, err = NewWriteFunnel(host.NewFakeHost(), nil, "0.19.0").PrepareSubmission(
+	_, err = NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if !errors.Is(err, ErrSubmitValidatorRequired) {
@@ -542,7 +542,7 @@ func TestOneShotPreparationIsNotLimitedByPrivateJournalSize(t *testing.T) {
 	req.Files = append(req.Files, FileWrite{
 		Path: "atlas/exchanges/large-evidence.bin", Content: bytes.Repeat([]byte("x"), preparedJournalMaxBytes),
 	})
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -563,7 +563,7 @@ func TestSubmitPreparedPreservesPriorStageAndBindsRemote(t *testing.T) {
 	}
 	req := newTestSubmitRequest(fx, "axon", layout)
 	req.MinBinaryVersion = "0.19.0"
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -578,13 +578,13 @@ func TestSubmitPreparedPreservesPriorStageAndBindsRemote(t *testing.T) {
 	fake.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) {
 		return nil, errors.New("lookup unavailable")
 	}
-	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").SubmitPrepared(context.Background(), prepared, runtime)
+	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(context.Background(), prepared, runtime)
 	if err == nil || result.Stage != WriteStagePushed || result.CommitSHA != prior.CommitSHA {
 		t.Fatalf("lookup failure result=%+v err=%v, want prior pushed evidence", result, err)
 	}
 
 	runtime.RemoteURL = filepath.Join(t.TempDir(), "different.git")
-	result, err = NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").SubmitPrepared(context.Background(), prepared, runtime)
+	result, err = NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(context.Background(), prepared, runtime)
 	if !errors.Is(err, ErrPreparedTargetStale) || result.Stage != WriteStagePushed {
 		t.Fatalf("changed remote result=%+v err=%v, want stale target with prior evidence", result, err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/pendency"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -88,8 +89,11 @@ type Store struct {
 	updateCachePath     string
 	updateDetailPath    string
 	updateRepo          string
-	updateTTL           time.Duration
-	updateChecker       func(context.Context)
+	// updateBuild carries the channel (D-040) the notice is judged for: a local
+	// build is never told to update. Zero value = a release build.
+	updateBuild   version.Build
+	updateTTL     time.Duration
+	updateChecker func(context.Context)
 
 	// resolvePendency is the one relation evaluator injected only so the
 	// dashboard resistance test can count evaluations. NewStore always wires

@@ -44,6 +44,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	iversion "github.com/ydnikolaev/a2ahub/internal/version"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
@@ -94,7 +95,7 @@ func TestContractLifecyclePublishRoundTrip(t *testing.T) {
 	legality := cli.NewLegalityAdapter(mirrorDir, contractLifecycleSystem, manifest)
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	submitValidator := cli.NewSubmitValidatorAdapter(engine, contractLifecycleSystem, resolver, legality)
-	submitFunnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.19.0")
+	submitFunnel := space.NewWriteFunnel(fakeHost, submitValidator, testBuild("0.19.0"))
 	hostCfg := contractLifecycleHostConfig(fx.RemoteURL())
 
 	newCmd := cli.NewNewCommand(stagingDir, contractLifecycleSystem, resolveActor, []string{contractLifecycleSpaceID})
@@ -124,6 +125,16 @@ func TestContractLifecyclePublishRoundTrip(t *testing.T) {
 	}
 	if len(fakeHost.Opens) != 2 {
 		t.Fatalf("expected exactly two OpenPR calls after publishing 1.0.0, got %d", len(fakeHost.Opens))
+	}
+	// D-040: a contract publication names its build like every other write.
+	// The publication commit is read straight from the mirror.
+	logOut, logErr := exec.Command("git", gitfixture.Args("-C", mirrorDir, "log", "-1", "--format=%B", result.Write.CommitSHA)...).CombinedOutput()
+	if logErr != nil {
+		t.Fatalf("read the publication commit %s: %v\n%s", result.Write.CommitSHA, logErr, logOut)
+	}
+	message := string(logOut)
+	if want := "A2A-Built-By: a2a 0.19.0 (local, " + contractLifecycleBuildCommit + ")"; !strings.Contains(message, want) {
+		t.Fatalf("the publication commit message lacks %q:\n%s", want, message)
 	}
 	contractLifecycleMergeToMain(t, mirrorDir, lastOpenedBranch(fakeHost))
 
@@ -219,7 +230,7 @@ func TestContractLifecyclePublishRefusesNonEstablishing(t *testing.T) {
 	legality := cli.NewLegalityAdapter(mirrorDir, contractLifecycleSystem, manifest)
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	submitValidator := cli.NewSubmitValidatorAdapter(engine, contractLifecycleSystem, resolver, legality)
-	submitFunnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.19.0")
+	submitFunnel := space.NewWriteFunnel(fakeHost, submitValidator, testBuild("0.19.0"))
 	hostCfg := contractLifecycleHostConfig(fx.RemoteURL())
 
 	newCmd := cli.NewNewCommand(stagingDir, contractLifecycleSystem, resolveActor, []string{contractLifecycleSpaceID})
@@ -389,7 +400,8 @@ func contractLifecyclePublish(
 
 	service, err := contractwiring.NewPublicationService(contractwiring.PublicationDependencies{
 		MirrorDir: mirrorDir, RemoteURL: remoteURL, SpaceID: contractLifecycleSpaceID, OwnSystem: contractLifecycleSystem,
-		Binary: "0.19.0", Repository: host.Repo{Owner: "fixture", Name: "space"}, Credential: credential,
+		Binary: "0.19.0", Build: iversion.NewBuild("0.19.0", contractLifecycleBuildCommit, "local"),
+		Repository: host.Repo{Owner: "fixture", Name: "space"}, Credential: credential,
 		Host: recoveryHost, Engine: engine,
 		ManifestValidator: contractManifestEngine{engine: engine},
 		HistoryValidator:  contractHistoryDocumentEngine{engine: engine},
@@ -512,6 +524,10 @@ func contractLifecycleMergeToMain(t *testing.T, mirrorDir, branch string) {
 	contractLifecycleGit(t, mirrorDir, "push", "origin", "main")
 	contractLifecycleGit(t, mirrorDir, "fetch", "origin", "main")
 }
+
+// contractLifecycleBuildCommit is the commit the fixture build claims; the
+// publication commit must carry it in its A2A-Built-By note.
+const contractLifecycleBuildCommit = "0123456789abcdef0123456789abcdef01234567"
 
 func contractLifecycleGit(t *testing.T, dir string, args ...string) {
 	t.Helper()

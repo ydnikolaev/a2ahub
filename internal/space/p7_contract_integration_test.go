@@ -108,7 +108,7 @@ func TestP7IT05PostPRFailuresRetainAndRepairTheExactPR(t *testing.T) {
 				return &copy, nil
 			}
 
-			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+			funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 			first, err := funnel.Submit(t.Context(), request)
 			if !errors.Is(err, postPRFailure) || first.PRNumber != known.Number || first.PRURL != known.URL ||
 				first.Stage != WriteStagePRCreated || first.State != WriteStateNeedsAttention {
@@ -197,7 +197,7 @@ func TestP7IT06MixedHistoryAndLegacyLostACKAfterFloorRise(t *testing.T) {
 	planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("f", 40), "0.19.0")}
 	events := &publicationEventBuilder{}
 	writeHost := &publicationRecoveryHost{FakeHost: host.NewFakeHost()}
-	service := mustPublicationService(t, main, planning, remote, events, NewWriteFunnel(writeHost, &publicationSubmitValidator{}, "0.19.0"))
+	service := mustPublicationService(t, main, planning, remote, events, NewWriteFunnel(writeHost, &publicationSubmitValidator{}, testBuild("0.19.0")))
 	result, err := service.Publish(t.Context(), ContractPublicationRequest{
 		System: "axon", ContractID: contractTestID, Selector: "explicit:1.0.0", Candidate: reader, CandidateSource: source,
 	})
@@ -255,7 +255,7 @@ func TestP7IT07PreflightRenameAndV2LostACKCollision(t *testing.T) {
 	planning := &publicationPlanningFake{context: planningContext}
 	events := &publicationEventBuilder{}
 	writeHost := &publicationRecoveryHost{FakeHost: host.NewFakeHost()}
-	service := mustPublicationService(t, main, planning, remote, events, NewWriteFunnel(writeHost, &publicationSubmitValidator{}, "0.19.0"))
+	service := mustPublicationService(t, main, planning, remote, events, NewWriteFunnel(writeHost, &publicationSubmitValidator{}, testBuild("0.19.0")))
 	request := ContractPublicationRequest{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.0.0", Candidate: renameReader, CandidateSource: renameSource,
 		SubmitTemplate: SubmitRequest{

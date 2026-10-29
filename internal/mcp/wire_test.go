@@ -72,7 +72,7 @@ func TestProductionDegradedContractSurfaceFailsLegacyWritesClosed(t *testing.T) 
 		}, nil
 	}
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfigWithContractOperations(t.Context(), p, "0.19.0", unavailableWorkToolDeps(), build)
+	server, err := NewServerFromConfigWithContractOperations(t.Context(), p, testBuild("0.19.0"), unavailableWorkToolDeps(), build)
 	if err != nil {
 		t.Fatalf("degraded production server: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestNewServerFromConfigFullHappyPath(t *testing.T) {
 	}
 
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
+	server, err := NewServerFromConfig(context.Background(), p, testBuild("0.0.1-test"), unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("NewServerFromConfig: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestNewServerFromConfigNoConnectedSpaces(t *testing.T) {
 	}
 
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
+	server, err := NewServerFromConfig(context.Background(), p, testBuild("0.0.1-test"), unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("NewServerFromConfig: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestNewServerFromConfigNoProjectConfig(t *testing.T) {
 		ProjectRoot:   t.TempDir(),
 		Staging:       t.TempDir(),
 	}
-	_, err := NewServerFromConfig(context.Background(), p, "0.0.1-test")
+	_, err := NewServerFromConfig(context.Background(), p, testBuild("0.0.1-test"))
 	if err == nil {
 		t.Fatal("expected an error when no project config exists")
 	}
@@ -346,7 +346,7 @@ func TestNewServerFromConfigMultipleSpacesRefusesUnconnectedSubmitSpace(t *testi
 
 	beforeSHA := fx.HeadSHA(fx.Clone("beta"), "main")
 
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
+	server, err := NewServerFromConfig(context.Background(), p, testBuild("0.0.1-test"), unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("NewServerFromConfig: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestNewServerFromConfigMultipleSpacesPreCallRefreshesEverySpace(t *testing.
 	}
 
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
+	server, err := NewServerFromConfig(context.Background(), p, testBuild("0.0.1-test"), unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("NewServerFromConfig: %v", err)
 	}
@@ -506,7 +506,7 @@ func TestNewServerFromConfigUnreachableSpaceStillServesReads(t *testing.T) {
 	}
 
 	p := Paths{ProjectConfig: projectConfig, MachineConfig: machineConfig, ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
-	server, err := NewServerFromConfig(context.Background(), p, "0.0.1-test", unavailableWorkToolDeps())
+	server, err := NewServerFromConfig(context.Background(), p, testBuild("0.0.1-test"), unavailableWorkToolDeps())
 	if err != nil {
 		t.Fatalf("an unreachable space must not stop the server from starting: %v", err)
 	}
@@ -553,7 +553,7 @@ func TestBuildWriteDepsTwoSpacesYieldDistinctMirrorDirsAndResolveSpace(t *testin
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -646,7 +646,7 @@ func TestBuildWriteDepsForSpaceRefusesREF026WhenRemotePublishesNoHead(t *testing
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	_, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	_, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	if err == nil {
 		t.Fatal("buildWriteDeps = nil error, want a REF-026 refusal — an unresolvable remote HEAD must never silently build write deps pointed at \"main\"")
 	}
@@ -677,7 +677,7 @@ func TestBuildWriteDepsForSpaceDerivesNonMainBaseBranch(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -712,7 +712,7 @@ func TestBuildWriteDepsFailingSpaceSurfacesErrorOnlyWhenResolved(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	if err != nil {
 		t.Fatalf("Spaces[0] (space-one) is reachable — buildWriteDeps must not fail: %v", err)
 	}
@@ -785,7 +785,7 @@ func TestBuildWriteDepsSpaceFetchIsBoundedAndNonPrimaryTimeoutStaysStoredNotFata
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
 	start := time.Now()
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("Spaces[0] (space-one) is reachable — buildWriteDeps must not fail: %v", err)
@@ -830,7 +830,7 @@ func TestBuildWriteDepsResolveSpaceIsNotAliasedByTheAmbiguousFunnelInstall(t *te
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -883,7 +883,7 @@ func TestBuildWriteDepsSpaceOfArtifactsRefusesSplitBatch(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -930,7 +930,7 @@ func TestBuildWriteDepsSpaceOfArtifactsRefusesUnknownID(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", defaultHostOpener())
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), defaultHostOpener())
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestBuildWriteDepsForSpaceSkipsTheCredentialForAHostThatNeedsNone(t *testin
 		projectRoot := t.TempDir()
 		p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 		open := host.FixedOpener(&host.FakeHost{Caps: &caps})
-		write, _, _, buildErr := buildWriteDeps(context.Background(), cfg, space.MachineConfig{}, p, "0.0.1-test", open)
+		write, _, _, buildErr := buildWriteDeps(context.Background(), cfg, space.MachineConfig{}, p, testBuild("0.0.1-test"), open)
 		return write, buildErr
 	}
 
@@ -1092,7 +1092,7 @@ func TestBuildWriteDepsCarriesEachSpacesOwnHostCapabilities(t *testing.T) {
 	projectRoot := t.TempDir()
 	p := Paths{ProjectRoot: projectRoot, Staging: filepath.Join(projectRoot, ".a2a", "staging")}
 	// Neither declared host needs a credential, so none is resolved.
-	write, _, _, err := buildWriteDeps(context.Background(), cfg, space.MachineConfig{}, p, "0.0.1-test", open)
+	write, _, _, err := buildWriteDeps(context.Background(), cfg, space.MachineConfig{}, p, testBuild("0.0.1-test"), open)
 	if err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}

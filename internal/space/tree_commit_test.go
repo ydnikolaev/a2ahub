@@ -84,7 +84,7 @@ func TestCommitOneUsesFrozenBaseSHAWhenCurrentBaseAdvances(t *testing.T) {
 
 	lock := acquireTreeCommitLock(t, repo)
 	defer func() { _ = lock.Release() }()
-	sha, fresh, err := NewWriteFunnel(nil, nil, "0.1.0").commitOne(context.Background(), lock, SubmitRequest{
+	sha, fresh, err := NewWriteFunnel(nil, nil, testBuild("0.1.0")).commitOne(context.Background(), lock, SubmitRequest{
 		RepoDir: repo, System: "axon", Verb: "submit", ArtifactID: "XQ-axon-frozen",
 		Mutations:     []Mutation{{Path: "axon/new.txt", Operation: MutationWrite, Bytes: []byte("new\n")}},
 		CommitMessage: "test: frozen base", ExpectedBaseSHA: frozenBase,

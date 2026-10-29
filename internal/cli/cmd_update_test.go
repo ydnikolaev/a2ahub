@@ -22,6 +22,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // updateRepoRoot resolves the product repo root from this source file's own
@@ -1312,5 +1313,60 @@ func TestUpdateSkillRefresh_DevFromVersion_StillRefreshes(t *testing.T) {
 	}
 	if len(skillCalls) != 1 {
 		t.Fatalf("postSwapRunner (skill) calls = %d, want exactly 1 — the refresh has no version precondition", len(skillCalls))
+	}
+}
+
+// TestUpdate_LocalBuild_LeavesTheBinaryAlone: on a local build `a2a update`
+// neither asks the release source, downloads, nor swaps; it says where new
+// code comes from and exits 0, in every mode (D-040 point 5, T5).
+func TestUpdate_LocalBuild_LeavesTheBinaryAlone(t *testing.T) {
+	// reason: newTestUpdateCommand owns process environment through t.Setenv.
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	for _, args := range [][]string{nil, {"--check"}, {"--yes"}, {"--json"}} {
+		cmd := newTestUpdateCommand(t, "0.27.0").WithBuild(version.NewBuild("0.27.0", sha, "local"))
+		cmd.source = func(string) release.Source {
+			t.Fatalf("args %v: a local build asked the release source", args)
+			return nil
+		}
+		cmd.resolveExec = func() (string, error) {
+			t.Fatalf("args %v: a local build resolved the executable to swap", args)
+			return "", nil
+		}
+		stdio, stdout, _ := newUpdateIO("")
+		if code := cmd.Run(context.Background(), args, stdio); code != 0 {
+			t.Fatalf("args %v: exit code = %d, want 0", args, code)
+		}
+		out := stdout.String()
+		if len(args) == 1 && args[0] == "--json" {
+			var got map[string]any
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("--json output is not JSON: %v\n%s", err, out)
+			}
+			if got["local_build"] != true || got["update_available"] != false || got["current"] != "0.27.0" {
+				t.Fatalf("--json = %v, want local_build true, update_available false, current 0.27.0", got)
+			}
+			continue
+		}
+		want := "a2a: local build a2a 0.27.0 (local, " + sha[:12] + ") — left in place; new code arrives with make deliver. To return to the released binary: sh scripts/install.sh\n"
+		if out != want {
+			t.Fatalf("args %v: stdout = %q, want %q", args, out, want)
+		}
+	}
+}
+
+// TestUpdate_ReleaseBuildJSONHasNoLocalBuildKey: a release's --json keeps its
+// bytes; the new key is additive and local-only.
+func TestUpdate_ReleaseBuildJSONHasNoLocalBuildKey(t *testing.T) {
+	// reason: newTestUpdateCommand owns process environment through t.Setenv.
+	rel, _, _ := newUpdateReleaseFixture(t, "0.1.0")
+	cmd := newTestUpdateCommand(t, "0.1.0")
+	cmd.source = func(string) release.Source { return &fakeUpdateSource{rel: rel} }
+	cmd.cachePath = func() (string, error) { return filepath.Join(t.TempDir(), "cache.json"), nil }
+	stdio, stdout, _ := newUpdateIO("")
+	if code := cmd.Run(context.Background(), []string{"--json"}, stdio); code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	if strings.Contains(stdout.String(), "local_build") {
+		t.Fatalf("a release's --json carries local_build:\n%s", stdout.String())
 	}
 }

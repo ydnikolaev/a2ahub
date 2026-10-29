@@ -37,6 +37,17 @@ var binDir string
 // to read the value instead of five copies of a literal to keep in step.
 const harnessStampedVersion = contract.ContractPublicationFloor
 
+// localBinaryName and localBuildCommit describe the SECOND binary TestMain
+// builds beside `a2a`: the same source stamped as a `make deliver` build
+// (-X main.channel=local, D-040), so a script can drive a local build through
+// the real executable. It sits in binDir, which every script already has on
+// $PATH, so `exec a2a-local ...` reaches it. The commit is a fixed, fake
+// 40-hex sha: nothing resolves it, the stamp only has to carry it back.
+const (
+	localBinaryName  = "a2a-local"
+	localBuildCommit = "0123456789abcdef0123456789abcdef01234567"
+)
+
 // TestMain builds `a2a` exactly once (the scripts/e2e-authoring-smoke.sh
 // idiom: `go build -o $bin ./cmd/a2a`) into a package-level temp directory,
 // then runs the rest of this package's tests. The repo root is resolved
@@ -87,6 +98,9 @@ func runTestMain(m *testing.M) int {
 			return 1
 		}
 		binDir = filepath.Dir(supplied)
+		if code := buildLocalBinary(root, binDir); code != 0 {
+			return code
+		}
 		return m.Run()
 	}
 
@@ -114,7 +128,26 @@ func runTestMain(m *testing.M) int {
 	}
 
 	binDir = dir
+	if code := buildLocalBinary(root, dir); code != 0 {
+		return code
+	}
 	return m.Run()
+}
+
+// buildLocalBinary builds ./cmd/a2a stamped as a local delivery build into
+// dir/a2a-local. It returns 0 on success, else the exit code TestMain should
+// return. The compile is shared with the main build through the Go build
+// cache, so this costs one more link.
+func buildLocalBinary(root, dir string) int {
+	ldflags := "-X main.version=" + harnessStampedVersion + " -X main.commit=" + localBuildCommit + " -X main.channel=local"
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags", ldflags, "-o", filepath.Join(dir, localBinaryName), "./cmd/a2a")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "internal/e2e: TestMain: go build %s: %v\n%s\n", localBinaryName, err, out)
+		return 1
+	}
+	return 0
 }
 
 func testListRequested(args []string) bool {

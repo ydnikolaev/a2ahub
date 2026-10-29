@@ -26,7 +26,7 @@ func approvalRequest(t *testing.T, fx *spacefixture.Fixture) SubmitRequest {
 
 func prepareApproval(t *testing.T, req SubmitRequest) PreparedSubmission {
 	t.Helper()
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, testPreparationContext("0.19.0"),
 	)
 	if err != nil {
@@ -46,7 +46,7 @@ func commitMessageOf(t *testing.T, fx *spacefixture.Fixture, branch string) stri
 
 func submitPreparedApproval(t *testing.T, fx *spacefixture.Fixture, prepared PreparedSubmission) WriteResult {
 	t.Helper()
-	result, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").SubmitPrepared(
+	result, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).SubmitPrepared(
 		context.Background(), prepared, SubmissionRuntime{
 			RepoDir: fx.Clone("axon"), RemoteURL: fx.RemoteURL(), TargetIdentity: "acme/getvisa",
 			CurrentSpaceFloor: "0.19.0",
@@ -155,7 +155,7 @@ func testRemoteRecoveryPreparedWithGates(t *testing.T, gates []string) PreparedS
 		PRTitle: "Publish XC-atlas-demo@2.0.0", PRBody: "Publish XC-atlas-demo@2.0.0",
 		ApprovedGates: gates,
 	}
-	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+	prepared, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 		context.Background(), req, PreparationContext{
 			TargetIdentity: "acme/space", ObservedSpaceFloor: "0.19.0", FeatureFloor: "0.19.0",
 			SchemaFloor: "0.19.0", ProfileFloor: "0.19.0", ProducerCompatibility: "0.19.0",
@@ -228,7 +228,7 @@ func TestApprovedGatesTrailerIsReservedToTheFunnel(t *testing.T) {
 			req := approvalRequest(t, fx)
 			req.CommitMessage = tt.message
 			req.ApprovedGates = tt.gates
-			_, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+			_, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 				context.Background(), req, testPreparationContext("0.19.0"),
 			)
 			if !errors.Is(err, ErrPreparedInvalid) {
@@ -248,7 +248,7 @@ func TestInvalidApprovedGatesAreRefused(t *testing.T) {
 		fx := spacefixture.New(t, "axon")
 		req := approvalRequest(t, fx)
 		req.ApprovedGates = gates
-		_, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0").PrepareSubmission(
+		_, err := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0")).PrepareSubmission(
 			context.Background(), req, testPreparationContext("0.19.0"),
 		)
 		if !errors.Is(err, ErrPreparedInvalid) {

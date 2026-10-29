@@ -61,7 +61,7 @@ func testE2E4G2GateAndLinkedDeprecation(t *testing.T) {
 	// while the two publishes run; reverted afterward so the EXPLICIT
 	// ReviewStatus lookup below resolves the real, just-opened PR.
 	fakeHost.FindPRFunc = func(_ context.Context, _ host.FindPRRequest) (*host.PRInfo, error) { return nil, nil }
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	hostCfg := e2eHostConfig("axon", fx.RemoteURL())
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), hostCfg, e2eActorResolver("agent", "bot"))
 	configureE2EContractP6(cmd, newE2EContractPublisher(t, funnel, mirrorDir, "axon", hostCfg))
@@ -144,7 +144,7 @@ func testE2E4RetireBlockedUnacked(t *testing.T) {
 	writeDeprecationAnnouncement(t, mirrorDir, "XA-axon-20260101-a1a1", "XC-axon-gated@1.0.0", "2099-01-01")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 
 	io, _, errOut := newIO()
@@ -180,7 +180,7 @@ func testE2E4RetireOverrideSucceeds(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XA-axon-20260101-b1b1", "note", "axon") // >=1 reminder
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("human", "owner"))
 	cmd.SetClockForTest(func() time.Time { return fixedNow })
 

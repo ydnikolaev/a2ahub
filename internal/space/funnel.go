@@ -12,6 +12,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/operation"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"github.com/ydnikolaev/a2ahub/schemas"
 	"gopkg.in/yaml.v3"
 )
@@ -411,6 +412,9 @@ type WriteFunnel struct {
 	// decision: "the version stamp lives in cmd/a2a; space never reads
 	// build info itself") — used only for the CC-085 guard.
 	binaryVersion string
+	// build is the full identity of the running binary (D-040). The funnel
+	// records its Stamp in every commit message it prepares (T4).
+	build version.Build
 }
 
 // NewWriteFunnel constructs a WriteFunnel. New-floor writes fail closed when
@@ -418,9 +422,9 @@ type WriteFunnel struct {
 // compatibility tests and old embedding callers remain readable while they
 // migrate to an explicit domain validator.
 // NewWriteFunnel is part of the public package API.
-func NewWriteFunnel(h host.Host, validator SubmitValidator, binaryVersion string) *WriteFunnel {
+func NewWriteFunnel(h host.Host, validator SubmitValidator, build version.Build) *WriteFunnel {
 	return &WriteFunnel{
-		host: h, validator: validator, binaryVersion: binaryVersion,
+		host: h, validator: validator, binaryVersion: build.Version, build: build,
 		mutationAuthority: newMutationAuthority(),
 	}
 }

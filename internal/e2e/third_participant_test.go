@@ -81,7 +81,7 @@ func TestThirdParticipantJoinsAndExchanges(t *testing.T) {
 	// on, and they all live there. Driving the submit VERB on top would add
 	// staging/validator plumbing this test does not question.
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 
 	id := "XQ-gamma-20260726-join"
 	layout, err := space.NewLayout("gamma")

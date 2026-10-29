@@ -38,7 +38,7 @@ func TestBuildWriteDepsThreadsTheInjectedOpener(t *testing.T) {
 		return prod(raw)
 	})
 
-	if _, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, "0.0.1-test", counting); err != nil {
+	if _, _, _, err := buildWriteDeps(context.Background(), cfg, machine, p, testBuild("0.0.1-test"), counting); err != nil {
 		t.Fatalf("buildWriteDeps: %v", err)
 	}
 	if calls.Load() == 0 {

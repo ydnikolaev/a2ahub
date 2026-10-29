@@ -21,18 +21,6 @@ import (
 
 const preparedVersion = 1
 
-// devBuildVersion is the version stamp `go build` leaves when the release
-// ldflags are absent (.goreleaser.yaml stamps -X main.version at release; a
-// plain build does not). Named rather than inlined because the refusal below
-// branches on it to offer a remedy.
-//
-// It is a FOURTH copy of this literal, not a shared definition, and that is
-// worth saying rather than hiding: `cmd/a2a/notifications_platform.go` already
-// compares against "dev" in three places, and ADR-001 forbids internal/space
-// importing cmd/a2a, so there is no home both can read today. If a fifth
-// appears, that is the moment to give the version package a `IsDevBuild`.
-const devBuildVersion = "dev"
-
 var (
 	// ErrPreparedInvalid is part of the public package API.
 	ErrPreparedInvalid = errors.New("space: prepared submission is invalid")
@@ -250,7 +238,7 @@ func (f *WriteFunnel) PrepareSubmission(ctx context.Context, candidate SubmitReq
 		prBody = appendOperationMetadata(prBody, candidate.OperationKey, artifactIDs)
 	}
 	approvedGates, _ := contract.CanonicalApprovedGates(candidate.ApprovedGates)
-	messageBase := withApprovedGatesTrailer(candidate.CommitMessage, candidate.ArtifactID, approvedGates)
+	messageBase := withApprovedGatesTrailer(withBuildNote(candidate.CommitMessage, candidate.ArtifactID, f.build), candidate.ArtifactID, approvedGates)
 	data := preparedSubmissionData{
 		version: preparedVersion, targetIdentity: preparation.TargetIdentity,
 		observedSpaceFloor: preparation.ObservedSpaceFloor, featureFloor: preparation.FeatureFloor,
@@ -477,7 +465,7 @@ func validatePreparedRequest(candidate SubmitRequest, preparation PreparationCon
 			"A2A-Operation-Key:", "A2A-Plan-Digest:", "A2A-Target:",
 			"A2A-Prepared-Digest:", "A2A-Recovery-Version:",
 			"A2A-Recovery-Digest:", "A2A-Recovery-v1:",
-			approvedGatesTrailerName + ":",
+			approvedGatesTrailerName + ":", builtByTrailerName + ":",
 		} {
 			if strings.HasPrefix(trimmed, name) {
 				return "", fmt.Errorf("%w: caller supplied reserved trailer %s", ErrPreparedInvalid, name)
@@ -511,7 +499,7 @@ func validatePreparationFloors(binaryVersion string, preparation PreparationCont
 			// separate guard on binaryVersion would be unreachable in the case
 			// it was written for, which is the defect this epic is about.
 			hint := ""
-			if floor == devBuildVersion {
+			if version.IsDevBuild(floor) {
 				hint = "; this is a DEVELOPMENT BUILD — stamp it to write from source: go build -ldflags \"-X main.version=<version>\" ./cmd/a2a"
 			}
 			return fmt.Errorf("%w: %s is %q, which is not a canonical MAJOR.MINOR.PATCH version, so a floor comparison against it cannot be trusted and the write is refused rather than guessed%s",
@@ -655,6 +643,11 @@ func validatePreparedSemantics(data preparedSubmissionData) error {
 	// anything that still names it (a forged or malformed line) is refused.
 	callerMessage := data.commitMessageBase
 	if body, _, ok := splitApprovedGatesTrailer(callerMessage); ok {
+		callerMessage = body
+	}
+	// The build note sits above the approval paragraph (T4); a journal
+	// prepared before it existed has none and peels nothing.
+	if body, _, ok := splitBuildNote(callerMessage); ok {
 		callerMessage = body
 	}
 	candidate := SubmitRequest{
@@ -813,6 +806,44 @@ func splitApprovedGatesTrailer(message string) (body string, gates []string, ok 
 		return message, nil, false
 	}
 	return message[:split], gates, true
+}
+
+// builtByTrailerName is the build note's token (D-040 point 4, T4).
+const builtByTrailerName = "A2A-Built-By"
+
+// withBuildNote appends the build note as its OWN paragraph, between the
+// caller's message and the funnel's trailer paragraph. The recovery and
+// approval parsers read only the final paragraph or the last seven lines, so
+// a paragraph above them leaves every one of them with the view it had before
+// (T4's parser table). A build with no known commit writes no note, and the
+// message is returned untouched. A caller who supplied no message gets the
+// funnel's default title, because the note alone is not a message.
+func withBuildNote(message, artifactID string, build version.Build) string {
+	if build.Commit == "" {
+		return message
+	}
+	if message == "" {
+		message = defaultCommitMessage(artifactID)
+	}
+	return strings.TrimRight(message, "\n") + "\n\n" + builtByTrailerName + ": " + build.Stamp()
+}
+
+// splitBuildNote undoes withBuildNote: the message without the final
+// paragraph and the stamp that paragraph carried. ok is false unless the
+// message ends in exactly one `A2A-Built-By: a2a ` line after a blank line, so
+// a forged or multi-line note is never peeled and stays visible to the
+// reservation check.
+func splitBuildNote(message string) (body, stamp string, ok bool) {
+	split := strings.LastIndex(message, "\n\n")
+	if split < 0 {
+		return message, "", false
+	}
+	tail := message[split+2:]
+	stamp, found := strings.CutPrefix(tail, builtByTrailerName+": a2a ")
+	if !found || stamp == "" || strings.Contains(tail, "\n") {
+		return message, "", false
+	}
+	return message[:split], builtByTrailerName + ": a2a " + stamp, true
 }
 
 // approvalBlockHead reports whether message's final paragraph is the funnel's

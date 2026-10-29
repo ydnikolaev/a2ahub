@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // ErrAwaitPRNotFound means the marker's recorded branch has no pull request.
@@ -41,14 +42,16 @@ type AwaitResult struct {
 // Awaiter owns the pending-write polling state machine. It observes but never
 // merges; completion requires the host to report merged, then refresh+clear.
 type Awaiter struct {
-	host AwaitHost
-	wait func(context.Context) error
+	host  AwaitHost
+	wait  func(context.Context) error
+	build version.Build
 }
 
 // NewAwaiter constructs a pending-write poller.
-func NewAwaiter(h AwaitHost) *Awaiter {
+func NewAwaiter(h AwaitHost, build version.Build) *Awaiter {
 	return &Awaiter{
-		host: h,
+		host:  h,
+		build: build,
 		wait: func(ctx context.Context) error {
 			timer := time.NewTimer(2 * time.Second)
 			defer timer.Stop()
@@ -104,12 +107,36 @@ func (a *Awaiter) Await(ctx context.Context, req AwaitRequest) (AwaitResult, err
 		}
 		if status.State == "completed" && status.Conclusion != "success" {
 			return AwaitResult{}, fmt.Errorf(
-				"%w: %q completed with %s",
-				ErrAwaitCheckFailed, status.Name, status.Conclusion,
+				"%w: %q completed with %s%s",
+				ErrAwaitCheckFailed, status.Name, status.Conclusion, a.localBuildHint(),
 			)
 		}
 		if err := a.wait(ctx); err != nil {
 			return AwaitResult{}, err
 		}
 	}
+}
+
+// localBuildHint explains a refused required check to the owner of a local
+// build (D-040 point 8): the space's CI judges the write with its pinned
+// RELEASED validator, so a data shape newer than the last release is refused
+// there until a public release ships it. It lives here, below both transports,
+// so the CLI and MCP render the same text. A release build gets "".
+func (a *Awaiter) localBuildHint() string {
+	if !a.build.IsLocal() {
+		return ""
+	}
+	return fmt.Sprintf(" — this write was made by a local build (%s); the space's CI judges it with its pinned released validator, "+
+		"so a data shape newer than v%s is refused there until a public release ships it. "+
+		"Read the check's log: if it names a shape v%s does not know, cut a release; otherwise fix the write.",
+		a.localStamp(), a.build.Version, a.build.Version)
+}
+
+// localStamp is the stamp with the sha cut to 12 characters, for prose.
+func (a *Awaiter) localStamp() string {
+	b := a.build
+	if len(b.Commit) > 12 {
+		b.Commit = b.Commit[:12]
+	}
+	return b.Stamp()
 }

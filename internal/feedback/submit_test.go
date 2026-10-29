@@ -50,7 +50,7 @@ status: new
 
 func newTestSubmitter(t *testing.T, fx *spacefixture.Fixture, fakeHost *host.FakeHost, ledgerPath string) *Submitter {
 	t.Helper()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	sub := NewSubmitter(funnel, ledgerPath, t.TempDir(), "test-repo", SubmitConfig{
 		RemoteURL:  fx.RemoteURL(),
 		Repo:       host.Repo{Owner: "a2ahub", Name: "a2ahub"},
@@ -180,7 +180,7 @@ func TestSubmit_GitHubWithoutCredentialRefusesBeforeGit(t *testing.T) {
 
 	fakeHost := host.NewFakeHost()
 	sub := NewSubmitter(
-		space.NewWriteFunnel(fakeHost, nil, "0.13.0"),
+		space.NewWriteFunnel(fakeHost, nil, testBuild("0.13.0")),
 		filepath.Join(t.TempDir(), "ledger.yaml"),
 		t.TempDir(),
 		"ydnikolaev-a2ahub",

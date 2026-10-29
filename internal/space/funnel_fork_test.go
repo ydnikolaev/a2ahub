@@ -52,7 +52,7 @@ func TestFunnelFallsBackToAFork(t *testing.T) {
 	fake.ForkLogin = "consumer"
 	forbidPushTo(fake, fx.RemoteURL())
 
-	result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+	result, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestFunnelForkFallbackIsIdempotent(t *testing.T) {
 	fake := host.NewFakeHost()
 	fake.ForkLogin = "consumer"
 	forbidPushTo(fake, fx.RemoteURL())
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	first, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestFunnelFeedbackRetryUsesObservedOrphanAsExactLease(t *testing.T) {
 		return host.RemoteBranchHead{SHA: orphanSHA, Exists: true}, nil
 	}
 
-	if _, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req); err != nil {
+	if _, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req); err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
 	if len(fake.Reads) != 1 || len(fake.Pushes) != 1 {
@@ -164,7 +164,7 @@ func TestFunnelWithoutForkFallbackReportsTheRefusal(t *testing.T) {
 	fake := host.NewFakeHost()
 	forbidPushTo(fake, fx.RemoteURL())
 
-	_, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+	_, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 	if !errors.Is(err, host.ErrPushRejected) {
 		t.Fatalf("err = %v, want ErrPushRejected", err)
 	}
@@ -220,7 +220,7 @@ func TestFunnelForkFallbackUnavailable(t *testing.T) {
 		fake := host.NewFakeHost()
 		forbidPushTo(fake, fx.RemoteURL())
 
-		_, err := NewWriteFunnel(hostWithoutFork{inner: fake}, nil, "0.1.0").Submit(context.Background(), req)
+		_, err := NewWriteFunnel(hostWithoutFork{inner: fake}, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 		assertManualForkAdvice(t, err)
 	})
 
@@ -235,7 +235,7 @@ func TestFunnelForkFallbackUnavailable(t *testing.T) {
 			return host.ForkInfo{}, &host.Error{Op: "EnsureFork", Err: host.ErrForkUnavailable}
 		}
 
-		_, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+		_, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 		assertManualForkAdvice(t, err)
 		if !errors.Is(err, host.ErrForkUnavailable) {
 			t.Errorf("err = %v, want the host cause preserved", err)

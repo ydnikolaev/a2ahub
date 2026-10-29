@@ -351,7 +351,7 @@ func newRecordTestDataCore(t *testing.T, payload []byte) (core *dataCore, doc da
 	seedDataWiringHandoff(t, core.mirrorDir, "axon", "peer", doc.ID)
 
 	fake = host.NewFakeHost()
-	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "0.1.0")
+	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, testBuild("0.1.0"))
 	return core, doc, fake
 }
 
@@ -739,7 +739,7 @@ func TestDataCoreDeliverBlobAndFetchBlobEndToEnd(t *testing.T) {
 		now: time.Now, entropy: rand.Reader,
 		resolveCredential: func(context.Context) (host.Credential, error) { return host.Credential{}, nil },
 		loadManifest:      func() (space.Manifest, error) { return space.Manifest{}, nil },
-		funnel:            space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "0.1.0"),
+		funnel:            space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, testBuild("0.1.0")),
 	}
 
 	// A nested, multi-file payload deliberately exercises the key-sensitive
@@ -1065,7 +1065,7 @@ func newExpressVerifyRigWithPayload(t *testing.T, floor string, criteria []strin
 	core.stagingDir = t.TempDir()
 	// The record write goes through the real funnel, whose own gate refuses a
 	// binary older than the space's floor; this rig plays a current binary.
-	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "99.0.0")
+	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, testBuild("99.0.0"))
 	core.loadManifest = func() (space.Manifest, error) {
 		return space.Manifest{MinBinaryVersion: floor, Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil
 	}

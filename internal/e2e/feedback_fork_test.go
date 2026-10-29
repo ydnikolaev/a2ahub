@@ -42,7 +42,7 @@ func TestFeedbackSubmitFromANonCollaborator(t *testing.T) {
 		return host.PushBranchResult{Branch: req.Branch}, nil
 	}
 
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	submitter := feedback.NewSubmitter(funnel, ledgerPath, projectRoot, slug, feedback.SubmitConfig{
 		RemoteURL:         fx.RemoteURL(),
 		Repo:              host.Repo{Owner: "ydnikolaev", Name: "a2ahub"},

@@ -82,7 +82,7 @@ func newExpressRetryRig(t *testing.T) *expressRetryRig {
 	core.stagingDir = t.TempDir()
 	core.ownSystem = "axon"
 	core.authorName, core.authorEmail = "a2a-axon", "a2a-axon@a2ahub.invalid"
-	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "99.0.0")
+	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, testBuild("99.0.0"))
 	core.host = expressTreeHost{FakeHost: fake, git: host.NewGitHubHost(nil, "")}
 	core.loadManifest = func() (space.Manifest, error) {
 		return space.Manifest{MinBinaryVersion: "0.1.0", Participants: []space.Participant{{System: "axon"}, {System: "peer"}}}, nil

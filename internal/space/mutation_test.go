@@ -15,7 +15,7 @@ import (
 func TestContractSidecarDeletePermitIsInvocationLocalAndDigestBound(t *testing.T) {
 	t.Parallel()
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0"))
 	binding := testDeleteBinding("atlas/provides/demo/schema/old.json")
 	mutation, err := funnel.mintContractSidecarDelete(binding)
 	if err != nil {
@@ -31,7 +31,7 @@ func TestContractSidecarDeletePermitIsInvocationLocalAndDigestBound(t *testing.T
 		mutate    func(*Mutation)
 		funnel    *WriteFunnel
 	}{
-		{"different funnel", binding.OperationKey, func(*Mutation) {}, NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0")},
+		{"different funnel", binding.OperationKey, func(*Mutation) {}, NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0"))},
 		{"different operation", "op-v1-" + strings.Repeat("b", 64), func(*Mutation) {}, funnel},
 		{"different path", binding.OperationKey, func(m *Mutation) { m.Path = "atlas/provides/demo/schema/other.json" }, funnel},
 		{"different root", binding.OperationKey, func(m *Mutation) {
@@ -63,7 +63,7 @@ func TestContractSidecarDeletePermitIsInvocationLocalAndDigestBound(t *testing.T
 func TestDeletePermitHasNoSerializedForm(t *testing.T) {
 	t.Parallel()
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0"))
 	binding := testDeleteBinding("atlas/provides/demo/fixtures/valid/old.json")
 	mutation, err := funnel.mintContractSidecarDelete(binding)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestDeletePermitHasNoSerializedForm(t *testing.T) {
 func TestContractSidecarDeletePathMatrix(t *testing.T) {
 	t.Parallel()
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0"))
 	allowed := []string{
 		"atlas/provides/demo/schema/old.json",
 		"atlas/provides/demo/fixtures/valid/old.json",
@@ -128,7 +128,7 @@ func TestNormalizeMutationsRejectsDuplicateAndMalformedWrites(t *testing.T) {
 	); !errors.Is(err, ErrMutationDuplicatePath) {
 		t.Fatalf("duplicate error = %v, want ErrMutationDuplicatePath", err)
 	}
-	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), testNoSubmitValidation{}, testBuild("0.19.0"))
 	if err := funnel.validateMutationSet("", []Mutation{{Path: "atlas/docs/x.md", Operation: MutationWrite}}); !errors.Is(err, ErrMutationInvalid) {
 		t.Fatalf("nil write bytes error = %v, want ErrMutationInvalid", err)
 	}
@@ -160,7 +160,7 @@ func TestFunnelDefaultDeniesDeleteBeforeExternalCalls(t *testing.T) {
 		return nil, nil
 	}
 
-	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0").Submit(context.Background(), req)
+	result, err := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0")).Submit(context.Background(), req)
 	if !errors.Is(err, ErrMutationUnauthorized) {
 		t.Fatalf("Submit error = %v, want ErrMutationUnauthorized", err)
 	}
@@ -188,7 +188,7 @@ func TestFunnelAppliesAuthorizedMixedMutationsInOneCommit(t *testing.T) {
 		}
 		return host.PushBranchResult{Branch: req.Branch}, nil
 	}
-	funnel := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0")
+	funnel := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0"))
 
 	sidecarPath := "atlas/provides/demo/schema/old.json"
 	firstReq := newTestSubmitRequest(fx, "atlas", layout)
@@ -264,7 +264,7 @@ func TestFunnelRefusesChangedDeletePreconditionBeforePush(t *testing.T) {
 		}
 		return host.PushBranchResult{Branch: req.Branch}, nil
 	}
-	funnel := NewWriteFunnel(fake, testNoSubmitValidation{}, "0.19.0")
+	funnel := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("0.19.0"))
 	sidecarPath := "atlas/provides/demo/schema/old.json"
 	firstReq := newTestSubmitRequest(fx, "atlas", layout)
 	firstReq.Files = append(firstReq.Files, FileWrite{Path: sidecarPath, Content: []byte("actual\n")})

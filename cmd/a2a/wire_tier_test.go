@@ -700,7 +700,7 @@ func TestWireMCPDataToolIsNotDegraded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mcp.ResolvePaths: %v", err)
 	}
-	srv, err := buildMCPServer(ctx, p, "0.1.0-wire-tier")
+	srv, err := buildMCPServer(ctx, p, testBuild("0.1.0-wire-tier"))
 	if err != nil {
 		t.Fatalf("buildMCPServer: %v", err)
 	}

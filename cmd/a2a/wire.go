@@ -27,6 +27,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	iversion "github.com/ydnikolaev/a2ahub/internal/version"
 	"github.com/ydnikolaev/a2ahub/skill"
 	spacetemplate "github.com/ydnikolaev/a2ahub/space-template"
 )
@@ -138,6 +139,7 @@ func buildCommands() map[string]command {
 		cmd := &cli.VersionCommand{
 			Stamp:         versionStamp(),
 			BinaryVersion: version,
+			Build:         versionBuild(),
 			Now:           time.Now,
 		}
 		if p, err := resolvePaths(); err == nil {
@@ -346,7 +348,7 @@ func buildCommands() map[string]command {
 		// (sha)") — doctorVersionOlder parses a bare major.minor.patch, so
 		// the full stamp made `a2a doctor` report `versions: FAIL` against
 		// every space that pins min_binary_version (P10 e2e surfaced it).
-		cmd := cli.NewDoctorCommand(newHostOpener(), version, p.projectConfig, p.machineConfig, p.projectRoot)
+		cmd := cli.NewDoctorCommand(newHostOpener(), version, p.projectConfig, p.machineConfig, p.projectRoot).WithBuild(versionBuild())
 		if store, storeErr := buildStore(context.Background(), p); storeErr == nil {
 			cmd.ClassificationSummaryReader = doctorClassificationReader{store: store}
 		}
@@ -381,7 +383,7 @@ func buildCommands() map[string]command {
 		}
 		// Bare version (like doctor): release.Info/version.OlderThan parse a
 		// bare major.minor.patch, not the "a2a x.y.z (sha)" stamp.
-		cmd := cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot)
+		cmd := cli.NewUpdateCommand(version, p.projectConfig, p.machineConfig, p.projectRoot).WithBuild(versionBuild())
 		return cmd.Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["submit"] = runSubmit
@@ -535,7 +537,7 @@ func buildCommands() map[string]command {
 		if err != nil {
 			return fail(stderr, err)
 		}
-		srv, err := buildMCPServer(ctx, p, version)
+		srv, err := buildMCPServer(ctx, p, versionBuild())
 		if err != nil {
 			return failf(stderr, "a2a mcp: %v", err)
 		}
@@ -556,7 +558,7 @@ func buildCommands() map[string]command {
 // the data operations factories through
 // mcp.NewServerFromConfigWithOperations, so a revert of either factory
 // argument here is what a production-registry test is exercising.
-func buildMCPServer(ctx context.Context, p mcp.Paths, binaryVersion string) (*mcp.Server, error) {
+func buildMCPServer(ctx context.Context, p mcp.Paths, build iversion.Build) (*mcp.Server, error) {
 	cfg, cfgErr := space.LoadProjectConfig(p.ProjectConfig)
 	if cfgErr != nil {
 		return nil, cfgErr
@@ -566,7 +568,7 @@ func buildMCPServer(ctx context.Context, p mcp.Paths, binaryVersion string) (*mc
 		return nil, machineErr
 	}
 	if len(cfg.Spaces) == 0 {
-		return mcp.NewServerFromConfig(ctx, p, binaryVersion)
+		return mcp.NewServerFromConfig(ctx, p, build)
 	}
 	mainPaths := paths{projectConfig: p.ProjectConfig, machineConfig: p.MachineConfig, projectRoot: p.ProjectRoot, staging: p.Staging}
 	workDeps, workErr := buildMCPWorkDeps(mainPaths, cfg, machine)
@@ -576,7 +578,7 @@ func buildMCPServer(ctx context.Context, p mcp.Paths, binaryVersion string) (*mc
 	// One opener per process, shared by the contract and data factories and the
 	// write dependencies internal/mcp builds per space.
 	opener := newHostOpenerFor(cfg.System)
-	return mcp.NewServerFromConfigWithOperations(ctx, p, binaryVersion, workDeps,
+	return mcp.NewServerFromConfigWithOperations(ctx, p, build, workDeps,
 		newMCPContractOperationsFactory(mainPaths, cfg, machine, opener),
 		newMCPDataOperationsFactory(mainPaths, cfg, machine, opener),
 		opener)
@@ -731,7 +733,7 @@ func buildStore(ctx context.Context, p paths) (*cache.Store, error) {
 	store := cache.NewStore(cfg.System, cacheDirOf(p), mirrors, time.Now, 0)
 	// P19: enable the proactive update notice on the read store (statusline /
 	// inbox / outbox render it; statusline's stale-trigger fires the checker).
-	cache.ConfigureUpdateNotice(store, version, machine.Defaults)
+	cache.ConfigureUpdateNotice(store, versionBuild(), machine.Defaults)
 	return store, nil
 }
 
@@ -1200,7 +1202,7 @@ func awaitResolver(p paths) cli.AwaitResolver {
 			return cli.AwaitTarget{}, err
 		}
 		mirrorDir := space.ResolveMirrorLocation(p.projectRoot, selected.ref, machine)
-		awaiter := space.NewAwaiter(h)
+		awaiter := space.NewAwaiter(h, funnelBuild())
 		req := space.AwaitRequest{
 			Branch: selected.marker.Branch,
 			Repo:   repo, Credential: cred,
@@ -1229,6 +1231,12 @@ func awaitResolver(p paths) cli.AwaitResolver {
 // the MCP wiring). Centralized here so the two call sites can't drift, and
 // guarded by TestFunnelBinaryVersionIsBare.
 func funnelBinaryVersion() string { return version }
+
+// funnelBuild is the full identity the write funnel and the awaiter carry
+// (D-040): the funnel records its stamp in every commit message it prepares.
+// The funnel's floor comparisons still use Build.Version, the same bare
+// version funnelBinaryVersion returns.
+func funnelBuild() iversion.Build { return versionBuild() }
 
 // loadMachineConfigForWrite loads the machine config for a WRITE path,
 // treating an ABSENT file as an empty config rather than as a failure.
@@ -1344,7 +1352,7 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
+	funnel := space.NewWriteFunnel(h, validator, funnelBuild())
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL: ref.RepoURL, Repo: repo,
 		BaseBranch: baseBranch, Credential: cred,
@@ -1552,7 +1560,7 @@ func runSubmit(args []string, stdout, stderr io.Writer) int {
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	legality := cli.NewLegalityAdapter(mirrorDir, cfg.System, manifest)
 	validator := cli.NewSubmitValidatorAdapter(engine, cfg.System, resolver, legality)
-	funnel := space.NewWriteFunnel(h, validator, funnelBinaryVersion())
+	funnel := space.NewWriteFunnel(h, validator, funnelBuild())
 
 	hostCfg := cli.SubmitHostConfig{
 		RemoteURL:         ref.RepoURL,
@@ -1689,7 +1697,7 @@ func runFeedback(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	funnel := space.NewWriteFunnel(h, feedback.FinalSubmitValidator{}, funnelBinaryVersion())
+	funnel := space.NewWriteFunnel(h, feedback.FinalSubmitValidator{}, funnelBuild())
 	submitCfg := feedback.SubmitConfig{
 		RemoteURL:         repoURL,
 		Repo:              host.Repo{Owner: owner, Name: name},
@@ -1885,7 +1893,7 @@ func wireSpaceWrite(ctx context.Context, cmd *cli.SpaceCommand, verb string, arg
 		return fmt.Errorf("%s: %w", prefix, err)
 	}
 
-	cmd.Funnel = space.NewWriteFunnel(h, cli.SpaceInfraNoValidation{}, funnelBinaryVersion())
+	cmd.Funnel = space.NewWriteFunnel(h, cli.SpaceInfraNoValidation{}, funnelBuild())
 	// The same host doubles as the capability probe: `space update` rewrites
 	// .github/workflows/, which GitHub refuses from a token without the
 	// `workflow` scope — checked BEFORE the plan is printed, not after the
@@ -1912,7 +1920,7 @@ func wireSpaceWrite(ctx context.Context, cmd *cli.SpaceCommand, verb string, arg
 	// mirror fetch whose absence let `a2a version` contradict a merged update.
 	// Clear is a no-op here because this write records no pending-artifact
 	// marker — it is space infrastructure, not an artifact.
-	awaiter := space.NewAwaiter(h)
+	awaiter := space.NewAwaiter(h, funnelBuild())
 	cmd.AwaitPR = func(awaitCtx context.Context, branch string) (space.AwaitResult, error) {
 		return awaiter.Await(awaitCtx, space.AwaitRequest{
 			Branch: branch,

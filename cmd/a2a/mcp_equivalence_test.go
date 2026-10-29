@@ -207,7 +207,7 @@ func newEquivMirrorAtBinaryVersion(t *testing.T, ownSystem, binaryVersion string
 	fx := spacefixture.New(t, "axon", "beta")
 	dir := fx.Clone(ownSystem)
 	fh := host.NewFakeHost()
-	real := space.NewWriteFunnel(fh, validator, binaryVersion)
+	real := space.NewWriteFunnel(fh, validator, testBuild(binaryVersion))
 	return dir, &spyFunnel{inner: real}, fh
 }
 
@@ -1163,7 +1163,7 @@ func TestEquivVerify(t *testing.T) {
 
 	respondOnce := func(t *testing.T, mirrorDir string) *spyFunnel {
 		fh := host.NewFakeHost()
-		real := space.NewWriteFunnel(fh, nil, "0.1.0")
+		real := space.NewWriteFunnel(fh, nil, testBuild("0.1.0"))
 		f := &spyFunnel{inner: real}
 		cmd := cli.NewRespondCommand(f, mirrorDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
 		runCLICommand(t, cmd, []string{"--result", "answered", parentID})
@@ -1253,7 +1253,7 @@ func TestEquivVerifyCloseVerdictsAtFloor(t *testing.T) {
 
 	respondOnce := func(t *testing.T, mirrorDir string) *spyFunnel {
 		fh := host.NewFakeHost()
-		real := space.NewWriteFunnel(fh, validator, binaryVersion)
+		real := space.NewWriteFunnel(fh, validator, testBuild(binaryVersion))
 		f := &spyFunnel{inner: real}
 		cmd := cli.NewRespondCommand(f, mirrorDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
 		runCLICommand(t, cmd, []string{"--result", "answered", parentID})
@@ -1319,7 +1319,7 @@ func TestEquivDispute(t *testing.T) {
 	respondOnce := func(t *testing.T, mirrorDir string) *spyFunnel {
 		equivAcceptedQuestion(parentID)(t, mirrorDir)
 		fh := host.NewFakeHost()
-		real := space.NewWriteFunnel(fh, nil, "0.1.0")
+		real := space.NewWriteFunnel(fh, nil, testBuild("0.1.0"))
 		f := &spyFunnel{inner: real}
 		cmd := cli.NewRespondCommand(f, mirrorDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
 		runCLICommand(t, cmd, []string{"--result", "answered", parentID})
@@ -1519,7 +1519,7 @@ func TestEquivMultiSpaceSubmitResolvesTheDraftsOwnSpace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mcp.ResolvePaths: %v", err)
 	}
-	srv, err := buildMCPServer(ctx, p, "0.0.1-test")
+	srv, err := buildMCPServer(ctx, p, testBuild("0.0.1-test"))
 	if err != nil {
 		t.Fatalf("buildMCPServer: %v", err)
 	}
@@ -2339,7 +2339,7 @@ func TestCC093InterleavedCLIThenMCPSubmitIdempotent(t *testing.T) {
 			fx := spacefixture.New(t, "axon", "beta")
 			mirrorDir := fx.Clone("beta")
 			fakeHost := host.NewFakeHost()
-			sharedFunnel := space.NewWriteFunnel(fakeHost, tc.validator, tc.binaryVersion)
+			sharedFunnel := space.NewWriteFunnel(fakeHost, tc.validator, testBuild(tc.binaryVersion))
 
 			writeMirrorFileEquiv(t, mirrorDir, "space.yaml", equivSpaceYAML(tc.spaceFloor))
 
@@ -2514,7 +2514,7 @@ func TestEquivLifecycleRefusalTextParity(t *testing.T) {
 
 		respondOnce := func(t *testing.T, mirrorDir string) *spyFunnel {
 			fh := host.NewFakeHost()
-			real := space.NewWriteFunnel(fh, nil, "0.1.0")
+			real := space.NewWriteFunnel(fh, nil, testBuild("0.1.0"))
 			f := &spyFunnel{inner: real}
 			cmd := cli.NewRespondCommand(f, mirrorDir, "fixture-space", "beta", equivManifest(), equivCLIHostConfig(""), equivCLIActorResolver("agent", "bot"))
 			runCLICommand(t, cmd, []string{"--result", "answered", parentID})

@@ -218,7 +218,7 @@ func newContractRepairFixture(t *testing.T, recoveryHost contractPublicationReco
 		mutations = append(mutations, Mutation{Path: filepath.ToSlash(filepath.Join(contractTestRoot, mutation.Path)), Operation: MutationWrite, Bytes: planned[mutation.Path]})
 	}
 	mutations = append(mutations, Mutation{Path: filepath.ToSlash(eventPath), Operation: MutationWrite, Bytes: []byte(event)})
-	funnel := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0"))
 	boundPRBody, err := bindContractPublicationCandidateSource("frozen body", sourceIdentity)
 	if err != nil {
 		t.Fatal(err)
@@ -455,7 +455,7 @@ func contractPublicationHeadFixture(t *testing.T, fx *spacefixture.Fixture, sour
 		mutations = append(mutations, Mutation{Path: filepath.ToSlash(filepath.Join(contractTestRoot, mutation.Path)), Operation: MutationWrite, Bytes: planned[mutation.Path]})
 	}
 	mutations = append(mutations, Mutation{Path: filepath.ToSlash(eventPath), Operation: MutationWrite, Bytes: []byte(event)})
-	funnel := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0"))
 	boundPRBody, err := bindContractPublicationCandidateSource("frozen body", sourceIdentity)
 	if err != nil {
 		t.Fatal(err)

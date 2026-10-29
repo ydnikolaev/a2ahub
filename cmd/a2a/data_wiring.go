@@ -63,6 +63,7 @@ type dataCore struct {
 	authorName  string
 	authorEmail string
 	binary      string
+	build       semver.Build
 	engine      *validate.Engine
 	host        host.Host
 	funnel      *space.WriteFunnel
@@ -104,21 +105,21 @@ type dataCore struct {
 func newDataCore(
 	projectRoot, mirrorDir, stagingDir, remoteURL, spaceID, ownSystem string,
 	repository host.Repo,
-	authorName, authorEmail, binary string,
+	authorName, authorEmail string, build semver.Build,
 	engine *validate.Engine,
 	h host.Host,
 	resolveActor func(kind, name, model string) (template.Actor, error),
 	resolveCredential func(context.Context) (host.Credential, error),
 ) (*dataCore, error) {
 	if projectRoot == "" || mirrorDir == "" || stagingDir == "" || remoteURL == "" || spaceID == "" || ownSystem == "" ||
-		repository.Owner == "" || repository.Name == "" || authorName == "" || authorEmail == "" || binary == "" ||
+		repository.Owner == "" || repository.Name == "" || authorName == "" || authorEmail == "" || build.Version == "" ||
 		engine == nil || h == nil || resolveActor == nil || resolveCredential == nil {
 		return nil, fmt.Errorf("data wiring: complete production dependencies are required")
 	}
 	c := &dataCore{
 		projectRoot: projectRoot, mirrorDir: mirrorDir, stagingDir: stagingDir, remoteURL: remoteURL,
 		spaceID: spaceID, ownSystem: ownSystem, repository: repository,
-		authorName: authorName, authorEmail: authorEmail, binary: binary,
+		authorName: authorName, authorEmail: authorEmail, binary: build.Version, build: build,
 		engine: engine, host: h, now: time.Now, entropy: rand.Reader,
 		resolveActor: resolveActor, resolveCredential: resolveCredential,
 		loadManifest: func() (space.Manifest, error) { return loadManifest(mirrorDir) },
@@ -131,7 +132,7 @@ func newDataCore(
 		return space.ResolveDataPackage(ctx, mirrorDir, packageID)
 	}
 	nullValidator := &dataNoopSubmitValidator{}
-	c.funnel = space.NewWriteFunnel(h, nullValidator, binary)
+	c.funnel = space.NewWriteFunnel(h, nullValidator, build)
 	return c, nil
 }
 
@@ -147,7 +148,7 @@ func newCLIDataCore(p paths, deps lifecycleDeps) (*dataCore, error) {
 	core, err := newDataCore(
 		p.projectRoot, deps.mirrorDir, p.staging, deps.hostCfg.RemoteURL, deps.spaceID, deps.ownSystem,
 		deps.hostCfg.Repo,
-		deps.hostCfg.CommitAuthorName, deps.hostCfg.CommitAuthorEmail, funnelBinaryVersion(),
+		deps.hostCfg.CommitAuthorName, deps.hostCfg.CommitAuthorEmail, funnelBuild(),
 		engine, h,
 		func(kind, name, model string) (template.Actor, error) {
 			return deps.resolveActor(cli.ActorFlags{Kind: kind, Name: name, Model: model})
@@ -1663,7 +1664,7 @@ func newMCPDataOperationsFactory(p paths, cfg space.ProjectConfig, machine space
 			}
 			core, coreErr := newDataCore(
 				p.projectRoot, space.ResolveMirrorLocation(p.projectRoot, ref, machine), p.staging, ref.RepoURL, ref.ID, cfg.System,
-				repo, cfg.System, cfg.System+"@a2a.local", funnelBinaryVersion(),
+				repo, cfg.System, cfg.System+"@a2a.local", funnelBuild(),
 				engine, h,
 				func(kind, name, model string) (template.Actor, error) {
 					return resolveMCPActor(mcp.ActorInput{Kind: kind, Name: name, Model: model})

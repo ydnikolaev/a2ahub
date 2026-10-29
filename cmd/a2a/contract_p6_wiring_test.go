@@ -317,7 +317,7 @@ func TestContractVerifyExportRoundTrip(t *testing.T) {
 	legality := cli.NewLegalityAdapter(mirrorDir, contractLifecycleSystem, manifest)
 	resolver := cli.NewMirrorResolver(mirrorDir, manifest)
 	submitValidator := cli.NewSubmitValidatorAdapter(engine, contractLifecycleSystem, resolver, legality)
-	submitFunnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.19.0")
+	submitFunnel := space.NewWriteFunnel(fakeHost, submitValidator, testBuild("0.19.0"))
 	hostCfg := contractLifecycleHostConfig(fx.RemoteURL())
 
 	newCmd := cli.NewNewCommand(draftStagingDir, contractLifecycleSystem, resolveActor, []string{contractLifecycleSpaceID})

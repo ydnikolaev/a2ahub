@@ -164,7 +164,7 @@ func TestContractPublicationPreflightIsLocalAndUsesTheSharedPlanner(t *testing.T
 	main := &publicationMainFake{order: &order}
 	remote := &publicationRemoteFake{order: &order}
 	events := &publicationEventBuilder{order: &order}
-	service := mustPublicationService(t, main, planning, remote, events, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+	service := mustPublicationService(t, main, planning, remote, events, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 
 	result, err := service.Preflight(t.Context(), ContractPublicationRequest{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major",
@@ -308,7 +308,7 @@ func TestContractPublicationPublishProbesBeforePlanningThenPreparesAndSubmitsOnc
 	events := &publicationEventBuilder{order: &order}
 	validator := &publicationSubmitValidator{}
 	h := &publicationRecoveryHost{FakeHost: host.NewFakeHost()}
-	funnel := NewWriteFunnel(h, validator, "0.19.0")
+	funnel := NewWriteFunnel(h, validator, testBuild("0.19.0"))
 	service := mustPublicationService(t, main, planning, remote, events, funnel)
 
 	result, err := service.Publish(t.Context(), ContractPublicationRequest{
@@ -587,7 +587,7 @@ func TestContractPublicationPublishOnMasterDefaultSpaceTargetsMaster(t *testing.
 	events := &publicationEventBuilder{order: &order}
 	validator := &publicationSubmitValidator{}
 	h := &publicationRecoveryHost{FakeHost: host.NewFakeHost()}
-	funnel := NewWriteFunnel(h, validator, "0.19.0")
+	funnel := NewWriteFunnel(h, validator, testBuild("0.19.0"))
 	service := mustPublicationService(t, main, planning, remote, events, funnel)
 
 	result, err := service.Publish(t.Context(), ContractPublicationRequest{
@@ -638,7 +638,7 @@ func TestContractPublicationDurableMainIntentWinsAfterFastMergeAndHeadDeletion(t
 	}
 	remote := &publicationRemoteFake{listing: ContractPublicationHeadListing{Heads: []ContractPublicationHeadProof{}, Exhaustive: true}}
 	planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("a", 40), "0.19.0")}
-	service = mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+	service = mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 
 	result, err := service.Publish(t.Context(), ContractPublicationRequest{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major", Candidate: reader, CandidateSource: source,
@@ -691,7 +691,7 @@ func TestContractPublicationExplicitLegacyCompletionSurvivesFloorRaiseAndHeadDel
 	}
 	remote := &publicationRemoteFake{listing: ContractPublicationHeadListing{Heads: []ContractPublicationHeadProof{}, Exhaustive: true}}
 	planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("a", 40), "0.19.0")}
-	service = mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+	service = mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 
 	result, err := service.Publish(t.Context(), ContractPublicationRequest{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "explicit:1.0.0", Candidate: reader, CandidateSource: source,
@@ -735,7 +735,7 @@ func TestContractPublicationRemoteProofIsExhaustiveAndRecoveryBound(t *testing.T
 			}
 			remote := &publicationRemoteFake{listing: test.listing}
 			planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("a", 40), "0.19.0")}
-			service := mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+			service := mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 			_, err := service.Publish(t.Context(), ContractPublicationRequest{
 				System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major", Candidate: reader, CandidateSource: source,
 			})
@@ -778,7 +778,7 @@ func TestContractPublicationRepairsOnlyExactRecoveryAndBindsExpectedPlan(t *test
 		commit: strings.Repeat("b", 40), lookup: ContractPublicationIntentLookup{Matches: []ContractPublicationCompletion{}, Exhaustive: true},
 	}
 	planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("b", 40), "0.19.0")}
-	service := mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+	service := mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 
 	result, err := service.Publish(t.Context(), ContractPublicationRequest{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: selector, Candidate: reader, CandidateSource: source,
@@ -870,7 +870,7 @@ func TestContractPublicationRepairPreservesPartialOutcomeAndRequiresObservedPR(t
 				commit: strings.Repeat("b", 40), lookup: ContractPublicationIntentLookup{Matches: []ContractPublicationCompletion{}, Exhaustive: true},
 			}
 			planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("b", 40), "0.19.0")}
-			service := mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+			service := mustPublicationService(t, main, planning, remote, &publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 			result, publishErr := service.Publish(t.Context(), ContractPublicationRequest{
 				System: "atlas", ContractID: "XC-atlas-demo", Selector: selector, Candidate: candidateReader, CandidateSource: source,
 				ExpectPlan: record.PlanDigest, SubmitTemplate: SubmitRequest{Repo: host.Repo{Owner: "acme", Name: "getvisa"}},
@@ -894,7 +894,7 @@ func TestContractPublicationBelowFloorAutoBumpRefusesBeforeFunnel(t *testing.T) 
 	planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("a", 40), "0.18.0")}
 	events := &publicationEventBuilder{}
 	service := mustPublicationService(t, main, planning, remote, events,
-		NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+		NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 
 	_, err := service.Publish(t.Context(), ContractPublicationRequest{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major", Candidate: reader, CandidateSource: source,
@@ -934,7 +934,7 @@ func TestContractPublicationDeletePermitRequiresAcceptedPlanAndPriorDeclaration(
 	planningContext.MutationBaseline = planningContext.Published[0]
 	planning := &publicationPlanningFake{context: planningContext}
 	reader, source := publicationDeclaredCandidate(nil, false)
-	funnel := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0"))
 	service := mustPreflightService(t, planning)
 	service.funnel = funnel // test-only: exercise the post-plan opaque permit issuer.
 	preflight, err := service.Preflight(t.Context(), ContractPublicationRequest{
@@ -963,7 +963,7 @@ func TestContractPublicationDeletePermitRequiresAcceptedPlanAndPriorDeclaration(
 	if err := funnel.validateMutationSet(preflight.Plan.OperationKey, mutations); err != nil {
 		t.Fatalf("issuer rejected its bound delete: %v", err)
 	}
-	foreign := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0")
+	foreign := NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0"))
 	if err := foreign.validateMutationSet(preflight.Plan.OperationKey, mutations); !errors.Is(err, ErrMutationUnauthorized) {
 		t.Fatalf("foreign funnel accepted copied permit: %v", err)
 	}
@@ -1203,7 +1203,7 @@ func TestContractPublicationRefusesAViolationBeforeTheFunnel(t *testing.T) {
 	events := &publicationEventBuilder{}
 	validator := &publicationSubmitValidator{}
 	service := mustPublicationService(t, main, planning, remote, events,
-		NewWriteFunnel(host.NewFakeHost(), validator, "0.19.0"))
+		NewWriteFunnel(host.NewFakeHost(), validator, testBuild("0.19.0")))
 
 	result, err := service.Publish(t.Context(), ContractPublicationRequest{
 		System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major",
@@ -1304,7 +1304,7 @@ func TestContractPublicationPreflightAndPublishAgreeOnTheExplicitVersionRule(t *
 				remote := &publicationRemoteFake{listing: ContractPublicationHeadListing{Heads: []ContractPublicationHeadProof{}, Exhaustive: true}}
 				planning := &publicationPlanningFake{context: publicationPlanningContext(strings.Repeat("a", 40), test.floor)}
 				return mustPublicationService(t, main, planning, remote, &publicationEventBuilder{},
-					NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+					NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 			}
 			request := func() ContractPublicationRequest {
 				reader, source := publicationLegacyCandidate(nil)
@@ -1367,7 +1367,7 @@ func TestContractPublicationPreflightExitsNonZeroOnViolations(t *testing.T) {
 			planningContext.Violations = test.violations
 			planning := &publicationPlanningFake{context: planningContext}
 			service := mustPublicationService(t, &publicationMainFake{}, planning, &publicationRemoteFake{},
-				&publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, "0.19.0"))
+				&publicationEventBuilder{}, NewWriteFunnel(host.NewFakeHost(), &publicationSubmitValidator{}, testBuild("0.19.0")))
 
 			result, err := service.Preflight(t.Context(), ContractPublicationRequest{
 				System: "atlas", ContractID: "XC-atlas-demo", Selector: "auto:major",

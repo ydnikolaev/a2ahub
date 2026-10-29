@@ -75,7 +75,7 @@ func TestFeedbackSubmitWrite(t *testing.T) {
 	slug := "a2ahub-feedback-fixture"
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	submitCfg := feedback.SubmitConfig{
 		RemoteURL:         fx.RemoteURL(),
 		Repo:              host.Repo{Owner: "a2ahub-fixture", Name: "feedback"},

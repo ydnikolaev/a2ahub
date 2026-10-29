@@ -32,7 +32,7 @@ const notificationUpdateRefreshTimeout = 2 * time.Second
 // site (CLI read store, MCP buildStore) so every Store-based surface shares
 // one configured notice. Takes the raw defaults map, not space.MachineConfig,
 // so internal/cache stays decoupled from internal/space's config type.
-func ConfigureUpdateNotice(s *Store, binaryVersion string, defaults map[string]string) {
+func ConfigureUpdateNotice(s *Store, build version.Build, defaults map[string]string) {
 	cachePath, err := release.CachePath()
 	if err != nil {
 		return
@@ -56,8 +56,9 @@ func ConfigureUpdateNotice(s *Store, binaryVersion string, defaults map[string]s
 			1, release.KeylessVerifier(repo), decoder, time.Now,
 		)
 	}
-	s.EnableUpdateNotice(binaryVersion, cachePath, ttl, checker)
+	s.EnableUpdateNotice(build.Version, cachePath, ttl, checker)
 	s.updateRepo = repo
+	s.updateBuild = build
 }
 
 // UpdateNotice is the T4 shared advisory fact every Store-based surface
@@ -106,7 +107,9 @@ func (s *Store) UpdateNotice() UpdateNotice {
 	// Derive every field from the shared release.Info SSOT so this object
 	// agrees value-for-value with `a2a update --json` (parity across surfaces
 	// — update_available/required are orthogonal, not grade-folded).
-	info := release.Info(s.updateBinaryVersion, latest, floor, floorSpace)
+	build := s.updateBuild
+	build.Version = s.updateBinaryVersion
+	info := release.InfoFor(build, latest, floor, floorSpace)
 	return UpdateNotice{
 		Current:         info.Current,
 		Latest:          info.Latest,
@@ -254,6 +257,18 @@ type VersionReport struct {
 	Binary string         `json:"binary"`
 	Update UpdateNotice   `json:"update"`
 	Spaces []SpaceVersion `json:"spaces"`
+	// Build names the running binary's channel and commit (D-040). A pointer
+	// with omitempty: only `a2a version` fills it, so the other surfaces that
+	// carry a VersionReport keep their bytes.
+	Build *BuildInfo `json:"build,omitempty"`
+}
+
+// BuildInfo is the build identity `a2a version --json` reports: which channel
+// the binary came from ("release", "local" or "dev") and the commit it was
+// built from.
+type BuildInfo struct {
+	Channel string `json:"channel"`
+	Commit  string `json:"commit"`
 }
 
 // VersionReport composes the report. It never reaches the network: the release

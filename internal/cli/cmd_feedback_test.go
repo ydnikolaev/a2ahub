@@ -50,7 +50,7 @@ func TestFeedbackSubmit_JSONValidationBatchIsCompleteAndDeterministic(t *testing
 	projectRoot := t.TempDir()
 	ledgerPath := filepath.Join(projectRoot, ".a2a", "feedback", "ledger.yaml")
 	submitter := feedback.NewSubmitter(
-		space.NewWriteFunnel(fakeHost, nil, "0.13.0"),
+		space.NewWriteFunnel(fakeHost, nil, testBuild("0.13.0")),
 		ledgerPath, projectRoot, "test-repo",
 		feedback.SubmitConfig{RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main"},
 	)
@@ -542,7 +542,7 @@ func TestFeedbackSubmit_FakeHostRoundTrip(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "feedback")
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	ledgerPath := filepath.Join(t.TempDir(), "ledger.yaml")
 
 	submitter := feedback.NewSubmitter(funnel, ledgerPath, t.TempDir(), "test-repo", feedback.SubmitConfig{
@@ -634,7 +634,7 @@ func TestFeedbackSubmit_MultipleFilesAndAllKeepOnePRPerItem(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "feedback")
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.13.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.13.0"))
 	projectRoot := t.TempDir()
 	feedbackDir := filepath.Join(projectRoot, ".a2a", "feedback")
 	if err := os.MkdirAll(feedbackDir, 0o755); err != nil {
@@ -711,7 +711,7 @@ func TestFeedbackSubmit_ValidatesWholeBatchBeforeFirstWrite(t *testing.T) {
 	projectRoot := t.TempDir()
 	ledgerPath := filepath.Join(projectRoot, ".a2a", "feedback", "ledger.yaml")
 	submitter := feedback.NewSubmitter(
-		space.NewWriteFunnel(fakeHost, nil, "0.13.0"),
+		space.NewWriteFunnel(fakeHost, nil, testBuild("0.13.0")),
 		ledgerPath, projectRoot, "test-repo",
 		feedback.SubmitConfig{RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main"},
 	)
@@ -758,7 +758,7 @@ func newInboxCmdRig(t *testing.T, hubReader feedback.HubReader) inboxCmdRig {
 	}
 	ledgerPath := filepath.Join(feedbackDir, "ledger.yaml")
 	inboxDir := filepath.Join(t.TempDir(), "data", "feedback", "inbox")
-	submitter := feedback.NewSubmitter(space.NewWriteFunnel(fakeHost, nil, "0.13.0"), ledgerPath, projectRoot, "test-repo", feedback.SubmitConfig{
+	submitter := feedback.NewSubmitter(space.NewWriteFunnel(fakeHost, nil, testBuild("0.13.0")), ledgerPath, projectRoot, "test-repo", feedback.SubmitConfig{
 		RemoteURL: fx.RemoteURL(), Repo: host.Repo{Owner: "a2ahub", Name: "a2ahub"}, BaseBranch: "main", InboxDir: inboxDir,
 	})
 	submitter.SetMirrorDirForTest(func(string, string) string { return fx.Clone("feedback") })

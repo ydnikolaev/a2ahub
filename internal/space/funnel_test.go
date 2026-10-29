@@ -110,7 +110,7 @@ func TestFunnelSingleCommit(t *testing.T) {
 	req := newTestSubmitRequest(fx, "axon", l)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -246,7 +246,7 @@ func TestFunnelReturnsLastProvenBoundaryOnFailure(t *testing.T) {
 			fake := host.NewFakeHost()
 			tc.configure(fake)
 
-			result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+			result, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("Submit error = %v, want %v", err, tc.wantErr)
 			}
@@ -284,7 +284,7 @@ func TestMinBinaryVersionGuard(t *testing.T) {
 	req.MinBinaryVersion = "2.0.0"
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "1.0.0") // older than the pin
+	funnel := NewWriteFunnel(fake, nil, testBuild("1.0.0")) // older than the pin
 
 	_, err = funnel.Submit(context.Background(), req)
 	if !errors.Is(err, ErrStaleBinaryVersion) {
@@ -322,7 +322,7 @@ func TestFunnelStampShapedVersionFailsClosed(t *testing.T) {
 	req.MinBinaryVersion = "0.5.0" // a bare "1.0.0" is NEWER → would clear the guard
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, testNoSubmitValidation{}, "a2a 1.0.0 (abcdef0)") // the STAMP, not bare
+	funnel := NewWriteFunnel(fake, testNoSubmitValidation{}, testBuild("a2a 1.0.0 (abcdef0)")) // the STAMP, not bare
 
 	_, err = funnel.Submit(context.Background(), req)
 	if err == nil {
@@ -351,7 +351,7 @@ func TestFunnelIdempotentShortCircuit(t *testing.T) {
 	req := newTestSubmitRequest(fx, "axon", l)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	first, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -392,7 +392,7 @@ func TestFunnelOperationRetryReturnsOriginalIDsAcrossDateChange(t *testing.T) {
 	)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 	created, err := funnel.Submit(context.Background(), first)
 	if err != nil {
 		t.Fatalf("first Submit: %v", err)
@@ -437,7 +437,7 @@ func TestFunnelOperationResumesMatchingOrphanBranch(t *testing.T) {
 	fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
 		return host.PRInfo{}, openFailure
 	}
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, openFailure) {
 		t.Fatalf("first Submit error = %v, want OpenPR failure", err)
 	}
@@ -476,7 +476,7 @@ func TestFunnelOperationRetryRecognizesMergedRemoteDespiteStaleLocalIntent(t *te
 	req.OperationKey = operation.Respond("axon", "agent", "bot", []string{"XQ-peer-parent"}, "answered", nil, nil, nil, operation.RespondIncompleteness{}, nil)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 	first, err := funnel.Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("first Submit: %v", err)
@@ -517,7 +517,7 @@ func TestFunnelOperationRefusesMismatchedOrphan(t *testing.T) {
 		return host.RemoteBranchHead{SHA: strings.Repeat("a", 40), Exists: true}, nil
 	}
 
-	_, err = NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+	_, err = NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 	if !errors.Is(err, ErrOperationMismatch) {
 		t.Fatalf("Submit error = %v, want ErrOperationMismatch", err)
 	}
@@ -546,7 +546,7 @@ func TestFunnelWrongSectionRefusedBeforeGitAction(t *testing.T) {
 	req.Files = append(req.Files, FileWrite{Path: other.Exchange("XQ-seomatrix-20260721-abcd"), Content: []byte("x")})
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	_, err = funnel.Submit(context.Background(), req)
 	if !errors.Is(err, ErrWrongSection) {
@@ -585,7 +585,7 @@ func TestFunnelCommitTreeIgnoresHostileWorktreeSymlink(t *testing.T) {
 		{Path: "axon/exchanges/escape/outside.md", Content: []byte("must not escape")},
 	}
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 	result, err := funnel.Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
@@ -651,7 +651,7 @@ func TestFunnelDecisionsExceptionAllowed(t *testing.T) {
 	req.Files = append(req.Files, FileWrite{Path: Decision("XD-space-20260721-abcd"), Content: []byte("x")})
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := funnel.Submit(context.Background(), req); err != nil {
 		t.Fatalf("Submit: %v", err)
@@ -678,7 +678,7 @@ func TestFunnelSubmitValidatorSeamInvoked(t *testing.T) {
 
 	wantErr := errors.New("V2: envelope field missing")
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, &fakeSubmitValidator{err: wantErr}, "0.1.0")
+	funnel := NewWriteFunnel(fake, &fakeSubmitValidator{err: wantErr}, testBuild("0.1.0"))
 
 	_, err = funnel.Submit(context.Background(), req)
 	if !errors.Is(err, wantErr) {
@@ -734,7 +734,7 @@ func TestDirectGitNoHub(t *testing.T) {
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 	result, err := funnel.Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
@@ -774,7 +774,7 @@ func TestFunnelSpaceInfrastructureDefaultRefused(t *testing.T) {
 			// AllowSpaceInfrastructure left unset (false) — the default.
 
 			fake := host.NewFakeHost()
-			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+			funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 			_, err = funnel.Submit(context.Background(), req)
 			if !errors.Is(err, ErrWrongSection) {
@@ -807,7 +807,7 @@ func TestFunnelSpaceInfrastructureAllowed(t *testing.T) {
 			req.AllowSpaceInfrastructure = true
 
 			fake := host.NewFakeHost()
-			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+			funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 			result, err := funnel.Submit(context.Background(), req)
 			if err != nil {
@@ -841,7 +841,7 @@ func TestFunnelSpaceInfrastructureDoesNotWidenSectionGuard(t *testing.T) {
 	req.AllowSpaceInfrastructure = true
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	_, err = funnel.Submit(context.Background(), req)
 	if !errors.Is(err, ErrWrongSection) {
@@ -879,7 +879,7 @@ func TestFunnelSpaceInfrastructureFlagDoesNotWeakenCleanliness(t *testing.T) {
 			req.AllowSpaceInfrastructure = true
 
 			fake := host.NewFakeHost()
-			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+			funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 			_, err = funnel.Submit(context.Background(), req)
 			if !errors.Is(err, ErrWrongSection) {
@@ -912,7 +912,7 @@ func TestFunnelAxonCodeownersResolvesBySectionNotInfra(t *testing.T) {
 	// succeed on the section rule alone.
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := funnel.Submit(context.Background(), req); err != nil {
 		t.Fatalf("Submit: %v", err)
@@ -975,7 +975,7 @@ func TestFunnelShortCircuitReArmsAutoMerge(t *testing.T) {
 	req := newTestSubmitRequest(fx, "axon", l)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	first, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -1013,7 +1013,7 @@ func TestFunnelShortCircuitFailsWhenReArmingFails(t *testing.T) {
 	req := newTestSubmitRequest(fx, "axon", l)
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 	if _, err := funnel.Submit(context.Background(), req); err != nil {
 		t.Fatalf("first Submit: %v", err)
 	}
@@ -1045,7 +1045,7 @@ func TestFunnelReArmStatusFailureReturnsKnownPR(t *testing.T) {
 	}
 	req := newTestSubmitRequest(fx, "axon", layout)
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 	first, err := funnel.Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("first Submit: %v", err)
@@ -1081,7 +1081,7 @@ func TestFunnelNeverUsesAnEmptyCheckedHead(t *testing.T) {
 		}
 		req := newTestSubmitRequest(fx, "axon", layout)
 		fake := host.NewFakeHost()
-		funnel := NewWriteFunnel(fake, nil, "0.1.0")
+		funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 		first, err := funnel.Submit(context.Background(), req)
 		if err != nil {
 			t.Fatalf("first Submit: %v", err)
@@ -1118,7 +1118,7 @@ func TestFunnelNeverUsesAnEmptyCheckedHead(t *testing.T) {
 			return host.CheckStatusResult{State: "completed", Conclusion: "success"}, nil
 		}
 
-		result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+		result, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 		if err != nil {
 			t.Fatalf("Submit: %v", err)
 		}
@@ -1170,7 +1170,7 @@ func TestFunnelLandsAlreadyCleanPR(t *testing.T) {
 	fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
 		return host.CheckStatusResult{State: "completed", Conclusion: "success", HeadSHA: "checked-head"}, nil
 	}
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -1217,7 +1217,7 @@ func TestFunnelDirectMergeFailureRetainsKnownPRAndMethod(t *testing.T) {
 		return host.MergeMethodSquash, mergeFailure
 	}
 
-	result, err := NewWriteFunnel(fake, nil, "0.1.0").Submit(context.Background(), req)
+	result, err := NewWriteFunnel(fake, nil, testBuild("0.1.0")).Submit(context.Background(), req)
 	if !errors.Is(err, mergeFailure) {
 		t.Fatalf("Submit error = %v, want %v", err, mergeFailure)
 	}
@@ -1257,7 +1257,7 @@ func TestFunnelNeverMergesAnUnreportedCheck(t *testing.T) {
 		// required context has not reported at all.
 		return host.CheckStatusResult{State: "queued"}, nil
 	}
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -1311,7 +1311,7 @@ func TestFunnelNeverMergesWithoutExplicitGreen(t *testing.T) {
 			fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
 				return tc.status, nil
 			}
-			funnel := NewWriteFunnel(fake, nil, "0.1.0")
+			funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 			result, err := funnel.Submit(context.Background(), req)
 			if err != nil {
@@ -1389,7 +1389,7 @@ func TestFunnelNeedsAttentionWhenHostHasNoMerger(t *testing.T) {
 	// CheckStatus defaults to green — deliberately irrelevant here: the
 	// capability assertion must fail closed before CheckStatus is even
 	// consulted.
-	funnel := NewWriteFunnel(hostWithoutMerger{inner: fake}, nil, "0.1.0")
+	funnel := NewWriteFunnel(hostWithoutMerger{inner: fake}, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -1422,7 +1422,7 @@ func TestFunnelLandsAlreadyCleanPR_RealHostReachesMain(t *testing.T) {
 	gh.AutoMergeAlreadyClean = true // GitHub declines to arm: the PR is already mergeable.
 
 	h := host.NewGitHubHost(nil, gh.URL)
-	funnel := NewWriteFunnel(h, nil, "0.1.0")
+	funnel := NewWriteFunnel(h, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -1465,7 +1465,7 @@ func TestFunnelShortCircuitLandsAlreadyCleanPR_RealHostReachesMain(t *testing.T)
 	gh.AutoMerge = false // first OpenPR arms auto-merge successfully but nothing merges yet.
 
 	h := host.NewGitHubHost(nil, gh.URL)
-	funnel := NewWriteFunnel(h, nil, "0.1.0")
+	funnel := NewWriteFunnel(h, nil, testBuild("0.1.0"))
 
 	first, err := funnel.Submit(context.Background(), req)
 	if err != nil {
@@ -1603,7 +1603,7 @@ func TestFunnelConcurrentSubmitsOneMirrorNoCrossedWrite(t *testing.T) {
 	reqA := concurrentMirrorWriteRequest(shared, "alpha", "01J8QYK2Z3ABCDEFGHJKMNPQRA", la)
 	reqB := concurrentMirrorWriteRequest(shared, "bravo", "01J8QYK2Z3ABCDEFGHJKMNPQRB", lb)
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 	results, errs := runConcurrentMirrorWrites(t, funnel, reqA, reqB)
 
 	for i, err := range errs {
@@ -1652,7 +1652,7 @@ func TestFunnelSequentialSubmitsOneMirrorNoInheritedFiles(t *testing.T) {
 	reqA := concurrentMirrorWriteRequest(shared, "alpha", "01J8QYK2Z3ABCDEFGHJKMNPQSA", la)
 	reqB := concurrentMirrorWriteRequest(shared, "bravo", "01J8QYK2Z3ABCDEFGHJKMNPQSB", lb)
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 
 	if _, err := funnel.Submit(context.Background(), reqA); err != nil {
 		t.Fatalf("Submit(alpha): %v", err)
@@ -1688,7 +1688,7 @@ func TestFunnelReleasesMirrorLockOnPushErrorPath(t *testing.T) {
 
 	fake := host.NewFakeHost()
 	forbidPushTo(fake, fx.RemoteURL())
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, host.ErrPushRejected) {
 		t.Fatalf("Submit error = %v, want ErrPushRejected", err)
@@ -1712,7 +1712,7 @@ func TestFunnelReleasesMirrorLockOnPushErrorPath(t *testing.T) {
 	req2.ArtifactID = "XQ-axon-20260721-second"
 	req2.Verb = "ack"
 	req2.Files = []FileWrite{{Path: l.Exchange(req2.ArtifactID), Content: []byte("---\nid: " + req2.ArtifactID + "\n---\n")}}
-	funnel2 := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel2 := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 	start := time.Now()
 	if _, err := funnel2.Submit(context.Background(), req2); err != nil {
 		t.Fatalf("Submit after a refused prior write: %v", err)
@@ -1755,7 +1755,7 @@ func TestFunnelLeavesTheMirrorOnBaseNotOnTheWriteBranch(t *testing.T) {
 	}
 	req := concurrentMirrorWriteRequest(shared, "alpha", "01J8QYK2Z3ABCDEFGHJKMNPQSA", la)
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 	res, err := funnel.Submit(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
@@ -1884,7 +1884,7 @@ func TestSubmitRefusesANestingArtifactIDBeforeAnyGitAction(t *testing.T) {
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 	l, err := NewLayout("axon")
 	if err != nil {
 		t.Fatalf("NewLayout: %v", err)
@@ -1960,7 +1960,7 @@ func TestFunnelConcurrentSubmitsSameSystemNoCrossedWrite(t *testing.T) {
 	req1 := sameSystemWriteRequest(shared, "alpha", "XQ-alpha-20260726-one", "01J8QYK2Z3ABCDEFGHJKMNPQS1", l)
 	req2 := sameSystemWriteRequest(shared, "alpha", "XQ-alpha-20260726-two", "01J8QYK2Z3ABCDEFGHJKMNPQS2", l)
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 	results, errs := runConcurrentMirrorWrites(t, funnel, req1, req2)
 
 	for i, err := range errs {
@@ -2027,7 +2027,7 @@ func TestFunnelWriteConcurrentWithReadRefreshLeavesBothIntact(t *testing.T) {
 		t.Fatalf("NewLayout: %v", err)
 	}
 	req := sameSystemWriteRequest(shared, "alpha", "XQ-alpha-20260726-race", "01J8QYK2Z3ABCDEFGHJKMNPQS3", l)
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 
 	const readers = 6
 	var wg sync.WaitGroup
@@ -2107,7 +2107,7 @@ func TestFunnelThreeSystemsOneMirrorNoCrossedWrite(t *testing.T) {
 			"XQ-"+sys+"-20260726-tri", "01J8QYK2Z3ABCDEFGHJKMNPQT"+string(rune('1'+i)), l)
 	}
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	results := make([]WriteResult, len(reqs))
@@ -2157,7 +2157,7 @@ func TestSubmitRefusesUnsetBaseBranchRatherThanDefaultingToMain(t *testing.T) {
 	req.BaseBranch = ""
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := funnel.Submit(context.Background(), req); !errors.Is(err, ErrPreparedInvalid) {
 		t.Fatalf("Submit with unset BaseBranch error = %v, want ErrPreparedInvalid (refused, not silently defaulted to \"main\")", err)

@@ -93,7 +93,7 @@ func TestE2E1Cascade(t *testing.T) {
 	// (TestRespondIdempotentRetryReturnsAlreadyOpenDirectConstruction),
 	// with its OWN, unmodified FakeHost.
 	fakeHost.FindPRFunc = func(_ context.Context, _ host.FindPRRequest) (*host.PRInfo, error) { return nil, nil }
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0") // lifecycle verbs: nil validator (local legality gate precedes the funnel)
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0")) // lifecycle verbs: nil validator (local legality gate precedes the funnel)
 
 	// --- step 1: requirement (axon -> beta) -----------------------------
 	reqID := "XR-axon-e2e1"
@@ -262,7 +262,7 @@ func submitArtifact(t *testing.T, mirrorDir, kind, id, from string, to []string,
 	legality := cli.NewLegalityAdapter(mirrorDir, from, e2eManifest())
 	resolver := cli.NewMirrorResolver(mirrorDir, e2eManifest())
 	validator := cli.NewSubmitValidatorAdapter(engine, from, resolver, legality)
-	funnel := space.NewWriteFunnel(fakeHost, validator, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, validator, testBuild("0.1.0"))
 
 	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", from, stagingDir, e2eHostConfig(from, mirrorDirOrigin(t, mirrorDir)))
 	io, out, errOut := newIO()

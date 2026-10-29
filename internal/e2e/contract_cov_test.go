@@ -42,7 +42,7 @@ func TestContractRetireBlockedUnackedConsumerDirectConstruction(t *testing.T) {
 	writeDeprecationAnnouncement(t, mirrorDir, "XA-axon-20260101-a1a1", "XC-axon-gated@1.0.0", "2099-01-01")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 
 	io, _, errOut := newIO()
@@ -82,7 +82,7 @@ func TestContractRetireOverrideUnackedConsumerDirectConstruction(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "axon", 2, "XA-axon-20260101-b1b1", "note", "axon") // >=1 reminder
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("human", "owner"))
 	cmd.SetClockForTest(func() time.Time { return fixedNow })
 
@@ -126,7 +126,7 @@ func TestContractDiffJSONDirectConstruction(t *testing.T) {
 	gitRun(t, mirrorDir, "commit", "-m", "publish 1.1.0")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	configureE2EContractP6(cmd, newE2EContractDiffService())
 
@@ -181,7 +181,7 @@ func TestContractVerifyExportTamperedDigestDirectConstruction(t *testing.T) {
 	writeMirrorFile(t, localPath, "schema/main.schema.json", `{"type":"object","x":"TAMPERED"}`)
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	configureE2EContractP6(cmd, newE2EContractVerifyService(t, digest))
 

@@ -47,7 +47,7 @@ func newVerbFixture(t *testing.T, cloneSystem string, fixManifest bool) (mirrorD
 		fixOriginManifest(t, remote, "fixture-space", mirrorDir)
 	}
 	fakeHost = host.NewFakeHost()
-	funnel = space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel = space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	return mirrorDir, remote, fakeHost, funnel
 }
 

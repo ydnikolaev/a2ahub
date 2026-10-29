@@ -189,7 +189,7 @@ func (c *contractP6Core) publish(ctx context.Context, input contractP6Publicatio
 	}
 	service, err := contractwiring.NewPublicationService(contractwiring.PublicationDependencies{
 		MirrorDir: c.mirrorDir, RemoteURL: c.remoteURL, SpaceID: c.spaceID, OwnSystem: c.ownSystem,
-		Binary: c.binary, Repository: c.repository, Credential: credential, Host: c.host, Engine: c.engine,
+		Binary: c.binary, Build: funnelBuild(), Repository: c.repository, Credential: credential, Host: c.host, Engine: c.engine,
 		ManifestValidator: contractManifestEngine{engine: c.engine},
 		HistoryValidator:  contractHistoryDocumentEngine{engine: c.engine},
 		Compatibility:     validate.ContractCompatibilityAdapter{},

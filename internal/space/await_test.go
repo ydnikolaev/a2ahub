@@ -3,9 +3,11 @@ package space
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 func awaitRequest() AwaitRequest {
@@ -39,7 +41,7 @@ func TestAwaiterWaitsForMergeThenRefreshesAndClears(t *testing.T) {
 	req.Refresh = func(context.Context) error { refreshed = true; return nil }
 	req.Clear = func() error { cleared = true; return nil }
 
-	awaiter := NewAwaiter(fake)
+	awaiter := NewAwaiter(fake, testBuild("0.0.1"))
 	awaiter.SetWaitForTest(func(context.Context) error { return nil })
 	result, err := awaiter.Await(context.Background(), req)
 	if err != nil {
@@ -83,7 +85,7 @@ func TestAwaiterRefusesRedClosedMissingAndCancellation(t *testing.T) {
 			fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
 				return tc.run, nil
 			}
-			awaiter := NewAwaiter(fake)
+			awaiter := NewAwaiter(fake, testBuild("0.0.1"))
 			if tc.wait != nil {
 				awaiter.SetWaitForTest(tc.wait)
 			}
@@ -92,5 +94,50 @@ func TestAwaiterRefusesRedClosedMissingAndCancellation(t *testing.T) {
 				t.Fatalf("Await error = %v, want %v", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestAwait_LocalBuildCheckFailedHint: a failed required check on a local
+// build names the pinned-validator cause; a release build keeps today's exact
+// text (T6).
+func TestAwait_LocalBuildCheckFailedHint(t *testing.T) {
+	t.Parallel()
+
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	failed := func(t *testing.T, build version.Build) error {
+		t.Helper()
+		fake := host.NewFakeHost()
+		fake.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) {
+			return &host.PRInfo{Number: 8, State: "open"}, nil
+		}
+		fake.CheckStatusFunc = func(context.Context, host.StatusRequest) (host.CheckStatusResult, error) {
+			return host.CheckStatusResult{State: "completed", Conclusion: "failure", Name: "a2a-validate / validate"}, nil
+		}
+		awaiter := NewAwaiter(fake, build)
+		awaiter.SetWaitForTest(func(context.Context) error { return nil })
+		_, err := awaiter.Await(context.Background(), awaitRequest())
+		if !errors.Is(err, ErrAwaitCheckFailed) {
+			t.Fatalf("Await error = %v, want ErrAwaitCheckFailed", err)
+		}
+		return err
+	}
+
+	release := failed(t, version.NewBuild("0.27.0", sha, ""))
+	const today = `space: required check failed: "a2a-validate / validate" completed with failure`
+	if release.Error() != today {
+		t.Errorf("release build error = %q, want today's exact text %q", release.Error(), today)
+	}
+
+	local := failed(t, version.NewBuild("0.27.0", sha, "local")).Error()
+	for _, want := range []string{
+		today, "a2a 0.27.0 (local, " + sha[:12] + ")", "pinned released validator",
+		"newer than v0.27.0", "cut a release",
+	} {
+		if !strings.Contains(local, want) {
+			t.Errorf("local build error %q lacks %q", local, want)
+		}
+	}
+	if strings.Contains(local, sha) {
+		t.Errorf("local build error carries the full sha, want 12 characters: %q", local)
 	}
 }

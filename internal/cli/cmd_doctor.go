@@ -117,6 +117,11 @@ type DoctorCommand struct {
 	// release.CachePath; tests override it to point at a seeded temp cache.
 	cachePath func() (string, error)
 
+	// build is the binary's full identity (D-040): a local build says so on
+	// the "versions" row and is never advised to `a2a update`. The zero value
+	// is a release build.
+	build version.Build
+
 	// NotificationStatus is wired by cmd/a2a to the same controller as
 	// `a2a notifications status`; doctor never grows a second platform probe.
 	NotificationStatus func(context.Context, string) (notification.Status, error)
@@ -865,8 +870,15 @@ func (c *DoctorCommand) doctorCheckSpaceIdentity(cfg space.ProjectConfig, machin
 // straight from the space's mirror working tree; a mirror the "space
 // access" check could not reach also fails this check (a stale/absent
 // mirror has nothing to compare against).
+// WithBuild sets the binary's full identity and returns the command. Without
+// it the command behaves as a release build, as it always has.
+func (c *DoctorCommand) WithBuild(b version.Build) *DoctorCommand {
+	c.build = b
+	return c
+}
+
 func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
-	if c.binaryVersion == "dev" {
+	if version.IsDevBuild(c.binaryVersion) {
 		return true, " · unreleased local build (dev); released-version floor comparison skipped"
 	}
 	ok := true
@@ -895,10 +907,24 @@ func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine spa
 		}
 		if older {
 			ok = false
-			failures = append(failures, fmt.Sprintf("%s: local binary %s is older than min_binary_version %s", ref.ID, c.binaryVersion, manifest.MinBinaryVersion))
+			failure := fmt.Sprintf("%s: local binary %s is older than min_binary_version %s", ref.ID, c.binaryVersion, manifest.MinBinaryVersion)
+			if c.build.IsLocal() {
+				// A local build's floor moves with the next delivery, not with
+				// `a2a update`, which leaves a local build in place (D-040).
+				failure += " (run make deliver from the a2ahub checkout once main carries the release that raised it)"
+			}
+			failures = append(failures, failure)
 		}
 	}
 	detail := strings.Join(failures, "; ")
+	if c.build.IsLocal() {
+		// A gated build of private main, not a published release (D-040). The
+		// floors above were compared against its stamped release version; the
+		// release advisories below are not for it, because new code reaches it
+		// with `make deliver` and `a2a update` leaves it in place.
+		detail += fmt.Sprintf(" · local build of %s (%s); floors compared as %s", c.build.Version, shortSHA(c.build.Commit), c.build.Version)
+		return ok, c.versionsTemplateAdvisory(detail, cfg, mirrorDirs)
+	}
 
 	// spec 19 T4 doctor row: report upward (vs the latest KNOWN release, T3
 	// cache-read only — a live fetch when the cache is empty is a deferred
@@ -932,18 +958,40 @@ func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine spa
 	// owner's decision, and refusing a writer for the owner's call punishes the
 	// wrong party.
 	if latest != "" {
-		for _, ref := range cfg.Spaces {
-			pin, _ := space.WorkflowVersion(mirrorDirs[ref.ID])
-			if pin == "" || pin == "mixed" {
-				continue
-			}
-			if older, err := version.OlderThan(pin, latest); err == nil && older {
-				detail += fmt.Sprintf(" · %s pins the a2ahub template at v%s while v%s is published — run a2a space update", ref.ID, pin, latest)
-			}
-		}
+		detail = templateAdvisory(detail, cfg, mirrorDirs, latest)
 	}
 
 	return ok, detail
+}
+
+// templateAdvisory appends one advisory per connected space whose committed
+// workflows pin an older a2ahub template than latest.
+func templateAdvisory(detail string, cfg space.ProjectConfig, mirrorDirs map[string]string, latest string) string {
+	for _, ref := range cfg.Spaces {
+		pin, _ := space.WorkflowVersion(mirrorDirs[ref.ID])
+		if pin == "" || pin == "mixed" {
+			continue
+		}
+		if older, err := version.OlderThan(pin, latest); err == nil && older {
+			detail += fmt.Sprintf(" · %s pins the a2ahub template at v%s while v%s is published — run a2a space update", ref.ID, pin, latest)
+		}
+	}
+	return detail
+}
+
+// versionsTemplateAdvisory is the local build's half of the cached-release
+// read: only the space-template axis, which is about the space and not about
+// this binary, so it still applies.
+func (c *DoctorCommand) versionsTemplateAdvisory(detail string, cfg space.ProjectConfig, mirrorDirs map[string]string) string {
+	cp, err := c.cachePath()
+	if err != nil {
+		return detail
+	}
+	latest, _ := release.ReadLatest(cp, time.Now(), cache.DefaultUpdateCheckTTL)
+	if latest == "" {
+		return detail
+	}
+	return templateAdvisory(detail, cfg, mirrorDirs, latest)
 }
 
 // doctorCheckCIPresence is a lightweight existence check (spec 09 T1: "not

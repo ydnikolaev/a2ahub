@@ -16,6 +16,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -47,11 +48,15 @@ type Host interface {
 // assemble the production contract publication service. Every field is
 // required unless its own comment says otherwise.
 type PublicationDependencies struct {
-	MirrorDir  string
-	RemoteURL  string
-	SpaceID    string
-	OwnSystem  string
-	Binary     string
+	MirrorDir string
+	RemoteURL string
+	SpaceID   string
+	OwnSystem string
+	Binary    string
+	// Build is the running binary's channel and commit, so a publication carries
+	// the A2A-Built-By note like every other write (D-040). Optional: the zero
+	// value falls back to a build of Binary with no commit, which writes no note.
+	Build      version.Build
 	Repository host.Repo
 	Credential host.Credential
 	Host       Host
@@ -118,7 +123,11 @@ func NewPublicationService(deps PublicationDependencies) (*space.ContractPublica
 		ownSystem: deps.OwnSystem, loadManifest: deps.LoadManifest,
 		validateSubmitFiles: deps.ValidateSubmitFiles,
 	}
-	funnel := space.NewWriteFunnel(deps.Host, validator, deps.Binary)
+	build := deps.Build
+	if build.Version == "" {
+		build = version.NewBuild(deps.Binary, "", "")
+	}
+	funnel := space.NewWriteFunnel(deps.Host, validator, build)
 	recovery, err := space.NewContractPublicationRecovery(deps.Host, deps.MirrorDir, deps.RemoteURL, deps.Repository, deps.Credential, deps.Binary, space.ContractPublicationRecoveryValidation{
 		ManifestValidator: deps.ManifestValidator,
 		HistoryValidator:  deps.HistoryValidator,

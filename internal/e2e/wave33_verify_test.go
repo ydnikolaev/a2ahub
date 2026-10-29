@@ -227,7 +227,7 @@ func TestWave33ContractActivateEventV2AndFoldAccepts(t *testing.T) {
 
 	manifest := wave33Manifest(wave33Floor, "axon", "beta", "gamma")
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "axon", manifest), wave33Floor)
+	funnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "axon", manifest), testBuild(wave33Floor))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", manifest, e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 
 	io, out, errOut := newIO()
@@ -334,7 +334,7 @@ func TestWave33ContractActivationDebtSurfacesToProducerOnlyUnderActionable(t *te
 	resolver := cli.NewMirrorResolver(betaMirror, manifest)
 	submitValidator := cli.NewSubmitValidatorAdapter(engine, "beta", resolver, legality)
 	fakeHost := host.NewFakeHost()
-	betaFunnel := space.NewWriteFunnel(fakeHost, submitValidator, wave33Floor)
+	betaFunnel := space.NewWriteFunnel(fakeHost, submitValidator, testBuild(wave33Floor))
 	adoptCmd := cli.NewContractCommand(nil, betaFunnel, betaMirror, "fixture-space", "beta", manifest, e2eHostConfig("beta", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	io, out, errOut := newIO()
 	if code := adoptCmd.Run(context.Background(), []string{"adopt", "XC-axon-opdebt"}, io); code != 0 {
@@ -446,7 +446,7 @@ func TestWave33CloseAndVerifyVerdictsAuthorEventV2AndThreadShowsThem(t *testing.
 	questionID := "XQ-axon-20260811-v001"
 	seedAcceptedQuestion(t, mirrorDir, questionID, "beta")
 
-	betaFunnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "beta", manifest), wave33Floor)
+	betaFunnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "beta", manifest), testBuild(wave33Floor))
 	respondCmd := cli.NewRespondCommand(betaFunnel, mirrorDir, "fixture-space", "beta", manifest, e2eHostConfig("beta", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 
 	// First response.
@@ -477,7 +477,7 @@ func TestWave33CloseAndVerifyVerdictsAuthorEventV2AndThreadShowsThem(t *testing.
 	// axon verifies the FIRST response with a verdict — RoleOwner
 	// (applyResponseScoped). --refs disambiguates: lifecycleResolveResponseID
 	// refuses a bare parent id once more than one response exists.
-	axonFunnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "axon", manifest), wave33Floor)
+	axonFunnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "axon", manifest), testBuild(wave33Floor))
 	verifyCmd := cli.NewVerifyCommand(axonFunnel, mirrorDir, "fixture-space", "axon", manifest, e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	vIO, vOut, vErr := newIO()
 	vCode := verifyCmd.Run(context.Background(), []string{questionID, "--refs", firstResponseID, "--verdict", "0:met:beta"}, vIO)
@@ -501,7 +501,7 @@ func TestWave33CloseAndVerifyVerdictsAuthorEventV2AndThreadShowsThem(t *testing.
 
 	// axon closes with a verdict — RoleOwner, legal from `responded`,
 	// driven as its own standalone command.
-	closeFunnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "axon", manifest), wave33Floor)
+	closeFunnel := space.NewWriteFunnel(fakeHost, wave33SubmitValidator(t, mirrorDir, "axon", manifest), testBuild(wave33Floor))
 	closeCmd := cli.NewCloseCommand(closeFunnel, mirrorDir, "fixture-space", "axon", manifest, e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	cIO, cOut, cErr := newIO()
 	cCode := closeCmd.Run(context.Background(), []string{questionID, "--verdict", "0:met:beta"}, cIO)

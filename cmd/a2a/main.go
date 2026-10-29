@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	iversion "github.com/ydnikolaev/a2ahub/internal/version"
 )
 
 // version and commit are the build-time stamp (§7.3, D-013 — the
@@ -25,6 +26,9 @@ import (
 var (
 	version = "dev"
 	commit  = ""
+	// channel is set only by `make deliver` (-X main.channel=local); a
+	// release binary keeps it empty (D-040).
+	channel = ""
 )
 
 func main() {
@@ -195,15 +199,20 @@ func printUsage(w io.Writer) {
 // commit prefers the ldflags-injected value; absent that, it falls back to
 // the VCS revision Go's toolchain embeds automatically (framework-first —
 // no shelling out to `git`), and finally "unknown" if neither is present.
-func versionStamp() string {
-	sha := commit
-	if sha == "" {
-		sha = vcsRevision()
+func versionStamp() string { return versionBuild().Stamp() }
+
+// versionBuild is this binary's identity, composed once for every surface
+// (version, doctor, update, the write funnel, the awaiter).
+func versionBuild() iversion.Build {
+	return iversion.NewBuild(version, buildCommit(), channel)
+}
+
+// buildCommit is the ldflags commit, else the embedded VCS revision, else "".
+func buildCommit() string {
+	if commit != "" {
+		return commit
 	}
-	if sha == "" {
-		sha = "unknown"
-	}
-	return fmt.Sprintf("a2a %s (%s)", version, sha)
+	return vcsRevision()
 }
 
 func vcsRevision() string {

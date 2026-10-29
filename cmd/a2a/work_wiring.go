@@ -114,7 +114,7 @@ func buildWorkCore(p paths, cfg space.ProjectConfig, machine space.MachineConfig
 	if err != nil {
 		return workCore{}, err
 	}
-	funnel := space.NewWriteFunnel(h, submitValidator, version)
+	funnel := space.NewWriteFunnel(h, submitValidator, funnelBuild())
 	publisher, err := space.NewWorkPublisher(funnel, runtime)
 	if err != nil {
 		return workCore{}, err

@@ -51,7 +51,7 @@ func TestDeliverDataPackageSingleCommit(t *testing.T) {
 	req := newTestDataDeliveryRequest(fx, "axon")
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := DeliverDataPackage(context.Background(), req, funnel)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestDeliverDataPackageCommittedContentMatchesRequestBytes(t *testing.T) {
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := DeliverDataPackage(context.Background(), req, funnel)
 	if err != nil {
@@ -165,7 +165,7 @@ func TestDeliverDataPackageIdempotentRerunRepairsSamePR(t *testing.T) {
 	req := newTestDataDeliveryRequest(fx, "axon")
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	first, err := DeliverDataPackage(context.Background(), req, funnel)
 	if err != nil {
@@ -224,7 +224,7 @@ func TestDeliverDataPackageRefusesExpectPackMismatchBeforeAnyWrite(t *testing.T)
 	req.ExpectPack = "sha256:" + "ffff" + "0000000000000000000000000000000000000000000000000000000000"
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := DeliverDataPackage(context.Background(), req, funnel); !errors.Is(err, ErrDataDeliveryExpectPackChanged) {
 		t.Fatalf("error = %v, want ErrDataDeliveryExpectPackChanged", err)
@@ -242,7 +242,7 @@ func TestDeliverDataPackageAcceptsMatchingExpectPack(t *testing.T) {
 	req.ExpectPack = req.AggregateDigest
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := DeliverDataPackage(context.Background(), req, funnel); err != nil {
 		t.Fatalf("DeliverDataPackage: %v", err)
@@ -255,7 +255,7 @@ func TestDeliverDataPackageRefusesIncompleteRequest(t *testing.T) {
 	fx := spacefixture.New(t, "axon")
 	base := newTestDataDeliveryRequest(fx, "axon")
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	for name, mutate := range map[string]func(*DataDeliveryRequest){
 		"system":     func(r *DataDeliveryRequest) { r.System = "" },
@@ -289,7 +289,7 @@ func TestDeliverDataPackageRefusesUnsafePayloadPath(t *testing.T) {
 	req.Payload = map[string][]byte{"../escape.json": []byte("{}")}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := DeliverDataPackage(context.Background(), req, funnel); !errors.Is(err, ErrDataDeliveryInvalid) {
 		t.Fatalf("error = %v, want ErrDataDeliveryInvalid", err)
@@ -320,7 +320,7 @@ func TestDeliverDataPackageRefusesPayloadNamedManifest(t *testing.T) {
 	req.Payload = map[string][]byte{"manifest.json": []byte(`{"attacker":true}`)}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := DeliverDataPackage(context.Background(), req, funnel); !errors.Is(err, ErrDataDeliveryInvalid) {
 		t.Fatalf("error = %v, want ErrDataDeliveryInvalid", err)
@@ -382,7 +382,7 @@ func TestRecordVerificationReportSingleCommit(t *testing.T) {
 	req := newTestDataVerificationRecordRequest(fx, "peer")
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := RecordVerificationReport(context.Background(), req, funnel)
 	if err != nil {
@@ -442,7 +442,7 @@ func TestRecordVerificationReportIdempotentRerunRepairsSamePR(t *testing.T) {
 	req := newTestDataVerificationRecordRequest(fx, "peer")
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	first, err := RecordVerificationReport(context.Background(), req, funnel)
 	if err != nil {
@@ -482,7 +482,7 @@ func TestRecordVerificationReportRefusesUnknownTransition(t *testing.T) {
 	req.Transition = "verify-forced-pass"
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := RecordVerificationReport(context.Background(), req, funnel); !errors.Is(err, ErrDataVerificationRecordInvalid) {
 		t.Fatalf("error = %v, want ErrDataVerificationRecordInvalid", err)
@@ -504,7 +504,7 @@ func TestRecordVerificationReportAcceptsVerifyFail(t *testing.T) {
 	req.EventRaw = []byte("event: verify-fail\n")
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	if _, err := RecordVerificationReport(context.Background(), req, funnel); err != nil {
 		t.Fatalf("RecordVerificationReport(verify-fail): %v", err)
@@ -517,7 +517,7 @@ func TestRecordVerificationReportRefusesIncompleteRequest(t *testing.T) {
 	fx := spacefixture.New(t, "peer")
 	base := newTestDataVerificationRecordRequest(fx, "peer")
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	for name, mutate := range map[string]func(*DataVerificationRecordRequest){
 		"system":    func(r *DataVerificationRecordRequest) { r.System = "" },
@@ -721,7 +721,7 @@ func TestDeliverDataPackageRefusesAnUnregisteredTransport(t *testing.T) {
 	req := newTestDataDeliveryRequest(fx, "axon")
 	req.ManifestRaw = []byte(`{"schema":"data-package/v1","id":"DP-axon-20260804-ab12","transport_driver":"no-such-driver"}`)
 
-	funnel := NewWriteFunnel(host.NewFakeHost(), nil, "0.1.0")
+	funnel := NewWriteFunnel(host.NewFakeHost(), nil, testBuild("0.1.0"))
 	_, err := DeliverDataPackage(context.Background(), req, funnel)
 	if err == nil {
 		t.Fatal("DeliverDataPackage with an unregistered transport_driver = nil error, want a refusal")

@@ -174,7 +174,7 @@ func TestFunnelSubmitRefusesResponseWithNoParentTransitionBeforeAnyGitAction(t *
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	_, err = funnel.Submit(t.Context(), req)
 	if !errors.Is(err, ErrResponseParentTransitionMissing) {
@@ -215,7 +215,7 @@ func TestFunnelSubmitAcceptsResponseWithAccompanyingParentTransition(t *testing.
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(t.Context(), req)
 	if err != nil {
@@ -253,7 +253,7 @@ func TestFunnelSubmitKindWithNoParentRequirementIsUnaffected(t *testing.T) {
 	}
 
 	fake := host.NewFakeHost()
-	funnel := NewWriteFunnel(fake, nil, "0.1.0")
+	funnel := NewWriteFunnel(fake, nil, testBuild("0.1.0"))
 
 	result, err := funnel.Submit(t.Context(), req)
 	if err != nil {

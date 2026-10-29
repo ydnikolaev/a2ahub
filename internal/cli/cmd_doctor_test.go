@@ -22,6 +22,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
+	"github.com/ydnikolaev/a2ahub/internal/version"
 	"github.com/ydnikolaev/a2ahub/skill"
 	"github.com/ydnikolaev/a2ahub/testkit/fakegithub"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -3556,6 +3557,69 @@ func TestDoctorRunRendersTheThreeOutcomes(t *testing.T) {
 		}
 		if code != 0 {
 			t.Errorf("exit = %d, want 0: UNVERIFIED must not fail doctor:\n%s", code, stdout.String())
+		}
+	})
+}
+
+// TestDoctorCheckVersions_LocalBuild: on a local build the "versions" row says
+// so, compares floors as the stamped release, and never advises `a2a update`
+// (D-040, T3 and T5). A release build's row is untouched.
+func TestDoctorCheckVersions_LocalBuild(t *testing.T) {
+	t.Parallel()
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+
+	seeded := func(t *testing.T) string {
+		t.Helper()
+		cachePath := filepath.Join(t.TempDir(), "update-check.json")
+		if err := release.WriteCheck(cachePath, release.CheckState{CheckedAt: time.Now(), Latest: "0.28.0", Source: "github"}); err != nil {
+			t.Fatalf("release.WriteCheck: %v", err)
+		}
+		return cachePath
+	}
+
+	t.Run("local build row names the build and gives no update advice", func(t *testing.T) {
+		t.Parallel()
+		cachePath := seeded(t)
+		cmd := newTestDoctorCommand().WithBuild(version.NewBuild("0.27.0", sha, "local"))
+		cmd.binaryVersion = "0.27.0"
+		cmd.cachePath = func() (string, error) { return cachePath, nil }
+		ok, detail := cmd.doctorCheckVersions(space.ProjectConfig{}, space.MachineConfig{})
+		if !ok {
+			t.Fatalf("a local build must pass on advisories alone: %s", detail)
+		}
+		want := " · local build of 0.27.0 (" + sha[:12] + "); floors compared as 0.27.0"
+		if !strings.Contains(detail, want) {
+			t.Fatalf("detail = %q, want it to contain %q", detail, want)
+		}
+		if strings.Contains(detail, "update available") || strings.Contains(detail, "a2a update") {
+			t.Fatalf("a local build was advised to update: %q", detail)
+		}
+	})
+
+	t.Run("a local build below a floor is told to deliver, not to update", func(t *testing.T) {
+		t.Parallel()
+		cachePath := seeded(t)
+		cmd := newTestDoctorCommand().WithBuild(version.NewBuild("0.27.0", sha, "local"))
+		cmd.binaryVersion = "0.27.0"
+		cmd.cachePath = func() (string, error) { return cachePath, nil }
+		cmd.readFile = func(string) ([]byte, error) {
+			return []byte("schema: space/v1\nspace: getvisa\nmin_binary_version: 9.9.9\nparticipants: []\n"), nil
+		}
+		ok, detail := cmd.doctorCheckVersions(space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa"}}}, space.MachineConfig{})
+		if ok || !strings.Contains(detail, "9.9.9") || !strings.Contains(detail, "run make deliver") {
+			t.Fatalf("ok=%v detail=%q, want a failure naming the floor and make deliver", ok, detail)
+		}
+	})
+
+	t.Run("a release build keeps its row", func(t *testing.T) {
+		t.Parallel()
+		cachePath := seeded(t)
+		cmd := newTestDoctorCommand().WithBuild(version.NewBuild("0.27.0", sha, ""))
+		cmd.binaryVersion = "0.27.0"
+		cmd.cachePath = func() (string, error) { return cachePath, nil }
+		_, detail := cmd.doctorCheckVersions(space.ProjectConfig{}, space.MachineConfig{})
+		if strings.Contains(detail, "local build") || !strings.Contains(detail, "update available") {
+			t.Fatalf("detail = %q, want the release advisory and no local-build text", detail)
 		}
 	})
 }

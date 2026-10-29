@@ -34,7 +34,7 @@ func TestContractNewPublishDeprecateDirectConstruction(t *testing.T) {
 	stagingDir := t.TempDir()
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	hostCfg := e2eHostConfig("axon", fx.RemoteURL())
 
 	newCmd := cli.NewNewCommand(stagingDir, "axon", e2eActorResolver("agent", "bot"), nil)
@@ -99,7 +99,7 @@ func TestContractRetireCleanUngatedDirectConstruction(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "axon", 1, "XC-axon-clean", "deprecate", "axon")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 
 	io, out, errOut := newIO()
@@ -132,7 +132,7 @@ func TestContractDiffDirectConstruction(t *testing.T) {
 	gitRun(t, mirrorDir, "commit", "-m", "publish 1.1.0")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	configureE2EContractP6(cmd, newE2EContractDiffService())
 
@@ -168,7 +168,7 @@ func TestContractVerifyExportLocalDirectConstruction(t *testing.T) {
 	appendGeneratedFromDigest(t, mirrorDir, "exportable", digest)
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 	configureE2EContractP6(cmd, newE2EContractVerifyService(t, digest))
 
@@ -253,7 +253,7 @@ func TestContractAdoptDirectConstruction(t *testing.T) {
 	submitValidator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, submitValidator, testBuild("0.1.0"))
 	cmd := cli.NewContractCommand(nil, funnel, mirrorDir, "fixture-space", "axon", e2eManifest(), e2eHostConfig("axon", fx.RemoteURL()), e2eActorResolver("agent", "bot"))
 
 	io, out, errOut := newIO()

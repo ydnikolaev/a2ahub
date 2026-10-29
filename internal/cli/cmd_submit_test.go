@@ -616,7 +616,7 @@ func newRealFunnelDeps(t *testing.T) (*space.WriteFunnel, *cli.LegalityAdapter, 
 	validator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
 
 	fake := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fake, validator, "0.1.0")
+	funnel := space.NewWriteFunnel(fake, validator, testBuild("0.1.0"))
 	return funnel, legality, mirrorDir, fx
 }
 

@@ -1,0 +1,38 @@
+# D-040 / fast-loop-2026-10 P1 AC-9: a write made by a local delivery build
+# (`make deliver`: -X main.channel=local) names its build in the commit
+# message, and the event it wrote still says the plain release version.
+#
+# main_test.go builds a2a-local beside a2a from the same source, stamped as a
+# local build. The write below is the first a local space accepts without any
+# peer: `space join` is a manifest change that goes through the same write
+# funnel as every other write (G4, hence --approve). The setup points
+# A2A_GITHUB_API at a closed port and empties the token variables, as
+# space_init.txtar's local round trip does, so a write that wrongly reached
+# for GitHub would fail loudly.
+env A2A_GITHUB_API=http://127.0.0.1:1
+env FIXTURE_TOKEN=
+exec a2a space init note --local --dir spaces/note.git
+stdout 'created local space note at '
+
+# The binary says what it is.
+exec a2a-local version
+stdout '^a2a '$A2A_STAMPED_VERSION_RE' \(local, 0123456789abcdef0123456789abcdef01234567\)$'
+exec a2a-local version --json
+stdout '"channel": "local"'
+stdout '"commit": "0123456789abcdef0123456789abcdef01234567"'
+stdout '"binary": "'$A2A_STAMPED_VERSION_RE'"'
+
+mkdir note-a
+cd note-a
+exec a2a-local init --system axon --space $WORK/spaces/note.git --no-skill --no-skill-link --no-agents-pointer
+exec a2a-local connect $WORK/spaces/note.git
+exec a2a-local space join --approve
+stdout 'axon joined note'
+
+# The funnel's commit, the second parent of the land merge, names the build in
+# its own paragraph; the approval trailer still sits last.
+exec git --git-dir=$WORK/spaces/note.git log -1 --format=%B main^2
+stdout 'A2A-Built-By: a2a '$A2A_STAMPED_VERSION_RE' \(local, 0123456789abcdef0123456789abcdef01234567\)'
+# The land merge still carries the approval the way every parser reads it.
+exec git --git-dir=$WORK/spaces/note.git log -1 --first-parent --format=%B main
+stdout 'A2A-Approved-Gates: G4'

@@ -67,7 +67,7 @@ func TestSubmitDirectConstruction(t *testing.T) {
 	submitValidator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, submitValidator, testBuild("0.1.0"))
 	hostCfg := e2eHostConfig("axon", fx.RemoteURL())
 
 	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, hostCfg)
@@ -134,7 +134,7 @@ func newSubmitRig(t *testing.T) (*cli.SubmitCommand, *host.FakeHost, string, str
 	submitValidator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, submitValidator, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, submitValidator, testBuild("0.1.0"))
 	cmd := cli.NewSubmitCommand(funnel, legality, cli.NewNoopPendingMarker(), mirrorDir, "fixture-space", "axon", stagingDir, e2eHostConfig("axon", fx.RemoteURL()))
 	return cmd, fakeHost, mirrorDir, stagingDir
 }

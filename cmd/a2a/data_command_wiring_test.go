@@ -170,7 +170,7 @@ func TestDataCoreDeliverTargetsSpaceDefaultBranchNotMain(t *testing.T) {
 			return schemas, "XC-axon-widget@1.0.0#sha256:" + strings.Repeat("a", 64), nil
 		},
 	}
-	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, "0.1.0")
+	core.funnel = space.NewWriteFunnel(fake, dataNoopSubmitValidator{}, testBuild("0.1.0"))
 
 	from := t.TempDir()
 	if err := os.WriteFile(filepath.Join(from, "orders.json"), []byte(`{"ok":true}`), 0o644); err != nil {

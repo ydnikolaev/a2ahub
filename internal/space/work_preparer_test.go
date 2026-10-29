@@ -33,7 +33,7 @@ func TestWorkPreparerRendersEvaluatesValidatesAndFreezesInOrder(t *testing.T) {
 	fakeHost := host.NewFakeHost()
 	funnel := &recordingWorkSubmissionPreparer{
 		calls: &calls,
-		inner: NewWriteFunnel(fakeHost, validator, version.OperationalConfidenceFloor),
+		inner: NewWriteFunnel(fakeHost, validator, testBuild(version.OperationalConfidenceFloor)),
 	}
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x12}, 14), validator, funnel, nil)
 	request := validWorkPreparationRequest(t, workreport.ModeImplementing)
@@ -104,7 +104,7 @@ func TestWorkPreparerEveryModeWaitAndFinishedShape(t *testing.T) {
 			t.Parallel()
 			validator := newWorkPreparationValidator(t, nil)
 			preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{byte(len(mode) + 1)}, 14), validator,
-				NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor), nil)
+				NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)), nil)
 			request := validWorkPreparationRequest(t, mode)
 			switch mode {
 			case workreport.ModeWaiting:
@@ -150,7 +150,7 @@ func TestWorkPreparerThreadSubjectOmitsArtifactRefs(t *testing.T) {
 
 	validator := newWorkPreparationValidator(t, nil)
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x31}, 14), validator,
-		NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor), nil)
+		NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)), nil)
 	request := validWorkPreparationRequest(t, workreport.ModePlanning)
 	request.SubjectRef = request.Identity.Thread
 	prepared, err := preparer.Prepare(context.Background(), request)
@@ -172,7 +172,7 @@ func TestWorkPreparerHostileTextRemainsData(t *testing.T) {
 
 	validator := newWorkPreparationValidator(t, nil)
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x41}, 14), validator,
-		NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor), nil)
+		NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)), nil)
 	request := validWorkPreparationRequest(t, workreport.ModeWaiting)
 	request.Action = workreport.ActionWait
 	request.OperationKey = workOperationKey(t, request.Identity.WorkID, request.SemanticSequence, request.Action)
@@ -229,7 +229,7 @@ func TestWorkPreparerContextAndEvaluatorRefusalsStopBeforeFunnel(t *testing.T) {
 			t.Parallel()
 			validator := newWorkPreparationValidator(t, nil)
 			validator.err = test.validator
-			funnel := &recordingWorkSubmissionPreparer{inner: NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor)}
+			funnel := &recordingWorkSubmissionPreparer{inner: NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor))}
 			runtime := validWorkPreparationRuntime()
 			runtime.ReporterMembership = test.membership
 			preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x51}, 14), validator, funnel, &runtime)
@@ -250,7 +250,7 @@ func TestWorkPreparerBindsRuntimeAndRejectsMismatchedContextBeforeFunnel(t *test
 	validator := newWorkPreparationValidator(t, nil)
 	runtime := validWorkPreparationRuntime()
 	runtime.Space = "other-space"
-	funnel := &recordingWorkSubmissionPreparer{inner: NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor)}
+	funnel := &recordingWorkSubmissionPreparer{inner: NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor))}
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x61}, 14), validator, funnel, &runtime)
 	if _, err := preparer.Prepare(context.Background(), validWorkPreparationRequest(t, workreport.ModeImplementing)); !errors.Is(err, ErrWorkPreparationScopeMismatch) {
 		t.Fatalf("Prepare error = %v, want scope mismatch", err)
@@ -296,7 +296,7 @@ func TestWorkPreparerRejectsUnboundBaseAndRemoteBeforeIDsOrBoundaries(t *testing
 			validator := newWorkPreparationValidator(t, &calls)
 			funnel := &recordingWorkSubmissionPreparer{
 				calls: &calls,
-				inner: NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor),
+				inner: NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)),
 			}
 			runtime := validWorkPreparationRuntime()
 			test.change(&runtime)
@@ -325,7 +325,7 @@ func TestWorkPreparerAcceptsAndNormalizesSHA256Base(t *testing.T) {
 	runtime.BaseCommitSHA = strings.Repeat("AB", 32)
 	validator := newWorkPreparationValidator(t, nil)
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x64}, 14), validator,
-		NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor), &runtime)
+		NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)), &runtime)
 
 	operation, err := preparer.Prepare(context.Background(), validWorkPreparationRequest(t, workreport.ModeImplementing))
 	if err != nil {
@@ -351,7 +351,7 @@ func TestWorkPreparerNormalizesAndFreezesBaseForReplayAfterBaseAdvances(t *testi
 	runtime.BaseCommitSHA = strings.ToUpper(frozenBase)
 	validator := newWorkPreparationValidator(t, nil)
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x63}, 14), validator,
-		NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor), &runtime)
+		NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)), &runtime)
 
 	operation, err := preparer.Prepare(context.Background(), validWorkPreparationRequest(t, workreport.ModeImplementing))
 	if err != nil {
@@ -387,7 +387,7 @@ func TestWorkPreparerNormalizesAndFreezesBaseForReplayAfterBaseAdvances(t *testi
 		t.Fatal("fixture base did not advance")
 	}
 
-	result, err := NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor).SubmitPrepared(
+	result, err := NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)).SubmitPrepared(
 		context.Background(), prepared, SubmissionRuntime{
 			RepoDir: repo, RemoteURL: fx.RemoteURL(), TargetIdentity: repositoryIdentity(runtime.Repository),
 			CurrentSpaceFloor: runtime.MinimumBinaryVersion,
@@ -415,7 +415,7 @@ func TestWorkPreparerProducesStableFinalBytesFromFixedInputs(t *testing.T) {
 	prepare := func() workreport.PreparedOperation {
 		validator := newWorkPreparationValidator(t, nil)
 		preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x71}, 14), validator,
-			NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor), nil)
+			NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor)), nil)
 		prepared, err := preparer.Prepare(context.Background(), request)
 		if err != nil {
 			t.Fatal(err)
@@ -433,7 +433,7 @@ func TestWorkPreparerRefusesOperationKeyInDurableText(t *testing.T) {
 	t.Parallel()
 
 	validator := newWorkPreparationValidator(t, nil)
-	funnel := &recordingWorkSubmissionPreparer{inner: NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor)}
+	funnel := &recordingWorkSubmissionPreparer{inner: NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor))}
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x72}, 14), validator, funnel, nil)
 	request := validWorkPreparationRequest(t, workreport.ModeTesting)
 	request.Summary = request.OperationKey
@@ -451,7 +451,7 @@ func TestWorkPreparerEnforcesPreparedJournalBound(t *testing.T) {
 	validator := newWorkPreparationValidator(t, nil)
 	runtime := validWorkPreparationRuntime()
 	runtime.CommitAuthorName = strings.Repeat("x", 25*1024)
-	funnel := NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor)
+	funnel := NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor))
 	preparer := newTestWorkPreparer(t, bytes.Repeat([]byte{0x73}, 14), validator, funnel, &runtime)
 	if _, err := preparer.Prepare(context.Background(), validWorkPreparationRequest(t, workreport.ModePlanning)); !errors.Is(err, ErrPreparedJournalTooLarge) {
 		t.Fatalf("Prepare error = %v, want prepared journal bound", err)
@@ -464,7 +464,7 @@ func TestWorkPreparerRequiresDependencies(t *testing.T) {
 	validator := newWorkPreparationValidator(t, nil)
 	runtime := &staticWorkPreparationRuntime{runtime: validWorkPreparationRuntime()}
 	renderer := &shippedWorkAnnouncementRenderer{t: t}
-	funnel := NewWriteFunnel(host.NewFakeHost(), validator, version.OperationalConfidenceFloor)
+	funnel := NewWriteFunnel(host.NewFakeHost(), validator, testBuild(version.OperationalConfidenceFloor))
 	for _, test := range []struct {
 		name      string
 		entropy   io.Reader

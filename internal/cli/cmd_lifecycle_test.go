@@ -875,7 +875,7 @@ func TestAckEndToEndWithRealFunnelAndFakeHost(t *testing.T) {
 	writeLifecycleEvent(t, mirrorDir, "axon", 0, id, "submit", "axon")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	hostCfg := lifecycleHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 
@@ -1611,7 +1611,7 @@ func TestRespondIdempotentRetryReturnsAlreadyOpen(t *testing.T) {
 	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	hostCfg := lifecycleHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 	fixedNow := func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
@@ -1696,7 +1696,7 @@ func TestRespondSetsToAsParentAuthorAndPassesSubmitValidation(t *testing.T) {
 	validator := cli.NewSubmitValidatorAdapter(engine, "beta", resolver, legality)
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, validator, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, validator, testBuild("0.1.0"))
 	hostCfg := lifecycleHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 
@@ -2087,7 +2087,7 @@ func respondWithRealValidation(t *testing.T, parentID string, args []string) (co
 	validator := cli.NewSubmitValidatorAdapter(engine, "beta", resolver, legality)
 
 	fakeHost = host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, validator, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, validator, testBuild("0.1.0"))
 	hostCfg := lifecycleHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 
@@ -2680,7 +2680,7 @@ func TestVerifyEndToEndAuthorsEventV2ThatPassesSubmitValidation(t *testing.T) {
 	// any write, so this must be at/above "0.19.0" too, not the "0.1.0"
 	// every OTHER end-to-end test in this file uses (they stay below the
 	// floor on purpose).
-	funnel := space.NewWriteFunnel(fakeHost, validator, "0.19.0")
+	funnel := space.NewWriteFunnel(fakeHost, validator, testBuild("0.19.0"))
 	hostCfg := lifecycleHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 
@@ -3117,7 +3117,7 @@ func TestCloseEndToEndAuthorsEventV2ThatPassesSubmitValidation(t *testing.T) {
 	validator := cli.NewSubmitValidatorAdapter(engine, "axon", resolver, legality)
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, validator, "0.19.0")
+	funnel := space.NewWriteFunnel(fakeHost, validator, testBuild("0.19.0"))
 	hostCfg := lifecycleHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 
@@ -4185,7 +4185,7 @@ func TestRespondRefusesUnlandedDeliversThroughTheRealFunnel(t *testing.T) {
 	seedAcceptedQuestion(t, mirrorDir, parentID, "beta")
 
 	fakeHost := host.NewFakeHost()
-	funnel := space.NewWriteFunnel(fakeHost, nil, "0.1.0")
+	funnel := space.NewWriteFunnel(fakeHost, nil, testBuild("0.1.0"))
 	hostCfg := lifecycleHostConfig()
 	hostCfg.RemoteURL = fx.RemoteURL()
 
