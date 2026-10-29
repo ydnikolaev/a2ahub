@@ -1565,7 +1565,7 @@ if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
     derived=$((derived + 1))
     if [ -n "$ship_phases" ] && printf '%s\n' "$ship_phases" | grep -qxF "$phase"; then
       deferred=$((deferred + 1))
-      echo "lane: $phase — DERIVED and DEFERRED to the ship lane (\`lane-tier: ship\`). Not run here; \`make release-check\` runs it, and \`make $phase\` pays it now."
+      echo "lane: $phase — DERIVED and DEFERRED to the ship lane (\`lane-tier: ship\`). Not run here; the public candidate's CI runs its commands before promotion (release runbook steps 11-13), and \`make $phase\` pays it now."
       continue
     fi
     case "$phase" in

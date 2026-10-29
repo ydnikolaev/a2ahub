@@ -805,7 +805,7 @@ harness-check: ## Run the gates' --teeth self-tests (harness gates are private/p
 # check-dashboard-props.sh and check-card-content.sh are both on the
 # publisher's STRIP list and never got one: v0.24.0's THIRD candidate died in
 # CI with `Error 127` on the first of them, on a tree whose own `make check`
-# was green — because `candidate.sh --check-only` runs `make check` and CI runs
+# was green — because the retired `candidate.sh --check-only` ran only `make check` and CI runs
 # `make check` AND this target.
 #
 # An ABSENT tooth is announced and skipped. A PRESENT tooth that fails still
