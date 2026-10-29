@@ -196,13 +196,7 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// `make deliver`, and the released binary is one install.sh away (T5).
 	if c.build.IsLocal() {
 		if *jsonFlag {
-			enc := json.NewEncoder(stdio.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(updateJSON{Current: c.build.Version, LocalBuild: true}); err != nil {
-				_, _ = fmt.Fprintf(stdio.Stderr, "update: cannot encode JSON output: %v\n", err)
-				return 1
-			}
-			return 0
+			return encodeUpdateJSON(stdio, updateJSON{Current: c.build.Version, LocalBuild: true})
 		}
 		stamp := c.build
 		stamp.Commit = shortSHA(stamp.Commit)
@@ -262,15 +256,7 @@ func (c *UpdateCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		FloorSpace:      info.FloorSpace,
 		Required:        info.Required,
 	}
-	encodeJSON := func() int {
-		enc := json.NewEncoder(stdio.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(jsonResult); err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "update: cannot encode JSON output: %v\n", err)
-			return 1
-		}
-		return 0
-	}
+	encodeJSON := func() int { return encodeUpdateJSON(stdio, jsonResult) }
 
 	if *checkFlag {
 		if *jsonFlag {
@@ -579,6 +565,18 @@ func defaultUpdateIsTTY() bool {
 // stdio.Stdin, returning true for "y"/"yes" (case-insensitive), false for
 // anything else (including read errors/EOF — a safe default, D-021: no
 // confirmation read as no consent).
+// encodeUpdateJSON writes one update result as indented JSON to stdout,
+// for both the local-build answer and the release-check answer.
+func encodeUpdateJSON(stdio IO, v updateJSON) int {
+	enc := json.NewEncoder(stdio.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "update: cannot encode JSON output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func defaultUpdateConfirm(prompt string, stdio IO) bool {
 	_, _ = fmt.Fprint(stdio.Stderr, prompt)
 	line, _ := bufio.NewReader(stdio.Stdin).ReadString('\n')
