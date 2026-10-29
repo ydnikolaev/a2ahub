@@ -92,8 +92,12 @@ func TestCheckConformanceRejectsUnsupportedReferencesBeforeChecker(t *testing.T)
 		{name: "file ref", schema: `{"$ref":"file:///etc/passwd"}`, want: ConformanceUnsupportedReference},
 		{name: "network ref", schema: `{"$ref":"https://example.invalid/schema.json"}`, want: ConformanceUnsupportedReference},
 		{name: "dynamic network ref", schema: `{"$dynamicRef":"https://example.invalid/schema.json#node"}`, want: ConformanceUnsupportedReference},
-		{name: "cross document id", schema: `{"$id":"https://example.invalid/schema.json","type":"object"}`, want: ConformanceUnsupportedReference},
+		{name: "root absolute id", schema: `{"$id":"https://example.invalid/schema.json","type":"object"}`, want: ConformanceConformant, calls: 1},
+		{name: "root urn id with local defs", schema: `{"$id":"urn:example:schema:thing:v1","$defs":{"id":{"type":"string"}},"$ref":"#/$defs/id"}`, want: ConformanceConformant, calls: 1},
+		{name: "root id with fragment", schema: `{"$id":"urn:example:schema#part","type":"object"}`, want: ConformanceUnsupportedReference},
 		{name: "relative id", schema: `{"$id":"schema.json","type":"object"}`, want: ConformanceUnsupportedReference},
+		{name: "embedded absolute id", schema: `{"$defs":{"x":{"$id":"https://example.invalid/x.json","type":"string"}},"type":"object"}`, want: ConformanceUnsupportedReference},
+		{name: "root urn id with remote ref", schema: `{"$id":"urn:example:schema:thing:v1","$ref":"other.json"}`, want: ConformanceUnsupportedReference},
 		{name: "local anchor", schema: `{"$defs":{"node":{"$anchor":"node","type":"object"}},"$ref":"#node"}`, want: ConformanceConformant, calls: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -371,5 +375,30 @@ func TestCheckConformanceIsDeterministicUnderDetachedResultMutation(t *testing.T
 	again := CheckConformance(input, checker())
 	if again.Results[0].Violations[0].Message == "mutated" {
 		t.Fatal("caller result mutation affected a later evaluation")
+	}
+}
+
+func TestCheckConformanceUnsupportedReferenceNamesKeyAndPointer(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name, schema, want string
+	}{
+		{name: "nested ref", schema: `{"properties":{"a/b":{"items":[{"$ref":"other.json"}]}}}`, want: "$ref at /properties/a~1b/items/0"},
+		{name: "embedded id", schema: `{"$defs":{"x":{"$id":"urn:x"}}}`, want: "$id at /$defs/x"},
+		{name: "relative root id", schema: `{"$id":"schema.json"}`, want: "$id at the document root"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			set := conformanceV2Set(t, Descriptor{
+				SchemaFormat: "json-schema-2020-12",
+				Artifacts:    []Entry{{Path: "schema/main.json", Role: RoleSchema, Normative: true, MediaType: "application/schema+json"}},
+			}, map[string]string{"schema/main.json": test.schema})
+			checker := &recordingInstanceChecker{result: func(InstanceCheckInput) InstanceCheckResult { return InstanceCheckResult{Passed: true} }}
+			result := CheckConformance(validConformanceInput(set, ConformanceModeSuite), checker)
+			if result.Outcome != ConformanceUnsupportedReference || !strings.HasSuffix(result.Message, test.want) {
+				t.Fatalf("result = %s %q, want unsupported-reference ending in %q", result.Outcome, result.Message, test.want)
+			}
+		})
 	}
 }

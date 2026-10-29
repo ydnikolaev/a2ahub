@@ -2,8 +2,10 @@ package contract
 
 import (
 	"encoding/json"
+	"net/url"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -264,14 +266,20 @@ func conformanceSchemas(set CarriedSet) []string {
 	return paths
 }
 
-func inspectSelfContainedSchema(raw []byte) (malformed bool, unsupported bool) {
+// inspectSelfContainedSchema reports whether raw is malformed JSON, or names
+// the first keyword that would make the schema reach outside its own bytes
+// ("" when none does). A fragment reference stays inside the document. A
+// root $id that is an absolute URI without a fragment only names the
+// document, so fragment references still resolve inside it; an $id on an
+// embedded subschema starts a second resource and stays unsupported.
+func inspectSelfContainedSchema(raw []byte) (malformed bool, offense string) {
 	var document any
 	if err := json.Unmarshal(raw, &document); err != nil {
-		return true, false
+		return true, ""
 	}
-	var walk func(any)
-	walk = func(value any) {
-		if unsupported {
+	var walk func(value any, pointer string)
+	walk = func(value any, pointer string) {
+		if offense != "" {
 			return
 		}
 		switch typed := value.(type) {
@@ -285,21 +293,38 @@ func inspectSelfContainedSchema(raw []byte) (malformed bool, unsupported bool) {
 				child := typed[key]
 				switch key {
 				case "$ref", "$dynamicRef", "$recursiveRef", "$id":
-					if reference, ok := child.(string); ok && reference != "" && !strings.HasPrefix(reference, "#") {
-						unsupported = true
+					if reference, ok := child.(string); ok && reference != "" && !strings.HasPrefix(reference, "#") &&
+						!(key == "$id" && pointer == "" && isDocumentIdentifier(reference)) {
+						offense = key + " at " + describePointer(pointer)
 						return
 					}
 				}
-				walk(child)
+				walk(child, pointer+"/"+escapePointerToken(key))
 			}
 		case []any:
-			for _, child := range typed {
-				walk(child)
+			for index, child := range typed {
+				walk(child, pointer+"/"+strconv.Itoa(index))
 			}
 		}
 	}
-	walk(document)
-	return false, unsupported
+	walk(document, "")
+	return false, offense
+}
+
+func isDocumentIdentifier(id string) bool {
+	parsed, err := url.Parse(id)
+	return err == nil && parsed.Scheme != "" && !strings.Contains(id, "#")
+}
+
+func escapePointerToken(token string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(token, "~", "~0"), "/", "~1")
+}
+
+func describePointer(pointer string) string {
+	if pointer == "" {
+		return "the document root"
+	}
+	return pointer
 }
 
 func checkConformancePayload(
@@ -324,10 +349,10 @@ func checkConformancePayload(
 		result.Outcome, result.Message = ConformanceInvalidInput, "payload schema is not declared"
 		return result
 	}
-	malformed, unsupported := inspectSelfContainedSchema(set.Bytes[schemaPath])
-	if unsupported {
+	malformed, offense := inspectSelfContainedSchema(set.Bytes[schemaPath])
+	if offense != "" {
 		result.Outcome = ConformanceUnsupportedReference
-		result.Message = "schema contains a non-fragment reference or document identifier"
+		result.Message = "schema contains a non-fragment reference or document identifier: " + offense
 		result.Results = []ConformanceCaseResult{{
 			Path: schemaPath, Schema: schemaPath, Actual: ConformanceActualUnevaluated,
 			Violations: []InstanceViolation{},
@@ -374,10 +399,10 @@ func checkConformanceSuite(
 ) ConformanceResult {
 	malformedSchemas := make(map[string]struct{})
 	for _, schemaPath := range schemas {
-		malformed, unsupported := inspectSelfContainedSchema(set.Bytes[schemaPath])
-		if unsupported {
+		malformed, offense := inspectSelfContainedSchema(set.Bytes[schemaPath])
+		if offense != "" {
 			result.Outcome = ConformanceUnsupportedReference
-			result.Message = "schema contains a non-fragment reference or document identifier"
+			result.Message = "schema contains a non-fragment reference or document identifier: " + offense
 			result.Results = []ConformanceCaseResult{{
 				Path: schemaPath, Schema: schemaPath, Actual: ConformanceActualUnevaluated,
 				Violations: []InstanceViolation{},

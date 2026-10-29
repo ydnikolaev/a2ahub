@@ -114,3 +114,27 @@ func TestCompileExternal_UnresolvableRelativeRefNeverReadsLocalDisk(t *testing.T
 		t.Errorf("expected errors.Is(err, ErrExternalSchemaCompile), got %v", err)
 	}
 }
+
+func TestCompileExternal_RootURNIdResolvesFragmentRefsOffline(t *testing.T) {
+	t.Parallel()
+
+	const withRootURN = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:schema:thing:v1",
+  "type": "object",
+  "properties": { "name": { "$ref": "#/$defs/name" } },
+  "required": ["name"],
+  "$defs": { "name": { "type": "string", "minLength": 1 } }
+}`
+
+	sch, err := CompileExternal("root-urn", []byte(withRootURN))
+	if err != nil {
+		t.Fatalf("CompileExternal: %v", err)
+	}
+	if err := sch.ValidateInstance([]byte(`{"name":"Widget"}`)); err != nil {
+		t.Errorf("expected a matching instance to validate, got %v", err)
+	}
+	if err := sch.ValidateInstance([]byte(`{"name":""}`)); !errors.Is(err, ErrExternalSchemaViolation) {
+		t.Errorf("expected the $defs constraint to reject an empty name, got %v", err)
+	}
+}
