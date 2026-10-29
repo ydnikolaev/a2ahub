@@ -210,10 +210,40 @@ changes:
   - a2a binary
   - a2a-validate-reusable.yml
   action:
-    scope: space
-    why: No action for an existing space pinned to an earlier release; a space
-      adopts the new toolchain when its workflow pin moves to this release.
+    scope: none
+    why: No action. A space adopts the new toolchain when its workflow pin moves
+      to this release.
   roadmap:
     visibility: omit
     why: >
       A dependency security fix; the roadmap names capabilities, not repairs.
+- id: RN-02700-6
+  kind: policy
+  impact: low
+  subject: this release was proved without the GitHub live matrix
+  detail: >
+    This release changes the shared write funnel and the host adapter, so by the
+    release runbook's own table it needs the full GitHub live matrix. It was cut
+    on the provider-deferred tier instead, by the operator's written
+    authorization: the logic tier, the full container suite, the release
+    preflight and the candidate's own check were run; the live provider was not.
+
+    Not proven for this release: branch protection blocking until green,
+    `enforce_admins` binding a participant while skipping an admin, a
+    cross-section authorization decision surviving a privileged re-trigger,
+    GitHub serving a check computed against a stale ref, a direct push to
+    `main` being refused, the shipped Actions workflow running
+    `a2a validate --ci`, compound check-run name resolution, and a space's own
+    CI having no unexplained failures. The last live run against GitHub is
+    dated 2026-08-02 (v0.18.2). A space on your own disk does not depend on
+    any of these rows; a GitHub space does.
+  affects:
+  - a2a binary
+  action:
+    scope: none
+    why: >
+      Nothing to do. Recorded so the omission is readable rather than assumed.
+  roadmap:
+    visibility: omit
+    why: >
+      A statement about how this release was proved, not a capability.
