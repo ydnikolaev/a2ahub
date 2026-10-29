@@ -80,7 +80,7 @@ check_manifest() { # $1 = source root, $2 = manifest
   fi
   while IFS= read -r pair; do
     [ -z "$pair" ] && continue
-    if ! printf '%s\n' "$EXPECTED_CARD_PAIRS" | grep -Fqx "$pair"; then
+    if ! grep -Fqx "$pair" <<< "$EXPECTED_CARD_PAIRS"; then
       gate_fail "dashboard-cards: unexpected or mismatched manifest row '$pair' — restore the canonical kind/component mapping"
       continue
     fi
@@ -91,7 +91,7 @@ check_manifest() { # $1 = source root, $2 = manifest
   done <<< "$pairs"
   while IFS= read -r pair; do
     [ -z "$pair" ] && continue
-    if ! printf '%s\n' "$pairs" | grep -Fqx "$pair"; then
+    if ! grep -Fqx "$pair" <<< "$pairs"; then
       gate_fail "dashboard-cards: cards.manifest.json is missing canonical row '$pair'"
     fi
   done <<< "$EXPECTED_CARD_PAIRS"
@@ -140,7 +140,7 @@ check_modal_owner() { # $1 = source root
     file="${line%%:*}"
     [ "$file" = "$owner" ] && continue
     content="${line#*:}"; lineno="${content%%:*}"; content="${content#*:}"
-    if printf '%s\n' "$content" | grep -Eq "role[[:space:]]*=[[:space:]]*[\"']dialog[\"']|aria-modal[[:space:]]*=[[:space:]]*[\"']true[\"']|<dialog([[:space:]>])|data-card-modal|\\.showModal[[:space:]]*\\(|trap(Card|Modal)Tab|((lock|unlock)(Body|Scroll))[[:space:]]*\\(|body\\.style\\.overflow[[:space:]]*=[[:space:]]*[\"']hidden[\"']"; then
+    if grep -Eq "role[[:space:]]*=[[:space:]]*[\"']dialog[\"']|aria-modal[[:space:]]*=[[:space:]]*[\"']true[\"']|<dialog([[:space:]>])|data-card-modal|\\.showModal[[:space:]]*\\(|trap(Card|Modal)Tab|((lock|unlock)(Body|Scroll))[[:space:]]*\\(|body\\.style\\.overflow[[:space:]]*=[[:space:]]*[\"']hidden[\"']" <<< "$content"; then
       gate_fail "dashboard-cards: $(basename "$file"):$lineno contains dialog markup/mechanics outside Modal.dc.html — keep one modal engine and import the registered card component there"
     fi
   done <<< "$(grep -rnE --include='*.dc.html' 'role[[:space:]]*=|aria-modal|<dialog|data-card-modal|\.showModal[[:space:]]*\(|trap(Card|Modal)Tab|((lock|unlock)(Body|Scroll))[[:space:]]*\(|body\.style\.overflow' "$source_root" 2>/dev/null || true)"
@@ -229,7 +229,7 @@ teeth_expect() { # $1 = label, $2 = red|green, $3 = needle, $4 = source root
   rc=$?
   set -e
   if [ "$verdict" = "red" ]; then
-    if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq "$needle"; then
+    if [ "$rc" -eq 0 ] || ! grep -Fq "$needle" <<< "$out"; then
       echo "check-dashboard-cards --teeth: FALSE GREEN — $label did not red with '$needle':" >&2
       echo "$out" >&2
       return 1
