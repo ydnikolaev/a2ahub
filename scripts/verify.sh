@@ -34,6 +34,8 @@ TELEMETRY_LIMIT=2000
 # effects are zeroing three counters and choosing colours.
 # shellcheck source=lib/gate-lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
+# shellcheck source=lib/tree-identity.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/tree-identity.sh"
 
 MODE="${1:-full}"
 SCOPED_PACKAGES=()
@@ -247,29 +249,29 @@ working_tree_delta() {
 # REFUSE TO DISPATCH, never report a verdict it did not measure. A wrong
 # answer here costs one `VERIFY_AGAIN=1`.
 run_tree_identity() {
-  # `hashes` initialised: `set -u` is on, and an EMPTY delta — a clean tree,
-  # which is exactly what a ship gate judges — otherwise leaves it unset and
-  # the identity cannot be computed for the one tree that matters most.
-  local head paths hashes=""
+  # `paths` initialised by the assignment below, and the pipeline fed to
+  # tree_identity is empty for a clean tree — which is exactly what a ship gate
+  # judges, so the identity must be computable for the one tree that matters
+  # most. The formula itself lives in scripts/lib/tree-identity.sh, shared with
+  # scripts/deliver.sh, so the two cannot drift (fast-loop-2026-10 P1).
+  local head paths
   head="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || return 1
   paths="$(working_tree_delta | LC_ALL=C sort -u)" || return 1
-  if [ -n "$paths" ]; then
-    # One `git hash-object` for the whole set, not one per file. A path that is
-    # not a readable regular file (a deletion, a directory) hashes to nothing
-    # and is reported by its status line alone — deterministic either way,
-    # which is all an identity needs.
-    hashes="$(printf '%s\n' "$paths" |
-      while IFS= read -r p; do
-        if [ -f "$ROOT/$p" ]; then
-          printf '%s %s\n' "$(git -C "$ROOT" hash-object -- "$p" 2>/dev/null || echo unreadable)" "$p"
-        else
-          printf 'absent %s\n' "$p"
-        fi
-      done)"
-  fi
-  printf 'head=%s\nmode=%s\nlane_files=%s\n%s\n' \
-    "$head" "$MODE" "${LANE_FILES:-}" "$hashes" |
-    git -C "$ROOT" hash-object --stdin 2>/dev/null
+  # One line per changed path. A path that is not a readable regular file (a
+  # deletion, a directory) is reported by its `absent` line alone —
+  # deterministic either way, which is all an identity needs.
+  {
+    if [ -n "$paths" ]; then
+      printf '%s\n' "$paths" |
+        while IFS= read -r p; do
+          if [ -f "$ROOT/$p" ]; then
+            printf '%s %s\n' "$(git -C "$ROOT" hash-object -- "$p" 2>/dev/null || echo unreadable)" "$p"
+          else
+            printf 'absent %s\n' "$p"
+          fi
+        done
+    fi
+  } | tree_identity "$head" "$MODE" "${LANE_FILES:-}"
 }
 
 run_phase() {

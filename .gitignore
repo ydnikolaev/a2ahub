@@ -42,6 +42,7 @@ CLAUDE.md
 scripts/*
 !scripts/install.sh
 !scripts/dev-install.sh
+!scripts/deliver.sh
 !scripts/e2e-authoring-smoke.sh
 !scripts/classify-guard.sh
 !scripts/site-check.sh
@@ -143,6 +144,7 @@ scripts/lib/*
 !scripts/lib/job-timeouts.tsv
 !scripts/lib/ci-usage-window.json
 !scripts/lib/gate-lib.sh
+!scripts/lib/tree-identity.sh
 !scripts/lib/strip-set.txt
 !scripts/lib/site-overlay.txt
 !scripts/lib/refusal-ratchet-budget.txt
@@ -150,6 +152,7 @@ scripts/lib/*
 !scripts/lib/mcpb-manifest.template.json
 !scripts/tests/
 scripts/tests/*
+!scripts/tests/deliver_test.sh
 !scripts/tests/check_contract_carried_set_test.sh
 !scripts/tests/check_event_writer_receipts_test.sh
 !scripts/tests/check_live_e2e_evidence_test.sh

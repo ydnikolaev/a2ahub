@@ -71,7 +71,7 @@ export GOTOOLCHAIN := go$(A2A_GO_VERSION)
 endif
 endif
 
-.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -546,8 +546,15 @@ tools: ## Install the golangci-lint CI pins (ci.yml) into the main checkout's .a
 	  curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/$$v/install.sh" | sh -s -- -b "$(A2A_TOOLS_BIN)" "$$v"
 	@"$(A2A_TOOLS_BIN)/golangci-lint" version
 
-install: ## Put a dev `a2a` on your PATH that always runs THIS source tree (rebuilds when changed).
+install: ## Put `a2a-dev` on your PATH: ungated, always runs THIS source tree (rebuilds when changed); its space writes are refused.
 	@sh scripts/dev-install.sh
+
+# lane-inputs: NEVER
+# lane-reason: it installs a binary onto this machine's PATH, and its output is
+#   an installed file, not a verdict about a tree. No diff may select it; it
+#   runs only when invoked, after a commit, by the agent that made it.
+deliver: ## Install a GATED build of private main as the machine's a2a, stamped X.Y.Z (local, sha) (D-040).
+	@bash scripts/deliver.sh
 
 feature-lint: ## Validate docs/features/<slug>/ against the canonical template (private harness gate, presence-gated).
 	@if [ -f scripts/check-feature-lint.sh ]; then \
