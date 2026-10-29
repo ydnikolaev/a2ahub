@@ -9440,7 +9440,7 @@
     },
     {
       "version": "0.27.0",
-      "released": "unreleased",
+      "released": "2026-10-29",
       "headline": "a space can live on your own disk, and a data handoff can run in three commands",
       "changes": [
         {
@@ -9516,6 +9516,21 @@
             "run": [
               "a2a space update"
             ]
+          }
+        },
+        {
+          "id": "RN-02700-5",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "the binary and every space's validate workflow build on a Go toolchain with fourteen fewer called vulnerabilities",
+          "detail": "`make release-preflight` refused this cut on fourteen vulnerabilities `govulncheck` reports as reachable from this code. The toolchain moves from go1.26.6 to go1.26.10, which fixes the standard-library ones in `net/http`, `net/textproto`, `crypto/tls`, `crypto/x509`, `html/template` (reached through the local dashboard server) and `os`. `golang.org/x/net` moves to v0.60.0 and `google.golang.org/grpc` to v1.83.1 (reached through Sigstore verification of a release). The accepted-findings list stays empty.\nThe reusable validate workflow names the toolchain explicitly, because a space repository has no `go.mod`; it moves with `go.mod`, which `workflow-lint` asserts.\n",
+          "affects": [
+            "a2a binary",
+            "a2a-validate-reusable.yml"
+          ],
+          "action": {
+            "scope": "space",
+            "why": "No action for an existing space pinned to an earlier release; a space adopts the new toolchain when its workflow pin moves to this release."
           }
         },
         {

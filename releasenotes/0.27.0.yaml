@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.27.0
-released: unreleased
+released: "2026-10-29"
 headline: a space can live on your own disk, and a data handoff can run in three commands
 changes:
 - id: RN-02700-0
