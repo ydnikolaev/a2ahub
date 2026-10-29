@@ -987,6 +987,9 @@ func (c *DoctorCommand) versionsTemplateAdvisory(detail string, cfg space.Projec
 	if err != nil {
 		return detail
 	}
+	// reason: an unreadable or stale cache leaves latest empty, which means
+	// no advisory — the same cache-read-only degradation the released path
+	// takes; the row's verdict never depends on it.
 	latest, _ := release.ReadLatest(cp, time.Now(), cache.DefaultUpdateCheckTTL)
 	if latest == "" {
 		return detail
