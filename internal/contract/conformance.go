@@ -294,7 +294,7 @@ func inspectSelfContainedSchema(raw []byte) (malformed bool, offense string) {
 				switch key {
 				case "$ref", "$dynamicRef", "$recursiveRef", "$id":
 					if reference, ok := child.(string); ok && reference != "" && !strings.HasPrefix(reference, "#") &&
-						!(key == "$id" && pointer == "" && isDocumentIdentifier(reference)) {
+						(key != "$id" || pointer != "" || !isDocumentIdentifier(reference)) {
 						offense = key + " at " + describePointer(pointer)
 						return
 					}
