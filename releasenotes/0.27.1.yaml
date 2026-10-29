@@ -115,6 +115,10 @@ changes:
     version left behind is removed when it is provably the superseded one.
     `init` also prints which of the files it wrote to commit, and its hint
     no longer mentions credentials for a local space.
+
+    A project config whose space `id` or `mirror_location` is not a single
+    name (for example `../..`) is now refused when it is loaded, because
+    `connect` and `disconnect` delete the directory that name points to.
   action:
     scope: none
     why: >
