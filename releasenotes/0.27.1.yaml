@@ -85,7 +85,8 @@ changes:
     nothing changes. A cursor under `.a2a/cache/wait/` makes re-running it
     lossless. The printed line never carries a note's or an artifact's text,
     and an event whose content disagrees with its file's path is reported by
-    path, never printed.
+    path, never printed. When it cannot watch a space it says what it tried,
+    what it found and what to run next.
   action:
     scope: none
     why: >
@@ -119,6 +120,10 @@ changes:
     A project config whose space `id` or `mirror_location` is not a single
     name (for example `../..`) is now refused when it is loaded, because
     `connect` and `disconnect` delete the directory that name points to.
+    `connect` and `disconnect` also refuse a project config they cannot
+    read instead of treating it as empty and writing over it, and `init`
+    and `connect` refuse a space id that is not a single name before they
+    write anything.
   action:
     scope: none
     why: >
