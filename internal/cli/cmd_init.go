@@ -284,8 +284,8 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// clones, but a read verb that runs before `connect` does, and with no
 		// location it would clone into a directory `connect` then abandons.
 		if err := space.CheckMirrorKey("id", initSpaceIDFromURL(locator)); err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot name a space for --space %s: %v\n", s, err)
-			return 2
+			return spaceRefuse(stdio, "init --space "+s+": name the space", err.Error(),
+				"pass the space repository's own URL or path, whose last element is the space's name")
 		}
 		ref := space.Ref{ID: initSpaceIDFromURL(locator), RepoURL: locator, MirrorLocation: initSpaceIDFromURL(locator)}
 		if hasExisting {
@@ -843,15 +843,15 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	repoURL, spaceHost := initOpenLocator(c.Open, args[0])
 	urlID := initSpaceIDFromURL(repoURL)
 	if err := space.CheckMirrorKey("id", urlID); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot name a mirror for %s: %v\n", repoURL, err)
-		return 1
+		return spaceRefuse(stdio, "connect "+repoURL+": name its mirror", err.Error(),
+			"pass the space repository's own URL or path, whose last element is the space's name")
 	}
 	needsCredential := initHostNeedsCredential(spaceHost)
 
 	cfg, err := loadProjectConfigIfPresent(c.loadProjectConfig, c.projectConfigPath)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot read %s, so it is not rewritten: %v\n", c.projectConfigPath, err)
-		return 1
+		return spaceRefuse(stdio, "connect "+repoURL+": read "+c.projectConfigPath+" (it was not rewritten)", err.Error(),
+			"fix the entry the error names in "+c.projectConfigPath+", then re-run `a2a connect "+args[0]+"`")
 	}
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
 	// The refs as loaded: the superseded-clone rule below needs the ref that
@@ -896,8 +896,8 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	id := connectResolveSpaceID(dir, urlID)
 	if err := space.CheckMirrorKey("id", id); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "connect: the space.yaml of %s names an id this project cannot register: %v\n", repoURL, err)
-		return 1
+		return spaceRefuse(stdio, "connect "+repoURL+": register the id its space.yaml declares (nothing was registered)", err.Error(),
+			"the space's owner corrects the `space:` field of its space.yaml; then re-run `a2a connect "+args[0]+"`")
 	}
 
 	// The authoritative id is known only HERE (it comes out of the freshly
@@ -1322,8 +1322,8 @@ func (c *DisconnectCommand) ConnectedRef(target string) (space.Ref, bool) {
 func (c *DisconnectCommand) RemoveConnected(ctx context.Context, target string, stdio IO) (ref space.Ref, found bool, code int) {
 	cfg, err := loadProjectConfigIfPresent(c.loadProjectConfig, c.projectConfigPath)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "disconnect: cannot read %s, so nothing was removed: %v\n", c.projectConfigPath, err)
-		return space.Ref{}, false, 1
+		return space.Ref{}, false, spaceRefuse(stdio, "disconnect "+target+": read "+c.projectConfigPath+" (nothing was removed)", err.Error(),
+			"fix the entry the error names in "+c.projectConfigPath+", then re-run the command")
 	}
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
 
