@@ -126,6 +126,14 @@ docs/presentations/**
 # class: it becomes a spec under docs/features/**, which is gated.
 docs/vision/**
 
+# Go-to-market working notes — the Product Hunt launch plan and its dated
+# research snapshots (leaderboards, playbooks, third-party rules). Same class
+# as vision prose: every load-bearing claim is about a system outside this
+# repository and carries its own source URL and date inline; nothing reads
+# these files. The day a plan item becomes a product COMMITMENT (a demo
+# space, a quickstart, a rename) it becomes a spec under docs/features/**.
+docs/producthunt/**
+
 # Operator prose. publish-to-public.sh is the exception, claimed by
 # harness-teeth, because it carries its own --teeth self-test.
 docs/runbooks/**
