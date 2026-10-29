@@ -24,11 +24,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -801,6 +804,36 @@ func isEventPath(p string) bool {
 		parts[0] != "" && parts[2] != "" && parts[3] != ".yaml"
 }
 
+// waitTransitionShape is the form every transition name takes, and
+// waitEventIDShape the form of an event id; a value outside them is prose, not
+// an identifier, and is never printed.
+var (
+	waitTransitionShape = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	waitEventIDShape    = regexp.MustCompile(`^[0-9A-Za-z]+$`)
+)
+
+// waitEventMatchesPath reports whether a decoded event at p (an isEventPath
+// path) is the event its path says it is: written by the path's system, named
+// by its file, and carrying only identifier-shaped fields. The same parity the
+// space funnel checks before it trusts an event.
+func waitEventMatchesPath(ev eventProbe, p string) bool {
+	owner, _, _ := strings.Cut(p, "/")
+	if ev.Actor.System != owner || ev.Event != strings.TrimSuffix(path.Base(p), ".yaml") {
+		return false
+	}
+	if !waitEventIDShape.MatchString(ev.Event) {
+		return false
+	}
+	if _, err := artifact.ParseID(ev.Subject); err != nil {
+		return false
+	}
+	if !waitTransitionShape.MatchString(ev.Transition) {
+		return false
+	}
+	_, err := time.Parse(time.RFC3339, ev.At)
+	return err == nil
+}
+
 // addedEventPaths lists the event files added between from and to. A path the
 // diff reports as modified or deleted is not an event landing (history is
 // append-only) and is not listed. Renames are switched off so a re-filed event
@@ -843,6 +876,16 @@ func (w *Waiter) judgeRange(ctx context.Context, wt *spaceWatch, from, to string
 		ev, derr := decodeEvent(raw)
 		if derr != nil || ev.Event == "" {
 			w.req.Notify(fmt.Sprintf("wait: space %s: event file %s is undecodable; it could not be judged", wt.sm.SpaceID, p))
+			got.Degraded = true
+			continue
+		}
+		// The path is the authenticated identity (a space gates who writes
+		// under <system>/); the body's claims are only data. A body that
+		// disagrees with its path, or a field that is not identifier-shaped,
+		// is judged like an undecodable file: the path is named, the value is
+		// never echoed (D-014).
+		if !waitEventMatchesPath(ev, p) {
+			w.req.Notify(fmt.Sprintf("wait: space %s: event file %s does not match its path or carries a malformed field; it could not be judged", wt.sm.SpaceID, p))
 			got.Degraded = true
 			continue
 		}
