@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -138,7 +139,7 @@ func TestReadLocalSpaceRepoReportsOwnRootCommit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := filepath.Join(t.TempDir(), "demo.git")
-	if got, err := ReadLocalSpaceRepo(ctx, dir); err != nil || got != (LocalSpaceRepoState{}) {
+	if got, err := ReadLocalSpaceRepo(ctx, dir); err != nil || !reflect.DeepEqual(got, LocalSpaceRepoState{}) {
 		t.Fatalf("missing dir: %+v, %v; want the zero state", got, err)
 	}
 	if _, err := InitLocalSpaceRepo(ctx, dir, []FileWrite{
@@ -150,7 +151,11 @@ func TestReadLocalSpaceRepoReportsOwnRootCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (LocalSpaceRepoState{IsBareRepo: true, SpaceID: "demo", RootOnly: true}); got != want {
+	if got.Manifest.Space != "demo" || len(got.Manifest.Participants) != 0 {
+		t.Fatalf("manifest = %+v, want space demo with no participants", got.Manifest)
+	}
+	got.Manifest = Manifest{}
+	if want := (LocalSpaceRepoState{IsBareRepo: true, SpaceID: "demo", RootOnly: true, Commits: 1}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("state = %+v, want %+v", got, want)
 	}
 }
@@ -189,7 +194,7 @@ func TestReadLocalSpaceRepoReadsZeroForForeignDirectories(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "space.yaml"), []byte("space: demo\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got, err := ReadLocalSpaceRepo(ctx, dir); err != nil || got != (LocalSpaceRepoState{}) {
+		if got, err := ReadLocalSpaceRepo(ctx, dir); err != nil || !reflect.DeepEqual(got, LocalSpaceRepoState{}) {
 			t.Fatalf("state = %+v, %v; want zero", got, err)
 		}
 	})
@@ -218,7 +223,7 @@ func TestReadLocalSpaceRepoReadsZeroForForeignDirectories(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := (LocalSpaceRepoState{IsBareRepo: true}); got != want {
+		if want := (LocalSpaceRepoState{IsBareRepo: true}); !reflect.DeepEqual(got, want) {
 			t.Fatalf("state = %+v, want %+v", got, want)
 		}
 	})

@@ -342,8 +342,8 @@ func TestSpaceInitResidualStepsNameAutoMerge(t *testing.T) {
 func TestSpaceSubcommandsMatchesDispatch(t *testing.T) {
 	t.Parallel()
 	subs := cli.SpaceSubcommands()
-	if len(subs) != 4 || subs[0].Name != "init" || subs[1].Name != "update" || subs[2].Name != "join" || subs[3].Name != "set" {
-		t.Fatalf("SpaceSubcommands() = %+v, want exactly four rows named \"init\", \"update\", \"join\", \"set\"", subs)
+	if len(subs) != 5 || subs[0].Name != "init" || subs[1].Name != "update" || subs[2].Name != "join" || subs[3].Name != "set" || subs[4].Name != "delete" {
+		t.Fatalf("SpaceSubcommands() = %+v, want exactly five rows named \"init\", \"update\", \"join\", \"set\", \"delete\"", subs)
 	}
 	for _, s := range subs {
 		if s.Synopsis == "" {

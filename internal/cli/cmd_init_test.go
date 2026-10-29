@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/skill"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 	"github.com/ydnikolaev/a2ahub/testkit/spacefixture"
 )
@@ -381,17 +383,21 @@ func TestConnectRepairsMissingMirrorLocationOnAlreadyRegisteredRef(t *testing.T)
 			cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
 			machinePath := filepath.Join(dir, "machine.yaml")
 
-			initCmd := cli.NewInitCommand(cfgPath)
-			ioInit, outInit, _ := newIO()
-			if code := initCmd.Run(context.Background(), []string{"--system", "axon", "--space", fx.RemoteURL()}, ioInit); code != 0 {
-				t.Fatalf("init: code = %d; output=%s", code, outInit.String())
+			// The config an OLDER binary's `init` wrote: a ref with no
+			// MirrorLocation (today's init pins it, see TestInitConnect_OneMirror).
+			if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			older := "system: axon\nspaces:\n  - id: origin\n    repo_url: " + fx.RemoteURL() + "\n"
+			if err := os.WriteFile(cfgPath, []byte(older), 0o644); err != nil {
+				t.Fatal(err)
 			}
 			cfg0, err := space.LoadProjectConfig(cfgPath)
 			if err != nil {
-				t.Fatalf("LoadProjectConfig after init: %v", err)
+				t.Fatalf("LoadProjectConfig of the older config: %v", err)
 			}
 			if len(cfg0.Spaces) != 1 || cfg0.Spaces[0].MirrorLocation != "" {
-				t.Fatalf("precondition: init must persist a ref with no MirrorLocation, got %+v", cfg0.Spaces)
+				t.Fatalf("precondition: the older config has a ref with no MirrorLocation, got %+v", cfg0.Spaces)
 			}
 
 			if tc.mirrorRoot {
@@ -491,7 +497,7 @@ func TestConnectRepairsStaleIDAndMissingMirrorLocationTogether(t *testing.T) {
 	if !strings.Contains(out.String(), "corrected space id") {
 		t.Fatalf("expected connect to report the id correction, got %q", out.String())
 	}
-	if !strings.Contains(out.String(), "mirror location") {
+	if !strings.Contains(out.String(), "now uses the machine mirror") {
 		t.Fatalf("expected connect to report the mirror location repair, got %q", out.String())
 	}
 
@@ -1304,5 +1310,486 @@ func TestInitSeedsNoCredentialForALocalSpace(t *testing.T) {
 	}
 	if len(probed) != 1 || probed[0] != "getvisa" {
 		t.Errorf("credential probe ran for %v, want only [getvisa]", probed)
+	}
+}
+
+// TestInitConnect_OneMirror is AC-1 (fast-loop P3, T1): `init`, then a read
+// that clones, then `connect`, leave exactly one clone, at the path every
+// reader resolves. A configured mirror_root is what makes the old defect
+// visible: with it, a ref that has no mirror_location resolves project-relative
+// (the resolver ignores mirror_root), `connect` then fills the location, and the
+// resolver answers a different path — the first clone is never read again.
+func TestInitConnect_OneMirror(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	cfgPath := filepath.Join(project, ".a2a", "config.yaml")
+	machinePath := filepath.Join(root, "machine.yaml")
+	if err := os.WriteFile(machinePath, []byte("mirror_root: "+filepath.Join(root, "mirrors")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	initCmd := cli.NewInitCommand(cfgPath)
+	ioInit, outInit, errInit := newIO()
+	args := []string{"--system", "axon", "--space", fx.RemoteURL(), "--no-skill", "--no-skill-link", "--no-agents-pointer"}
+	if code := initCmd.Run(context.Background(), args, ioInit); code != 0 {
+		t.Fatalf("init: code = %d; stdout=%s stderr=%s", code, outInit.String(), errInit.String())
+	}
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine, err := space.LoadMachineConfig(machinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The read verbs' first touch: resolve, then clone through the resolver.
+	before := space.ResolveMirrorLocation(project, cfg.Spaces[0], machine)
+	if err := space.CloneOrFetch(context.Background(), before, fx.RemoteURL(), host.Credential{}); err != nil {
+		t.Fatalf("a read's clone: %v", err)
+	}
+
+	connect := cli.NewConnectCommand(cfgPath, machinePath, project)
+	ioConnect, outConnect, errConnect := newIO()
+	if code := connect.Run(context.Background(), []string{fx.RemoteURL()}, ioConnect); code != 0 {
+		t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, outConnect.String(), errConnect.String())
+	}
+	cfgAfter, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := space.ResolveMirrorLocation(project, cfgAfter.Spaces[0], machine)
+
+	if after != before {
+		t.Errorf("the resolver answers %q after connect, but the read cloned at %q: connect moved the mirror", after, before)
+	}
+	if n := countMirrorGitDirs(t, root); n != 1 {
+		t.Errorf("found %d mirror clones under %s, want exactly 1", n, root)
+	}
+}
+
+// TestConnect_ReportsFirstClone is AC-2 (T1's table): a connect that makes the
+// clone says so, one that finds it says "refreshed", and a stale-id repair
+// combined with a first clone says both.
+func TestConnect_ReportsFirstClone(t *testing.T) {
+	t.Parallel()
+	const (
+		cloned    = `connect: space "fixture-space" connected; cloned its mirror`
+		refreshed = `connect: space "fixture-space" already connected; mirror refreshed`
+	)
+	newProject := func(t *testing.T) (cfgPath, machinePath, project string) {
+		t.Helper()
+		project = t.TempDir()
+		return filepath.Join(project, ".a2a", "config.yaml"), filepath.Join(project, "machine.yaml"), project
+	}
+	runConnect := func(t *testing.T, cfgPath, machinePath, project, url string) string {
+		t.Helper()
+		cmd := cli.NewConnectCommand(cfgPath, machinePath, project)
+		cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string { return "env:A2A_TOKEN_" + id })
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{url}, io); code != 0 {
+			t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		return out.String()
+	}
+	initSpace := func(t *testing.T, cfgPath, url string) {
+		t.Helper()
+		io, out, errOut := newIO()
+		args := []string{"--system", "axon", "--space", url, "--no-skill", "--no-skill-link", "--no-agents-pointer"}
+		if code := cli.NewInitCommand(cfgPath).Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("init: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+	}
+
+	t.Run("entry present, mirror absent", func(t *testing.T) {
+		t.Parallel()
+		fx := spacefixture.New(t, "axon")
+		cfgPath, machinePath, project := newProject(t)
+		initSpace(t, cfgPath, fx.RemoteURL())
+		got := runConnect(t, cfgPath, machinePath, project, fx.RemoteURL())
+		if !strings.Contains(got, cloned) || strings.Contains(got, "already connected") || strings.Contains(got, "repaired") {
+			t.Errorf("first connect after init printed %q, want it to contain %q and not claim it was already connected", got, cloned)
+		}
+	})
+	t.Run("entry present, mirror present", func(t *testing.T) {
+		t.Parallel()
+		fx := spacefixture.New(t, "axon")
+		cfgPath, machinePath, project := newProject(t)
+		initSpace(t, cfgPath, fx.RemoteURL())
+		runConnect(t, cfgPath, machinePath, project, fx.RemoteURL())
+		if got := runConnect(t, cfgPath, machinePath, project, fx.RemoteURL()); !strings.Contains(got, refreshed) {
+			t.Errorf("second connect printed %q, want it to contain %q", got, refreshed)
+		}
+	})
+	t.Run("entry absent", func(t *testing.T) {
+		t.Parallel()
+		fx := spacefixture.New(t, "axon")
+		cfgPath, machinePath, project := newProject(t)
+		want := `connect: registered space "fixture-space" and cloned its mirror`
+		if got := runConnect(t, cfgPath, machinePath, project, fx.RemoteURL()); !strings.Contains(got, want) {
+			t.Errorf("connect printed %q, want it to contain %q", got, want)
+		}
+	})
+	t.Run("stale id repair with a first clone", func(t *testing.T) {
+		t.Parallel()
+		fx := spacefixture.New(t, "axon")
+		cfgPath, machinePath, project := newProject(t)
+		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		stale := "system: axon\nspaces:\n  - id: wrong-guess\n    repo_url: " + fx.RemoteURL() + "\n    mirror_location: origin\n"
+		if err := os.WriteFile(cfgPath, []byte(stale), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := runConnect(t, cfgPath, machinePath, project, fx.RemoteURL())
+		for _, want := range []string{"corrected space id", `connect: space "fixture-space" connected; cloned its mirror`} {
+			if !strings.Contains(got, want) {
+				t.Errorf("connect printed %q, want it to contain %q", got, want)
+			}
+		}
+		if strings.Contains(got, "already connected") {
+			t.Errorf("connect printed %q, want no claim that it was already connected", got)
+		}
+	})
+}
+
+// TestConnect_SupersededClone is AC-3 (T1, configs written by an older binary):
+// the clone a read made at the resolver's OLD path is removed only when it is
+// exactly that path, differs from the new one, and is a work tree whose origin
+// is the entry's repo URL. Anything else is kept and named.
+func TestConnect_SupersededClone(t *testing.T) {
+	t.Parallel()
+	type setup struct {
+		fx         *spacefixture.Fixture
+		cfgPath    string
+		machine    string
+		project    string
+		oldPath    string
+		newPath    string
+		mirrorRoot bool
+	}
+	prepare := func(t *testing.T, mirrorRoot bool) setup {
+		t.Helper()
+		root := t.TempDir()
+		s := setup{
+			fx:         spacefixture.New(t, "axon"),
+			project:    filepath.Join(root, "project"),
+			machine:    filepath.Join(root, "machine.yaml"),
+			mirrorRoot: mirrorRoot,
+		}
+		s.cfgPath = filepath.Join(s.project, ".a2a", "config.yaml")
+		if err := os.MkdirAll(filepath.Dir(s.cfgPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// The older config also carries the init-time id guess ("origin", from
+		// the URL) where the manifest says "fixture-space": the old path must be
+		// resolved through the ref AS LOADED, the id every earlier read used.
+		older := "system: axon\nspaces:\n  - id: origin\n    repo_url: " + s.fx.RemoteURL() + "\n"
+		if err := os.WriteFile(s.cfgPath, []byte(older), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		machineYAML := ""
+		if mirrorRoot {
+			machineYAML = "mirror_root: " + filepath.Join(root, "mirrors") + "\n"
+		}
+		if err := os.WriteFile(s.machine, []byte(machineYAML), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		machine, err := space.LoadMachineConfig(s.machine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.oldPath = space.ResolveMirrorLocation(s.project, space.Ref{ID: "origin", RepoURL: s.fx.RemoteURL()}, machine)
+		s.newPath = space.ResolveMirrorLocation(s.project, space.Ref{ID: "origin", RepoURL: s.fx.RemoteURL(), MirrorLocation: "origin"}, machine)
+		return s
+	}
+	connect := func(t *testing.T, s setup) string {
+		t.Helper()
+		cmd := cli.NewConnectCommand(s.cfgPath, s.machine, s.project)
+		cmd.SetDefaultCredentialRefForTest(func(_ context.Context, id string) string { return "env:A2A_TOKEN_" + id })
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), []string{s.fx.RemoteURL()}, io); code != 0 {
+			t.Fatalf("connect: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		return out.String()
+	}
+	exists := func(path string) bool {
+		_, err := os.Stat(path)
+		return err == nil
+	}
+
+	t.Run("matching origin is removed", func(t *testing.T) {
+		t.Parallel()
+		s := prepare(t, true)
+		if err := space.CloneOrFetch(context.Background(), s.oldPath, s.fx.RemoteURL(), host.Credential{}); err != nil {
+			t.Fatal(err)
+		}
+		got := connect(t, s)
+		if exists(s.oldPath) {
+			t.Errorf("the superseded clone at %s is still there", s.oldPath)
+		}
+		if !exists(filepath.Join(s.newPath, ".git")) {
+			t.Errorf("no clone at the new path %s", s.newPath)
+		}
+		for _, want := range []string{`now uses the machine mirror at ` + s.newPath, "removed the superseded clone at " + s.oldPath} {
+			if !strings.Contains(got, want) {
+				t.Errorf("connect printed %q, want it to contain %q", got, want)
+			}
+		}
+	})
+	t.Run("different origin is kept and named", func(t *testing.T) {
+		t.Parallel()
+		s := prepare(t, true)
+		other := spacefixture.New(t, "axon")
+		if err := space.CloneOrFetch(context.Background(), s.oldPath, other.RemoteURL(), host.Credential{}); err != nil {
+			t.Fatal(err)
+		}
+		got := connect(t, s)
+		if !exists(filepath.Join(s.oldPath, ".git")) {
+			t.Errorf("a clone of a different origin at %s was removed", s.oldPath)
+		}
+		for _, want := range []string{"kept the earlier clone at " + s.oldPath, "its origin is " + other.RemoteURL()} {
+			if !strings.Contains(got, want) {
+				t.Errorf("connect printed %q, want it to contain %q", got, want)
+			}
+		}
+	})
+	t.Run("not a work tree is kept and named", func(t *testing.T) {
+		t.Parallel()
+		s := prepare(t, true)
+		if err := os.MkdirAll(s.oldPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		marker := filepath.Join(s.oldPath, "keep-me.txt")
+		if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := connect(t, s)
+		if !exists(marker) {
+			t.Errorf("a directory that is not a clone was removed: %s", s.oldPath)
+		}
+		if want := "kept the earlier clone at " + s.oldPath; !strings.Contains(got, want) {
+			t.Errorf("connect printed %q, want it to contain %q", got, want)
+		}
+	})
+	t.Run("the live clone is never removed", func(t *testing.T) {
+		t.Parallel()
+		// No mirror_root: the filled ref resolves to the very path the older
+		// config resolved to, so there is nothing superseded.
+		s := prepare(t, false)
+		if s.oldPath != s.newPath {
+			t.Fatalf("precondition: without mirror_root the old and new paths are equal, got %q and %q", s.oldPath, s.newPath)
+		}
+		if err := space.CloneOrFetch(context.Background(), s.oldPath, s.fx.RemoteURL(), host.Credential{}); err != nil {
+			t.Fatal(err)
+		}
+		got := connect(t, s)
+		if !exists(filepath.Join(s.newPath, ".git")) {
+			t.Errorf("the live clone at %s was removed", s.newPath)
+		}
+		if strings.Contains(got, "superseded") || strings.Contains(got, "kept the earlier") {
+			t.Errorf("connect printed %q, want no word about a superseded clone", got)
+		}
+	})
+}
+
+// TestInit_HintPerHost is AC-4: the next-step hint is per space kind. A local
+// space is not told about credentials; a GitHub-kind space keeps the wording;
+// a config holding one of each gets both lines.
+func TestInit_HintPerHost(t *testing.T) {
+	t.Parallel()
+	const (
+		withCredential    = "init: next: a2a connect <url> (registers it, clones its mirror and checks the credential)"
+		withoutCredential = "init: next: a2a connect <path> (registers it and clones its mirror)"
+	)
+	root := canonicalTempDir(t)
+	local := makeLocalSpace(t, root, "acme")
+	const remote = "https://example.invalid/org/getvisa.git"
+
+	run := func(t *testing.T, spaces ...string) string {
+		t.Helper()
+		project := t.TempDir()
+		cmd := cli.NewInitCommand(filepath.Join(project, ".a2a", "config.yaml"))
+		cmd.Open = localSpaceOpener()
+		args := []string{"--system", "billing", "--no-skill", "--no-skill-link", "--no-agents-pointer"}
+		for _, s := range spaces {
+			args = append(args, "--space", s)
+		}
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("init: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		return out.String()
+	}
+
+	t.Run("local only", func(t *testing.T) {
+		t.Parallel()
+		got := run(t, local)
+		if !strings.Contains(got, withoutCredential) {
+			t.Errorf("stdout = %q, want %q", got, withoutCredential)
+		}
+		if strings.Contains(strings.ToLower(got), "credential") {
+			t.Errorf("stdout = %q, want no mention of a credential for a local space", got)
+		}
+	})
+	t.Run("github only", func(t *testing.T) {
+		t.Parallel()
+		got := run(t, remote)
+		if !strings.Contains(got, withCredential) || strings.Contains(got, withoutCredential) {
+			t.Errorf("stdout = %q, want %q and no local-space line", got, withCredential)
+		}
+	})
+	t.Run("mixed", func(t *testing.T) {
+		t.Parallel()
+		got := run(t, local, remote)
+		for _, want := range []string{withCredential, withoutCredential} {
+			if !strings.Contains(got, want) {
+				t.Errorf("stdout = %q, want it to contain %q", got, want)
+			}
+		}
+	})
+}
+
+// TestInit_NoAgentsPointerHelp is AC-5: the opt-out flag's help names both
+// files it opts out of.
+func TestInit_NoAgentsPointerHelp(t *testing.T) {
+	t.Parallel()
+	io, _, errOut := newIO()
+	if code := cli.NewInitCommand("").Run(context.Background(), []string{"-h"}, io); code != 2 {
+		t.Fatalf("init -h: code = %d, want 2", code)
+	}
+	const want = "do NOT add the a2ahub pointers to AGENTS.md and CLAUDE.md (added by default)"
+	if !strings.Contains(errOut.String(), want) {
+		t.Errorf("init -h printed %q, want it to contain %q", errOut.String(), want)
+	}
+}
+
+// TestInit_PrintsCommitTable is AC-6: init prints the table the onboarding
+// page carries, byte for byte, with and without --no-skill, on both of its
+// successful exits; with no embedded tree it says so on stderr and still
+// succeeds.
+func TestInit_PrintsCommitTable(t *testing.T) {
+	t.Parallel()
+	table, ok := cli.InitCommitTable(skill.Files)
+	if !ok || !strings.Contains(table, ".a2a/config.yaml") {
+		t.Fatalf("InitCommitTable(skill.Files) = %q, %v, want the real table", table, ok)
+	}
+	want := "init: what to commit\n" + table
+
+	newInit := func(t *testing.T, files fs.FS) *cli.InitCommand {
+		t.Helper()
+		project := t.TempDir()
+		cmd := cli.NewInitCommand(filepath.Join(project, ".a2a", "config.yaml"))
+		cmd.SkillFiles = files
+		cmd.SkillTarget = filepath.Join(project, ".a2ahub", "skill")
+		return cmd
+	}
+	for _, flags := range [][]string{
+		{"--no-skill", "--no-skill-link", "--no-agents-pointer"},
+		{"--no-skill-link", "--no-agents-pointer"},
+	} {
+		t.Run(strings.Join(flags, " "), func(t *testing.T) {
+			t.Parallel()
+			cmd := newInit(t, skill.Files)
+			args := append([]string{"--system", "axon", "--space", "https://example.invalid/org/space.git"}, flags...)
+			for pass, label := range []string{"first run (config written)", "second run (already configured)"} {
+				io, out, errOut := newIO()
+				if code := cmd.Run(context.Background(), args, io); code != 0 {
+					t.Fatalf("%s: code = %d; stdout=%s stderr=%s", label, code, out.String(), errOut.String())
+				}
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("%s: stdout does not contain the onboarding table byte for byte\nwant:\n%s\ngot:\n%s", label, want, out.String())
+				}
+				if pass == 1 && !strings.Contains(out.String(), "init: already configured") {
+					t.Errorf("%s: stdout = %q, want the already-configured exit", label, out.String())
+				}
+			}
+		})
+	}
+	t.Run("nil SkillFiles", func(t *testing.T) {
+		t.Parallel()
+		io, out, errOut := newIO()
+		args := []string{"--system", "axon", "--space", "https://example.invalid/org/space.git", "--no-skill", "--no-skill-link", "--no-agents-pointer"}
+		if code := newInit(t, nil).Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("init: code = %d, want 0; stderr=%s", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "init: commit table unavailable in this build") {
+			t.Errorf("stderr = %q, want the unavailable note", errOut.String())
+		}
+		if strings.Contains(out.String(), "what to commit") {
+			t.Errorf("stdout = %q, want no table without an embedded tree", out.String())
+		}
+	})
+}
+
+// TestInit_CommitTableMarkers is AC-7: the real embedded page carries both
+// markers, so removing one in the skill reds a Go test; a page missing either
+// marker yields no table.
+func TestInit_CommitTableMarkers(t *testing.T) {
+	t.Parallel()
+	raw, err := fs.ReadFile(skill.Files, "a2ahub/onboarding.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(raw)
+	const begin, end = "<!-- a2a:commit-table:begin -->", "<!-- a2a:commit-table:end -->"
+	for _, marker := range []string{begin, end} {
+		if n := strings.Count(page, marker); n != 1 {
+			t.Errorf("the embedded onboarding page carries %d copies of %q, want exactly 1", n, marker)
+		}
+	}
+	if _, ok := cli.InitCommitTable(skill.Files); !ok {
+		t.Error("InitCommitTable(skill.Files) found no table in the embedded page")
+	}
+	for name, body := range map[string]string{
+		"no begin": "> a\n" + end + "\n",
+		"no end":   begin + "\n> a\n",
+		"neither":  "> a\n",
+	} {
+		files := fstest.MapFS{"a2ahub/onboarding.md": {Data: []byte(body)}}
+		if got, ok := cli.InitCommitTable(files); ok {
+			t.Errorf("%s: InitCommitTable = %q, true, want no table", name, got)
+		}
+	}
+	files := fstest.MapFS{"a2ahub/onboarding.md": {Data: []byte("x\n" + begin + "\n> one\n>\n> two\n" + end + "\ny\n")}}
+	if got, ok := cli.InitCommitTable(files); !ok || got != "one\n\ntwo\n" {
+		t.Errorf("InitCommitTable = %q, %v, want %q (blockquote prefix stripped, bare > kept as a blank line)", got, ok, "one\n\ntwo\n")
+	}
+}
+
+// TestInit_ReinitKeepsMirrorLocation is the §6 re-init row: a config that
+// `connect` already filled keeps its mirror_location when init rewrites the
+// config (here: a second space is added, so the configs are not equivalent).
+func TestInit_ReinitKeepsMirrorLocation(t *testing.T) {
+	t.Parallel()
+	project := t.TempDir()
+	cfgPath := filepath.Join(project, ".a2a", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const first = "https://example.invalid/org/space.git"
+	filled := "system: axon\nspaces:\n  - id: space\n    repo_url: " + first + "\n    mirror_location: pinned-by-connect\n"
+	if err := os.WriteFile(cfgPath, []byte(filled), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	io, out, errOut := newIO()
+	args := []string{"--system", "axon", "--space", first, "--space", "https://example.invalid/org/other.git", "--no-skill", "--no-skill-link", "--no-agents-pointer"}
+	if code := cli.NewInitCommand(cfgPath).Run(context.Background(), args, io); code != 0 {
+		t.Fatalf("init: code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Spaces) != 2 {
+		t.Fatalf("Spaces = %+v, want two", cfg.Spaces)
+	}
+	if got := cfg.Spaces[0].MirrorLocation; got != "pinned-by-connect" {
+		t.Errorf("MirrorLocation of the connected space = %q, want %q (kept)", got, "pinned-by-connect")
+	}
+	if got := cfg.Spaces[1].MirrorLocation; got != "other" {
+		t.Errorf("MirrorLocation of the new space = %q, want %q", got, "other")
 	}
 }

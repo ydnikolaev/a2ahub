@@ -30,7 +30,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
 
-// SpaceCommand implements `a2a space <init|update|join|set>` (mirrors the
+// SpaceCommand implements `a2a space <init|update|join|set|delete>` (mirrors the
 // `contract` group's dispatch shape, cmd_contract.go).
 type SpaceCommand struct {
 	// TemplateFiles is the embedded space-template/ tree (spacetemplate.Files,
@@ -129,6 +129,10 @@ type SpaceCommand struct {
 	// Now is the clock `join` stamps `joined:` with; nil means time.Now. A
 	// seam so a test can assert the exact manifest bytes.
 	Now func() time.Time
+	// Disconnect is the caller's project connection, which `delete` reads and,
+	// with --approve, removes through the very steps `a2a disconnect` runs.
+	// Nil refuses `delete` by name.
+	Disconnect spaceDisconnector
 }
 
 // spaceManifestValidator is this file's consumer-side seam over the manifest
@@ -154,18 +158,18 @@ func (c *SpaceCommand) Name() string { return "space" }
 
 // Synopsis implements cli.Command.
 func (c *SpaceCommand) Synopsis() string {
-	return "space scaffolding: init <space-id> [--local] [--gates <confirm|autonomous>] [--flow <full|express>] [--dir <path>] | update [--space <id>] [--dry-run] [--wait] [--approve] | join [--space <id>] [--approve] [--json] | set <gates|flow> <value> [--space <id>] [--approve] — write/migrate a space tree from the embedded template, or create a local space, join it and set its policy"
+	return "space scaffolding: init <space-id> [--local] [--gates <confirm|autonomous>] [--flow <full|express>] [--dir <path>] | update [--space <id>] [--dry-run] [--wait] [--approve] | join [--space <id>] [--approve] [--json] | set <gates|flow> <value> [--space <id>] [--approve] | delete --local <space-id> [--dir <path>] [--approve] — write/migrate a space tree from the embedded template, or create a local space, join it, set its policy and delete it"
 }
 
 // Run implements cli.Command.
 func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update|join|set> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update|join|set|delete> ...")
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	if IsHelpArg(sub) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init|update|join|set> ...")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a space <init|update|join|set|delete> ...")
 		for _, s := range SpaceSubcommands() {
 			_, _ = fmt.Fprintf(stdio.Stdout, "  %-14s %s\n", s.Name, s.Synopsis)
 		}
@@ -180,6 +184,8 @@ func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return c.runJoin(ctx, rest, stdio)
 	case "set":
 		return c.runSet(ctx, rest, stdio)
+	case "delete":
+		return c.runDelete(ctx, rest, stdio)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stderr, "space: unknown subcommand %q\n", sub)
 		return 2
@@ -209,6 +215,7 @@ func SpaceSubcommands() []SpaceSubcommand {
 		{Name: "update", Synopsis: "diff the connected space's scaffolding against the embedded template and open a PR (spec 35)"},
 		{Name: "join", Synopsis: "add this project's system to a connected local space as an active participant, in one validated write"},
 		{Name: "set", Synopsis: "set the space's gates or flow policy in space.yaml, in one validated write (a manifest change, so it needs --approve in a confirm space)"},
+		{Name: "delete", Synopsis: "delete a local space this machine holds (--local): shows its commits and other participants first, removes the repository only with --approve, and disconnects this project from it"},
 	}
 }
 

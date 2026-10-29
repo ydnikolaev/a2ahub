@@ -33,6 +33,7 @@
 > `a2a doctor`'s "skill discoverable" check flags an installed-but-unlinked
 > skill.
 
+<!-- a2a:commit-table:begin -->
 > **What to commit after `a2a init`.** Every path `a2a` writes into the
 > repository, and whether it belongs in git:
 >
@@ -48,6 +49,7 @@
 > `.a2a/config.yaml` to appear in that list right after setup: `a2a init`
 > creates it and `a2a connect` updates it. Add it to the repository's map of
 > checked paths when you commit it.
+<!-- a2a:commit-table:end -->
 
 ## Install profiles (§9.1)
 
@@ -123,8 +125,20 @@ a2a space init <space-id> --local
 
 **Naming the space.** Name it after the counterparty's repository, its
 monorepo if it has one. Sites and products inside that repository are fields
-of the contracts exchanged through the space, not spaces of their own. A local
-space cannot be renamed yet: choose the name before the first `space join`.
+of the contracts exchanged through the space, not spaces of their own. Choose
+the name before the first `space join`: a local space cannot be renamed, because
+every envelope and every event carries `space:` and is validated against the
+space it lands in, and history is only ever appended to. A "rename" is a new
+space, made like this:
+
+1. `a2a space init <new-id> --local`
+2. in each repository: `a2a connect <new-path>`, then `a2a space join --approve`
+3. in each repository: `a2a disconnect <old-id>`
+4. once: `a2a space delete --local <old-id> --approve` (without `--approve` it
+   changes nothing and shows the commits and the other participants first)
+
+Open threads do not carry over to the new space, and the old space's history
+goes with step 4.
 
 It creates the space under this machine's a2a data root and prints its path;
 `--dir <path>` puts it elsewhere. Keep that path: every repository connects

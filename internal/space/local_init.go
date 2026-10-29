@@ -117,6 +117,10 @@ type LocalSpaceRepoState struct {
 	// RootOnly: the base branch is exactly one commit deep (the root commit
 	// InitLocalSpaceRepo wrote, nothing landed since).
 	RootOnly bool
+	// Commits is the number of commits on the base branch; 0 when it is absent.
+	Commits int
+	// Manifest is space.yaml on the base branch, valid when SpaceID is set.
+	Manifest Manifest
 }
 
 // ReadLocalSpaceRepo reads, without writing, the facts `space init --local`
@@ -141,12 +145,15 @@ func ReadLocalSpaceRepo(ctx context.Context, dir string) (LocalSpaceRepoState, e
 		return state, nil
 	}
 	if count, ok := localGitAnswer(ctx, dir, gitDir, "rev-list", "--count", "--end-of-options", branchRef); ok {
-		n, convErr := strconv.Atoi(count)
-		state.RootOnly = convErr == nil && n == 1
+		if n, convErr := strconv.Atoi(count); convErr == nil {
+			state.Commits = n
+			state.RootOnly = n == 1
+		}
 	}
 	if raw, ok := localGitAnswer(ctx, dir, gitDir, "show", branchRef+":space.yaml"); ok {
 		if manifest, parseErr := ParseManifest([]byte(raw)); parseErr == nil {
 			state.SpaceID = manifest.Space
+			state.Manifest = manifest
 		}
 	}
 	return state, nil

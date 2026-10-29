@@ -497,6 +497,23 @@ func runNetworkGit(ctx context.Context, dir string, credential host.Credential, 
 	return err
 }
 
+// CloneOrigin reads remote.origin.url of the work tree at dir. It addresses
+// dir/.git explicitly: the directory may sit inside another repository (a
+// project's .a2a/cache), and discovery from a directory that is not a clone
+// would answer for that repository instead.
+func CloneOrigin(ctx context.Context, dir string) (string, error) {
+	gitDir := filepath.Join(dir, ".git")
+	if info, err := os.Stat(gitDir); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("%s is not a git work tree", dir)
+	}
+	ctx, cancel := context.WithTimeout(ctx, cloneOriginTimeout)
+	defer cancel()
+	return runGitOutput(ctx, "", nil, "--git-dir="+gitDir, "config", "--local", "--get", "remote.origin.url")
+}
+
+// cloneOriginTimeout bounds CloneOrigin's one local git read.
+const cloneOriginTimeout = 10 * time.Second
+
 // runGitOutput runs `git <args...>` with cwd=dir and optional extraEnv,
 // returning trimmed stdout on success. Explicit argv only, never sh -c.
 func runGitOutput(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {

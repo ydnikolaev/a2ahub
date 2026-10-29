@@ -206,6 +206,23 @@ func buildCommands() map[string]command {
 				if root, err := a2aDataRoot(); err == nil {
 					cmd.DataRoot = root
 				}
+			case "delete":
+				// `--local` removes a space on this machine: the opener proves
+				// the directory is one a2a made, the data root is its default
+				// location, and the project's own connection (when it has one)
+				// is dropped through the same removal `a2a disconnect` runs.
+				// The own system is read only to leave the caller out of the
+				// "other participants" list.
+				cmd.Open = newHostOpener()
+				if root, err := a2aDataRoot(); err == nil {
+					cmd.DataRoot = root
+				}
+				if p, err := resolvePaths(); err == nil {
+					if cfg, err := space.LoadProjectConfig(p.projectConfig); err == nil {
+						cmd.OwnSystem = cfg.System
+					}
+					cmd.Disconnect = cli.NewDisconnectCommand(p.projectConfig, p.machineConfig, p.projectRoot, cli.NewCacheBackedCacheRemover(cacheDirOf(p)))
+				}
 			case "update", "join", "set":
 				if args[0] == "set" {
 					// `set` validates its edited manifest with the product's

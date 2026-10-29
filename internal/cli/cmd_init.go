@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/fold"
@@ -253,7 +254,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	var spaces initStringList
 	fs.Var(&spaces, "space", "connected space repo URL (repeatable; at least one required)")
 	noSkill := fs.Bool("no-skill", false, "do NOT install the a2ahub skill tree (installed by default)")
-	noAgentsPointer := fs.Bool("no-agents-pointer", false, "do NOT add the a2ahub pointer to AGENTS.md (added by default)")
+	noAgentsPointer := fs.Bool("no-agents-pointer", false, "do NOT add the a2ahub pointers to AGENTS.md and CLAUDE.md (added by default)")
 	noSkillLink := fs.Bool("no-skill-link", false, "do NOT link the installed skill into detected agent surfaces (linked by default)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -272,17 +273,30 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 2
 	}
 
+	existing, hasExisting := c.loadExisting()
 	refs := make([]space.Ref, 0, len(spaces))
 	noCredential := make(map[string]struct{}) // locators whose host needs none
 	for _, s := range spaces {
 		locator, h := initOpenLocator(c.Open, s)
-		refs = append(refs, space.Ref{ID: initSpaceIDFromURL(locator), RepoURL: locator})
+		// The mirror location is the same key `connect` computes and pins
+		// (initSpaceIDFromURL of the locator), so the resolver answers the
+		// path `connect` clones into from the very first read: init never
+		// clones, but a read verb that runs before `connect` does, and with no
+		// location it would clone into a directory `connect` then abandons.
+		ref := space.Ref{ID: initSpaceIDFromURL(locator), RepoURL: locator, MirrorLocation: initSpaceIDFromURL(locator)}
+		if hasExisting {
+			// A re-init that rewrites the config must not drop what `connect`
+			// already pinned for the same repository.
+			if prev, ok := initFindRef(existing, locator); ok && prev.MirrorLocation != "" {
+				ref.MirrorLocation = prev.MirrorLocation
+			}
+		}
+		refs = append(refs, ref)
 		if !initHostNeedsCredential(h) {
 			noCredential[locator] = struct{}{}
 		}
 	}
 	cfg := space.ProjectConfig{System: *system, Spaces: refs}
-	existing, hasExisting := c.loadExisting()
 	if hasExisting {
 		// init owns system/space onboarding, not the skill install location.
 		// Preserve the additive project setting when init refreshes the rest of
@@ -315,8 +329,8 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	if hasExisting && initConfigsEquivalent(existing, cfg) {
 		_, _ = fmt.Fprintln(stdio.Stdout, "init: already configured")
-		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a connect <url>` for each space to register and set up credentials")
-		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
+		initPrintNextSteps(stdio, refs, noCredential)
+		c.printCommitTable(stdio)
 		return 0
 	}
 
@@ -335,8 +349,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "init: wrote %s\n", c.projectConfigPath)
-	_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a connect <url>` for each space to register and set up credentials")
-	_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
+	initPrintNextSteps(stdio, refs, noCredential)
 	// Named here because this is the step nobody discovers on their own: every
 	// trigger a2a ships is human-initiated, so a repo without a session-start
 	// hook and a scheduled poll goes quiet while both sides believe they are
@@ -351,7 +364,111 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// shipped schema, not new fields the templates surface on their own —
 	// an agent that never opens reference/ would not discover them exist.
 	_, _ = fmt.Fprintln(stdio.Stdout, "init:   also see reference/status-announcements.md, retraction.md, and bindings.md")
+	c.printCommitTable(stdio)
 	return 0
+}
+
+// initFindRef returns the ref of cfg that names repoURL.
+func initFindRef(cfg space.ProjectConfig, repoURL string) (space.Ref, bool) {
+	for _, r := range cfg.Spaces {
+		if r.RepoURL == repoURL {
+			return r, true
+		}
+	}
+	return space.Ref{}, false
+}
+
+// initPrintNextSteps prints the connect hint per KIND of space, never one
+// sentence for all of them: a space whose host needs a credential gets the
+// credential wording, a space on this machine does not. Each distinct line is
+// printed once, so a config of three GitHub spaces reads like a config of one.
+// The doctor line follows the same split.
+func initPrintNextSteps(stdio IO, refs []space.Ref, noCredential map[string]struct{}) {
+	const (
+		hostedHint = "init: next: a2a connect <url> (registers it, clones its mirror and checks the credential)"
+		localHint  = "init: next: a2a connect <path> (registers it and clones its mirror)"
+	)
+	var needsCred, noCred bool
+	for _, r := range refs {
+		if _, none := noCredential[r.RepoURL]; none {
+			noCred = true
+		} else {
+			needsCred = true
+		}
+	}
+	if needsCred {
+		_, _ = fmt.Fprintln(stdio.Stdout, hostedHint)
+	}
+	if noCred {
+		_, _ = fmt.Fprintln(stdio.Stdout, localHint)
+	}
+	if needsCred {
+		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify credentials and space access")
+	} else {
+		_, _ = fmt.Fprintln(stdio.Stdout, "init: run `a2a doctor` to verify space access")
+	}
+}
+
+// Markers the onboarding page wraps its commit table in. They are HTML
+// comments, invisible when the page renders; InitCommitTable reads the block
+// between them, so the table is typed in exactly one place.
+const (
+	initCommitTableBegin = "<!-- a2a:commit-table:begin -->"
+	initCommitTableEnd   = "<!-- a2a:commit-table:end -->"
+	// initOnboardingPage is the page's path inside the embedded skill tree.
+	initOnboardingPage = "a2ahub/onboarding.md"
+)
+
+// InitCommitTable extracts the commit table from the onboarding page of the
+// embedded skill tree: the lines between the begin and end markers with the
+// blockquote prefix removed. ok is false when files is nil, the page is
+// absent, or either marker is missing.
+func InitCommitTable(files fs.FS) (table string, ok bool) {
+	if files == nil {
+		return "", false
+	}
+	raw, err := fs.ReadFile(files, initOnboardingPage)
+	if err != nil {
+		return "", false
+	}
+	var block []string
+	inside, closed := false, false
+	for _, line := range strings.Split(string(raw), "\n") {
+		switch {
+		case !inside && strings.TrimSpace(line) == initCommitTableBegin:
+			inside = true
+		case inside && strings.TrimSpace(line) == initCommitTableEnd:
+			closed = true
+		case inside && !closed:
+			switch {
+			case strings.HasPrefix(line, "> "):
+				line = line[2:]
+			case line == ">":
+				line = ""
+			}
+			block = append(block, line)
+		}
+		if closed {
+			break
+		}
+	}
+	if !closed {
+		return "", false
+	}
+	return strings.Join(block, "\n") + "\n", true
+}
+
+// printCommitTable prints what to commit after init, from the one text the
+// onboarding page carries. It never fails init: with no embedded tree (the
+// catalog and test path) or a page missing a marker it says so on stderr.
+func (c *InitCommand) printCommitTable(stdio IO) {
+	table, ok := InitCommitTable(c.SkillFiles)
+	if !ok {
+		_, _ = fmt.Fprintln(stdio.Stderr, "init: commit table unavailable in this build")
+		return
+	}
+	_, _ = fmt.Fprintln(stdio.Stdout, "init: what to commit")
+	_, _ = fmt.Fprint(stdio.Stdout, table)
 }
 
 func (c *InitCommand) loadExisting() (space.ProjectConfig, bool) {
@@ -725,6 +842,9 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 
 	cfg, _ := c.loadProjectConfig(c.projectConfigPath) // absent config is fine — connect can be the first write
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
+	// The refs as loaded: the superseded-clone rule below needs the ref that
+	// every earlier read resolved through, before any repair edits it.
+	loadedSpaces := slices.Clone(cfg.Spaces)
 
 	// The authoritative space id lives in the mirror's own space.yaml
 	// (spec 18 §T1) — it can only be read AFTER a clone, so the clone target
@@ -753,6 +873,10 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if needsCredential {
 		credential = mirrorCredential(ctx, c.resolveCredential, urlID, machine)
 	}
+	// Whether this connect makes the clone or finds it, decided BEFORE the
+	// clone: it is what the report says.
+	_, gitErr := os.Stat(filepath.Join(dir, ".git"))
+	mirrorPresent := gitErr == nil
 	if err := c.cloneOrFetch(ctx, dir, repoURL, credential); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot establish mirror for %s: %v\n", urlID, err)
 		return 1
@@ -820,12 +944,14 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		if mirrorFixed {
 			if wasMirror == "" {
-				_, _ = fmt.Fprintf(stdio.Stdout, "connect: repaired missing mirror location for space %q (now resolves to the cloned mirror)\n", id)
+				newPath := c.resolveMirror(c.projectRoot, cfg.Spaces[idx], machine)
+				_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q now uses the machine mirror at %s\n", id, newPath)
+				c.retireSupersededClone(ctx, loadedSpaces[idx], repoURL, newPath, machine, stdio)
 			} else {
 				_, _ = fmt.Fprintf(stdio.Stdout, "connect: corrected mirror location for space %q: %q -> %q\n", id, wasMirror, urlID)
 			}
 		}
-		_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q already connected; mirror refreshed\n", id)
+		_, _ = fmt.Fprintln(stdio.Stdout, connectExistingEntryLine(id, mirrorPresent))
 		joinHint()
 		return 0
 	}
@@ -852,9 +978,55 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		return 0
 	}
 
-	_, _ = fmt.Fprintf(stdio.Stdout, "connect: space %q already connected; mirror refreshed\n", id)
+	_, _ = fmt.Fprintln(stdio.Stdout, connectExistingEntryLine(id, mirrorPresent))
 	joinHint()
 	return 0
+}
+
+// connectExistingEntryLine is the report for a space whose config entry was
+// already there: "connected; cloned its mirror" when this connect made the
+// clone (the entry came from `init`, which never clones), "already connected;
+// mirror refreshed" when the clone was already on disk.
+func connectExistingEntryLine(id string, mirrorPresent bool) string {
+	if mirrorPresent {
+		return fmt.Sprintf("connect: space %q already connected; mirror refreshed", id)
+	}
+	return fmt.Sprintf("connect: space %q connected; cloned its mirror", id)
+}
+
+// retireSupersededClone removes the clone a read verb made before this connect
+// filled the entry's mirror location, when it is provably that clone and
+// provably superseded. before is the ref as it was loaded (the one every earlier
+// read resolved through); newPath is where the filled ref resolves. All three
+// must hold:
+//  1. the path is exactly what the resolver answers for the pre-fill ref;
+//  2. it differs from newPath (equal means it IS the live clone);
+//  3. it is a git work tree whose remote.origin.url equals the entry's RepoURL.
+//
+// Anything else is left alone, and when the path exists connect says why.
+// The directory is under .a2a/cache/, which is disposable (D-001).
+func (c *ConnectCommand) retireSupersededClone(ctx context.Context, before space.Ref, repoURL, newPath string, machine space.MachineConfig, stdio IO) {
+	oldPath := c.resolveMirror(c.projectRoot, before, machine)
+	if oldPath == newPath {
+		return
+	}
+	if _, err := os.Stat(oldPath); err != nil {
+		return // nothing was cloned there
+	}
+	origin, err := space.CloneOrigin(ctx, oldPath)
+	switch {
+	case err != nil:
+		_, _ = fmt.Fprintf(stdio.Stdout, "connect: kept the earlier clone at %s: %v\n", oldPath, err)
+		return
+	case origin != repoURL:
+		_, _ = fmt.Fprintf(stdio.Stdout, "connect: kept the earlier clone at %s: its origin is %s, not %s\n", oldPath, origin, repoURL)
+		return
+	}
+	if err := os.RemoveAll(oldPath); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stdout, "connect: kept the earlier clone at %s: cannot remove it: %v\n", oldPath, err)
+		return
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "connect: removed the superseded clone at %s\n", oldPath)
 }
 
 // connectIsActiveParticipant reports whether system is an active participant of
@@ -1093,40 +1265,63 @@ func (c *DisconnectCommand) Run(ctx context.Context, args []string, stdio IO) in
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a disconnect <space>")
 		return 2
 	}
-	target := args[0]
+	ref, found, code := c.RemoveConnected(ctx, args[0], stdio)
+	if !found {
+		_, _ = fmt.Fprintf(stdio.Stdout, "disconnect: %q is not connected (nothing to do)\n", args[0])
+		return 0
+	}
+	if code != 0 {
+		return code
+	}
+	_, _ = fmt.Fprintf(stdio.Stdout, "disconnect: removed space %q (config entry + mirror)\n", ref.ID)
+	return 0
+}
 
+// ConnectedRef returns this project's configured ref for target (a space id or
+// a repo URL) without changing anything. `space delete` reads it through its own
+// consumer-side seam.
+func (c *DisconnectCommand) ConnectedRef(target string) (space.Ref, bool) {
+	cfg, _ := c.loadProjectConfig(c.projectConfigPath)
+	ref, idx := disconnectFind(cfg, target)
+	return ref, idx >= 0
+}
+
+// RemoveConnected is disconnect's removal itself, the one body `a2a disconnect`
+// and `a2a space delete --approve` both run: it removes the mirror clone, calls
+// the cache seam, and drops the config entry for target. found is false when
+// target is not connected (nothing was touched); a non-zero code is a failure
+// already reported on stderr. It prints nothing on success, so each caller
+// words its own report.
+func (c *DisconnectCommand) RemoveConnected(ctx context.Context, target string, stdio IO) (ref space.Ref, found bool, code int) {
 	cfg, _ := c.loadProjectConfig(c.projectConfigPath)
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
 
 	ref, idx := disconnectFind(cfg, target)
 	if idx < 0 {
-		_, _ = fmt.Fprintf(stdio.Stdout, "disconnect: %q is not connected (nothing to do)\n", target)
-		return 0
+		return space.Ref{}, false, 0
 	}
 
 	dir := c.resolveMirror(c.projectRoot, ref, machine)
 	if err := c.removeAll(dir); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "disconnect: cannot remove mirror for %s: %v\n", ref.ID, err)
-		return 1
+		return ref, true, 1
 	}
 	if err := c.cache.RemoveSpace(ctx, ref.ID); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "disconnect: cache removal seam failed for %s: %v\n", ref.ID, err)
-		return 1
+		return ref, true, 1
 	}
 
 	cfg.Spaces = append(cfg.Spaces[:idx], cfg.Spaces[idx+1:]...)
 	raw, err := yaml.Marshal(cfg)
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "disconnect: cannot encode config: %v\n", err)
-		return 1
+		return ref, true, 1
 	}
 	if err := c.writeFile(c.projectConfigPath, raw, 0o644); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "disconnect: cannot write %s: %v\n", c.projectConfigPath, err)
-		return 1
+		return ref, true, 1
 	}
-
-	_, _ = fmt.Fprintf(stdio.Stdout, "disconnect: removed space %q (config entry + mirror)\n", ref.ID)
-	return 0
+	return ref, true, 0
 }
 
 func disconnectFind(cfg space.ProjectConfig, target string) (space.Ref, int) {
