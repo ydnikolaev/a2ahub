@@ -10,7 +10,7 @@
 > **Not here:** what each command sequences, how a re-run resumes, when it
 > stops, and the flag combinations it refuses — that is "Express flow" in
 > [data exchange](../reference/data-exchange.md). The flags themselves are in
-> each command's `--help`. The full loop this shortens is the [send
+> [the flag reference](../reference/data-exchange-flags.md) and each command's `--help`. The full loop this shortens is the [send
 > loop](send.md) and the [receive loop](receive.md).
 
 ## The express loop

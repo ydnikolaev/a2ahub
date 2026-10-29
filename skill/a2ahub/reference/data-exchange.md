@@ -386,7 +386,39 @@ expects is set by its `flow:` key.
   `a2a data deliver --for <XW-id>`.
 - **Extra criteria need your verdicts.** A request with more than the first
   criterion closes only with a `--verdict` for each one; the verb refuses
-  rather than invent a verdict you did not give.
+  rather than invent a verdict you did not give. The value is
+  `<index-or-criterion-id>:<met|unmet|not_warranted|not_exercised>:<cause_owner>`
+  and the flag repeats. `--to <dir>` also fetches the package, and `--reason`
+  replaces the dispute reason otherwise derived from the failing findings.
+- **A request that pins several contracts needs `--contract`.**
+  `deliver --for` packs against the one contract the request pins; when it
+  pins more than one it refuses with *"pass --contract <XC-id>@<version> to
+  choose"*, and you re-run with that flag naming one of them.
 - **The forms above are unchanged.** `--for` refuses a positional staging
   root, `--fulfills` or `--supersedes` on `deliver`, and a positional
   package id on `verify`: it derives all of them itself.
+
+**Over MCP**, the same three verbs are the `a2a_data` tool's `request`,
+`deliver` and `verify` actions; `deliver` and `verify` take the express form
+when `for` is set. The input schema is closed, so a CLI flag name the tool does
+not carry is refused, not ignored. The flags become parameters like this:
+
+| CLI flag | `a2a_data` parameter |
+|---|---|
+| `--for <XW-id>` | `for` |
+| `--producer`, `--title`, `--contract` | `producer`, `title`, `contract` |
+| `--interim-behavior` | `interim_behavior` |
+| `--needed-by` | `needed_by` |
+| `--acceptance-criterion` (repeatable) | `acceptance_criteria` (array of strings) |
+| `--verdict` (repeatable) | `verdicts` (array of strings, same value format) |
+| `--reason`, `--to`, `--record` | `reason`, `to`, `record` (boolean) |
+| `--from`, `--profile`, `--format` | `from`, `profile`, `format` |
+| `--expires`, `--timeout` | `expires`, `timeout` (Go duration strings; `timeout` must be positive) |
+| `--max-attempts` | `max_attempts` (integer) |
+
+`request` requires `producer`, `contract` and `interim_behavior`; `deliver`
+with `for` requires `from`, `profile` and `format`. The parameters' own
+descriptions in the schema label `max_attempts` "fetch only" and `contract`,
+`from`, `profile`, `format`, `expires` "pack only"; with `for`, `deliver` also
+accepts them. `staging_root`, `fulfills`, `supersedes`, `expect_pack` and
+`package_id` are refused beside `for`.
