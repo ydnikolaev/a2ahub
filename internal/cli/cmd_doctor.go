@@ -863,13 +863,6 @@ func (c *DoctorCommand) doctorCheckSpaceIdentity(cfg space.ProjectConfig, machin
 	return ok, strings.Join(failures, "; ")
 }
 
-// doctorCheckVersions compares this build's binaryVersion against each
-// connected space's space.yaml min_binary_version pin (§7.3, CC-085's
-// sibling read-only check — the write funnel enforces the write-time
-// refusal; this check only reports the mismatch). It reads space.yaml
-// straight from the space's mirror working tree; a mirror the "space
-// access" check could not reach also fails this check (a stale/absent
-// mirror has nothing to compare against).
 // WithBuild sets the binary's full identity and returns the command. Without
 // it the command behaves as a release build, as it always has.
 func (c *DoctorCommand) WithBuild(b version.Build) *DoctorCommand {
@@ -877,6 +870,13 @@ func (c *DoctorCommand) WithBuild(b version.Build) *DoctorCommand {
 	return c
 }
 
+// doctorCheckVersions compares this build's binaryVersion against each
+// connected space's space.yaml min_binary_version pin (§7.3, CC-085's
+// sibling read-only check — the write funnel enforces the write-time
+// refusal; this check only reports the mismatch). It reads space.yaml
+// straight from the space's mirror working tree; a mirror the "space
+// access" check could not reach also fails this check (a stale/absent
+// mirror has nothing to compare against).
 func (c *DoctorCommand) doctorCheckVersions(cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
 	if version.IsDevBuild(c.binaryVersion) {
 		return true, " · unreleased local build (dev); released-version floor comparison skipped"

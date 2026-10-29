@@ -273,6 +273,7 @@ linters:
             - github.com/ydnikolaev/a2ahub/internal/space$
             - github.com/ydnikolaev/a2ahub/internal/template$
             - github.com/ydnikolaev/a2ahub/internal/validate$
+            - github.com/ydnikolaev/a2ahub/internal/version$
         internal-cli:
           files:
             - "**/internal/cli/*.go"
