@@ -9577,6 +9577,17 @@
           }
         },
         {
+          "id": "RN-02701-2",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "a session can block until another system's move that concerns it lands",
+          "detail": "`a2a wait` blocks until another system's event that concerns this system lands in a configured space, prints one line per event (space, event id, actor, transition, subject and why it matched) and exits 0. \"Concerns me\" covers what `a2a inbox --actionable` cannot show: an acknowledge, a note or a close on an artifact this system authored, and any move on a thread it takes part in. `--subject` and `--thread` narrow the wait to one artifact or one thread.\nIt exits 124 when `--timeout` (default 30 minutes) passes with every space observed and nothing landed, and 3 when a space could not be observed, so silence there proves nothing. A local space is watched by reading its bare repository's `main`, with no network; a GitHub space is fetched on an interval that grows from 30 seconds to 5 minutes while nothing changes. A cursor under `.a2a/cache/wait/` makes re-running it lossless. The printed line never carries a note's or an artifact's text.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed. To be woken instead of polling, run it as a background command and re-run it after it exits; the skill's watch-loop page has the recipe.\n"
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
