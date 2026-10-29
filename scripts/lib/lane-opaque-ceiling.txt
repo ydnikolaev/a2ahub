@@ -74,4 +74,17 @@
 #      number `57`; it was restored by hand from a copy taken before the run.
 #      Anyone re-seeding must do the same, or the file stops being the record
 #      its own first paragraph says it is.
-57
+#
+# ---- 2026-10-29: RESEEDED 57 -> 58 (fast-loop-2026-10 P1) ----
+#
+#  +1  scripts/deliver.sh (the `deliver` target, `lane-inputs: NEVER`). It is
+#      an installer, not a gate, and every read the classifier refuses is a
+#      runtime artifact rather than a repository path: the verify telemetry
+#      under .a2a/cache/verify/ and the release receipts under
+#      .a2a/release-gate/, both built from "$ROOT" so the teeth can point the
+#      script at a fixture checkout, plus the shared identity formula it
+#      sources from scripts/lib/. Measured: deleting the directive turns
+#      `make lane-declarations` red on four such reads (deliver.sh:33, :257,
+#      :262, :310). No declared glob could cover them, because none of them is
+#      tracked. The header above was restored by hand after the reseed, again.
+58
