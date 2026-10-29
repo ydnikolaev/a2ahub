@@ -30,7 +30,10 @@ export default defineConfig({
     channel: process.env.CI ? undefined : 'chrome',
   },
   webServer: {
-    command: `npm run preview -- --host 127.0.0.1 --port ${port}`,
+    // --ignore-lock keeps the server in the foreground, owned by this run.
+    // Astro 7.4 backgrounds `astro preview` when it detects a coding agent and
+    // refuses a second instance while that background one holds the lock.
+    command: `npm run preview -- --host 127.0.0.1 --port ${port} --ignore-lock`,
     url: `${origin}/`,
     reuseExistingServer: !process.env.CI && !process.env.HEAVY_RUN_SLOT,
     timeout: 120_000,

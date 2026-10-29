@@ -39,7 +39,9 @@ const thresholds = {
 };
 const median = (values) => values.slice().sort((left, right) => left - right)[Math.floor(values.length / 2)];
 
-const server = spawn('npm', ['run', 'preview', '--', '--host', host, '--port', String(port)], {
+// --ignore-lock: see playwright.config.mjs. Without it, Astro 7.4 detaches the
+// server under a coding agent, and killing `server` below leaves it running.
+const server = spawn('npm', ['run', 'preview', '--', '--host', host, '--port', String(port), '--ignore-lock'], {
   cwd: new URL('..', import.meta.url),
   stdio: ['ignore', 'pipe', 'pipe'],
 });

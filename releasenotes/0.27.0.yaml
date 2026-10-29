@@ -206,6 +206,11 @@ changes:
     The reusable validate workflow names the toolchain explicitly, because a
     space repository has no `go.mod`; it moves with `go.mod`, which
     `workflow-lint` asserts.
+
+    The website's dependencies move past high npm advisories as well, among
+    them an authorization bypass in Astro. The local dashboard `a2a html`
+    serves is built by the same bundler, so it is rebuilt; only its minified
+    code changes.
   affects:
   - a2a binary
   - a2a-validate-reusable.yml
