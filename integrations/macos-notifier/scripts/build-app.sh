@@ -72,7 +72,11 @@ if [[ "$CONFIGURATION" == "release" ]]; then
 else
     install -m 0755 "${ARCH_BINARIES[0]}" "$EXECUTABLE"
 fi
-xcrun lipo "$EXECUTABLE" -verify_arch "${ARCHITECTURES[@]}"
+# One architecture per call: lipo from the macOS 27 Command Line Tools refuses
+# several ("-verify_arch requires exactly one input file").
+for ARCHITECTURE in "${ARCHITECTURES[@]}"; do
+    xcrun lipo "$EXECUTABLE" -verify_arch "$ARCHITECTURE"
+done
 ACTUAL_ARCHITECTURES="$(xcrun lipo "$EXECUTABLE" -archs)"
 test "$(awk '{print NF}' <<< "$ACTUAL_ARCHITECTURES")" -eq "${#ARCHITECTURES[@]}"
 
