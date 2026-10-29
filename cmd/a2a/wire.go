@@ -675,6 +675,7 @@ var freshReadVerbs = map[string]bool{
 	"contracts": true,
 	"dashboard": true,
 	"html":      true,
+	"wait":      true,
 }
 
 func readVerbs() map[string]func(*cache.Store) cli.Command {
@@ -690,6 +691,7 @@ func readVerbs() map[string]func(*cache.Store) cli.Command {
 		},
 		"html":      func(s *cache.Store) cli.Command { return cli.NewHtmlCommand(s) },
 		"dashboard": func(s *cache.Store) cli.Command { return cli.NewDashboardCommand(s) },
+		"wait":      func(s *cache.Store) cli.Command { return cli.NewWaitCommand(cache.NewWaiter(s)) },
 	}
 }
 

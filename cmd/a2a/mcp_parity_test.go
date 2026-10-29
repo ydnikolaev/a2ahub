@@ -100,6 +100,7 @@ var mcpExcludedVerbs = map[string]bool{
 	"notifications": true, // P49/OP-223: installs and coordinates host-native UI components — CLI-only
 	"feedback":      true, // P25: files feedback on a2a itself (consumer submit + hub-operator triage) — a host act, CLI-only (spec 25 §T1: triage "Not exposed via MCP")
 	"space":         true, // P33 §12: scaffolds a NEW space repo onto the local filesystem — an operator/host act outside any connected space, CLI-only (like init/skill/html)
+	"wait":          true, // fast-loop P2: blocks up to --timeout (default 30m) for a counterparty's move; a call that long outlives MCP client timeouts, and the push channel it serves is the harness's background-exit event, which an MCP call does not have
 }
 
 // TestMCPExcludedVerbsCarriesNoTemporaryRow is the guard spec 06

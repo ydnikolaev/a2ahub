@@ -526,6 +526,21 @@ entries:
     mapping:
       clean: 0
 
+  - verb: wait
+    site:
+      - internal/cli/cmd_wait.go
+    mapping:
+      clean: 0
+      unmeasured: 3
+    reason: >-
+      0 means a counterparty's event that concerns this system landed and was
+      printed. 3 means the timeout passed while the latest observation of at
+      least one selected space had failed, so "nothing landed" was not
+      measured there and must not be read as quiet. 124 (timeout, every space
+      observed) is a transport outcome like usage's 2 and like await's
+      timeout, outside the verdict vocabulary: it is neither clean nor an
+      objection.
+
   - verb: doctor
     site: []
     mapping:

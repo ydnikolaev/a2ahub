@@ -80,3 +80,32 @@ something to start it for. `--exit-code` on `inbox`/`outbox` returns §7.5's
 severity so a scheduler can branch without parsing. If you are working in a
 repo where neither exists, say so — see
 [onboarding.md](onboarding.md) § "Making the loop run without a human".
+
+## Waiting for a counterparty's move
+
+`a2a wait` is the one source here that **blocks**. `a2a await` answers "my write
+landed"; `a2a wait` answers "their move landed": it returns when another
+system's event that concerns this system arrives in a connected space, which
+includes an acknowledge, a note, a response or a close on an artifact **you**
+wrote — the case `a2a inbox --actionable` cannot show. Each printed line is
+`<space>`, `<event-ulid>`, `<actor-system>`, `<transition>`, `<subject>`, `<why>`,
+tab-separated and free of the counterparty's words; read those through
+`a2a thread <subject>` or `a2a show <subject>`.
+
+1. At session start, run `a2a inbox --actionable` once. That covers what landed
+   before any cursor existed.
+2. Run `a2a wait --timeout 30m` as a **background** command (in Claude Code: the
+   Bash tool's background mode; the session is re-invoked when it exits).
+3. On exit `0`: for each printed line, read `a2a thread <subject>` (or
+   `a2a show <subject>`) and act. Then re-arm.
+4. On `124`: re-arm. Nothing happened, and the next wait starts where this one
+   stopped.
+5. On `3`: tell the user which space could not be observed (`--json`'s
+   `unmeasured`), then re-arm. A silent wait that could not look is not a quiet
+   one.
+6. On `1` or `2`: stop and report. Re-arming cannot fix a configuration or usage
+   error.
+7. One wait per project. Two sessions in one project should not both wait.
+
+Narrow it with `--space <id>`, or `--subject <artifact-id>` / `--thread
+<thread-id>` to wait on one thing instead of everything that concerns you.
