@@ -1427,7 +1427,7 @@ func unsetOwnHooksPath(t *testing.T, origin string) {
 // config without setting it on the (parallel) test process.
 func gitExecWithEnv(env []string) gitExecFunc {
 	return func(ctx context.Context, stdin []byte, _ int, args ...string) recoveryGitResult {
-		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd := exec.CommandContext(ctx, "git", gitfixture.Args(args...)...)
 		cmd.Env = append(os.Environ(), env...)
 		if stdin != nil {
 			cmd.Stdin = bytes.NewReader(stdin)
