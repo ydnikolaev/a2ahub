@@ -101,6 +101,16 @@ echo "parity: removing untracked files — CI checks out, it does not inherit a 
 # cleaning it would rebuild the world every run for no fidelity gained.
 git -C "$WORK" clean -ffdxq -e web/node_modules -e .a2a
 
+# Kept is not unbounded. verify.sh caps the host's build cache, but in CI mode
+# it never purges GOCACHE (that is the runner's), so this one grew unchecked:
+# 4.6 GB measured on 2026-10-29. Same cap as the host's (devkit dev-env §1),
+# purged with the tool's own command.
+gocache_cap_kib=$((5 * 1024 * 1024))
+if [ -d "$GOCACHE" ] && [ "$(du -sk "$GOCACHE" | cut -f1)" -gt "$gocache_cap_kib" ]; then
+  echo "parity: $GOCACHE is over its ${gocache_cap_kib} KiB cap; go clean -cache"
+  go clean -cache
+fi
+
 # `npm ci` only when the lockfile actually changed. CI runs it unconditionally
 # because its runner starts empty; here the volume persists, and reinstalling
 # 350MB per run buys nothing.

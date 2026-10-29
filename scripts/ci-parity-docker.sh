@@ -202,6 +202,24 @@ mkdir -p "$ROOT/.a2a/cache/parity-container"
 # Twin runs are not possible here by construction, not by the queue: a
 # worktree's `.git` is a file, so the entrypoint refuses anything but the main
 # checkout, and the shared work volume above allows one container at a time.
+# The volumes carry the owner label from creation, so a cleanup can find them
+# by label and never by name pattern. `dev` volumes are warm caches worth
+# keeping; `test` ones hold a run's tree and state. Docker cannot label an
+# existing volume, so one found without the label is refused, not adopted.
+parity_volume() { # $1 name, $2 stack
+  local owner
+  if owner="$(docker volume inspect --format '{{index .Labels "dev.a2ahub.owner"}}' "$1" 2>/dev/null)"; then
+    [ "$owner" = a2ahub ] || die "volume $1 exists without the dev.a2ahub.owner=a2ahub label, so nothing proves this
+       script made it. If it is ours (an older run's), remove it by that exact name: docker volume rm $1"
+  else
+    docker volume create --label dev.a2ahub.owner=a2ahub --label "dev.a2ahub.stack=$2" "$1" >/dev/null
+  fi
+}
+parity_volume "$WORK_VOLUME" test
+parity_volume a2ahub-parity-state test
+parity_volume a2ahub-parity-gocache dev
+parity_volume a2ahub-parity-gomod dev
+
 exec docker run --rm -i \
   --name "$CONTAINER" \
   --label "heavy.run=${HEAVY_RUN_SLOT:-}" \
