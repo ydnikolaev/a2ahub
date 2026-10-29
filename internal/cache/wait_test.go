@@ -28,7 +28,7 @@ func waitArtifact(id, typ, from string, to any, thread string, events ...string)
 }
 
 func waitCand(ulid, actor, transition, subject string) waitCandidate {
-	return waitCandidate{Space: "sp1", ULID: ulid, ActorSystem: actor, Transition: transition, Subject: subject, At: "2026-10-29T10:00:00Z"}
+	return waitCandidate{Space: "sp1", ULID: ulid, ActorSystem: actor, Transition: fold.Transition(transition), Subject: subject, At: "2026-10-29T10:00:00Z"}
 }
 
 // TestWait_Selection is spec 02 §6's table: every `why` row for --mine, the

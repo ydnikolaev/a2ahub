@@ -104,8 +104,8 @@ func (c *WaitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	defer cancel()
 	res, err := c.src.Wait(waitCtx, req)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "wait: %v\n", waitScrub(err.Error()))
-		return 1
+		return spaceRefuse(stdio, "wait: watch the connected spaces", waitScrub(err.Error()),
+			"run `a2a doctor` to see which connected space cannot be read, fix it, then re-run `a2a wait`")
 	}
 
 	if *jsonOut {
@@ -118,14 +118,14 @@ func (c *WaitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		}
 		enc := json.NewEncoder(stdio.Stdout)
 		if err := enc.Encode(out); err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "wait: write output: %v\n", err)
-			return 1
+			return spaceRefuse(stdio, "wait --json: write the result", err.Error(),
+				"re-run `a2a wait --json` with a writable standard output")
 		}
 	} else {
 		for _, e := range res.Events {
 			_, _ = fmt.Fprintln(stdio.Stdout, strings.Join([]string{
 				waitScrub(e.Space), waitScrub(e.Event), waitScrub(e.Actor),
-				waitScrub(e.Transition), waitScrub(e.Subject), waitScrub(e.Why),
+				waitScrub(string(e.Transition)), waitScrub(e.Subject), waitScrub(e.Why),
 			}, "\t"))
 		}
 	}

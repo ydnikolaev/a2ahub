@@ -1,5 +1,10 @@
 package fold
 
+// Transition is a value of the §5.2.2 `transition` vocabulary, for a field
+// that carries one. The constants below stay untyped, so they compare against
+// either a Transition or a plain string and no signature in this package moves.
+type Transition string
+
 // Transition names (§5.2.2 `transition` enum; union of every §3.4
 // transition name + `note`). Kept as plain strings, not a closed Go enum,
 // because the same name means different things across kinds (e.g.

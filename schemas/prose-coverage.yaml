@@ -201,6 +201,7 @@ covered:
   cmd:update: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""
   cmd:validate: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   cmd:verify: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
+  cmd:wait: "loops/watch.md#Waiting for a counterparty's move"
   cmd:verify-fail: "reference/data-exchange.md#Consumer sequence"
   cmd:verify-pass: "reference/data-exchange.md#Consumer sequence"
   cmd:adapt: "loops/contract-change.md#§8.4a Consumer loop — \"a contract I depend on changed\""

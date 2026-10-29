@@ -127,14 +127,14 @@ func waitPathSafe(s string) string {
 // WaitEvent is one counterparty event the wait reports. It carries facts only:
 // there is deliberately no note, title or other free-text field (D-014).
 type WaitEvent struct {
-	Space      string `json:"space"`
-	Event      string `json:"event"`
-	Actor      string `json:"actor"`
-	Transition string `json:"transition"`
-	Subject    string `json:"subject"`
-	Thread     string `json:"thread"`
-	Why        string `json:"why"`
-	At         string `json:"at"`
+	Space      string          `json:"space"`
+	Event      string          `json:"event"`
+	Actor      string          `json:"actor"`
+	Transition fold.Transition `json:"transition"`
+	Subject    string          `json:"subject"`
+	Thread     string          `json:"thread"`
+	Why        string          `json:"why"`
+	At         string          `json:"at"`
 }
 
 // WaitRequest is one wait. The deadline is the caller's context's.
@@ -170,7 +170,7 @@ type waitCandidate struct {
 	Space       string
 	ULID        string
 	ActorSystem string
-	Transition  string
+	Transition  fold.Transition
 	Subject     string
 	At          string
 	// Path is the event file's repo-relative path, for diagnostics only.
@@ -893,7 +893,7 @@ func (w *Waiter) judgeRange(ctx context.Context, wt *spaceWatch, from, to string
 			continue
 		}
 		candidates = append(candidates, waitCandidate{
-			Space: wt.sm.SpaceID, ULID: ev.Event, ActorSystem: ev.Actor.System, Transition: ev.Transition,
+			Space: wt.sm.SpaceID, ULID: ev.Event, ActorSystem: ev.Actor.System, Transition: fold.Transition(ev.Transition),
 			Subject: ev.Subject, At: ev.At, Path: p,
 		})
 	}
