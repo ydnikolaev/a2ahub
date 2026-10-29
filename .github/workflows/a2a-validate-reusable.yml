@@ -144,10 +144,10 @@ jobs:
         if: inputs.a2a-ref == ''
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Pinned to a2a's own toolchain (go.mod `go 1.26.6`); bumped with
+          # Pinned to a2a's own toolchain (go.mod `go 1.26.10`); bumped with
           # the release. A space repo has no go.mod, so go-version-file is not
           # usable here — the version is named explicitly.
-          go-version: "1.26.6"
+          go-version: "1.26.10"
 
       # cosign verifies the downloaded binary's keyless signature. Same action,
       # same SHA pin, as the release workflow that PRODUCES the signature —

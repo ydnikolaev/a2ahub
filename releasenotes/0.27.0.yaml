@@ -189,3 +189,31 @@ changes:
     why: >
       A defect fix in an existing check; the roadmap names capabilities, not
       repairs.
+- id: RN-02700-5
+  kind: fix
+  impact: normal
+  subject: the binary and every space's validate workflow build on a Go toolchain
+    with fourteen fewer called vulnerabilities
+  detail: >
+    `make release-preflight` refused this cut on fourteen vulnerabilities
+    `govulncheck` reports as reachable from this code. The toolchain moves from
+    go1.26.6 to go1.26.10, which fixes the standard-library ones in `net/http`,
+    `net/textproto`, `crypto/tls`, `crypto/x509`, `html/template` (reached
+    through the local dashboard server) and `os`. `golang.org/x/net` moves to
+    v0.60.0 and `google.golang.org/grpc` to v1.83.1 (reached through Sigstore
+    verification of a release). The accepted-findings list stays empty.
+
+    The reusable validate workflow names the toolchain explicitly, because a
+    space repository has no `go.mod`; it moves with `go.mod`, which
+    `workflow-lint` asserts.
+  affects:
+  - a2a binary
+  - a2a-validate-reusable.yml
+  action:
+    scope: space
+    why: No action for an existing space pinned to an earlier release; a space
+      adopts the new toolchain when its workflow pin moves to this release.
+  roadmap:
+    visibility: omit
+    why: >
+      A dependency security fix; the roadmap names capabilities, not repairs.
