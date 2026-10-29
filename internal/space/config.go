@@ -157,11 +157,11 @@ func LoadProjectConfig(path string) (ProjectConfig, error) {
 		cfg.SkillDir = normalized
 	}
 	for _, ref := range cfg.Spaces {
-		if err := checkMirrorKey("id", ref.ID); err != nil {
+		if err := CheckMirrorKey("id", ref.ID); err != nil {
 			return ProjectConfig{}, &Error{Op: op, Input: path, Err: err}
 		}
 		if ref.MirrorLocation != "" {
-			if err := checkMirrorKey("mirror_location", ref.MirrorLocation); err != nil {
+			if err := CheckMirrorKey("mirror_location", ref.MirrorLocation); err != nil {
 				return ProjectConfig{}, &Error{Op: op, Input: path, Err: err}
 			}
 		}
@@ -169,12 +169,13 @@ func LoadProjectConfig(path string) (ProjectConfig, error) {
 	return cfg, nil
 }
 
-// checkMirrorKey refuses a space id or mirror_location that is not exactly one
+// CheckMirrorKey refuses a space id or mirror_location that is not exactly one
 // path segment. ResolveMirrorLocation joins either onto a mirror root, and
 // `a2a connect` and `a2a disconnect` remove the directory it names, so a key
-// such as `../..` from a committed project config would aim that removal
-// outside the mirror root.
-func checkMirrorKey(field, value string) error {
+// such as `../..` would aim that removal outside the mirror root. The load
+// refuses one, and every verb that writes a key checks it first, so no verb
+// persists a config the next load rejects.
+func CheckMirrorKey(field, value string) error {
 	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `/\`) || filepath.Base(value) != value {
 		return fmt.Errorf("%w: space %s %q must be one path segment (no separators, not . or ..)", ErrManifestInvalid, field, value)
 	}

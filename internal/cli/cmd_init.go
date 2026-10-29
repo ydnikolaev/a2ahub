@@ -283,6 +283,10 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// path `connect` clones into from the very first read: init never
 		// clones, but a read verb that runs before `connect` does, and with no
 		// location it would clone into a directory `connect` then abandons.
+		if err := space.CheckMirrorKey("id", initSpaceIDFromURL(locator)); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "init: cannot name a space for --space %s: %v\n", s, err)
+			return 2
+		}
 		ref := space.Ref{ID: initSpaceIDFromURL(locator), RepoURL: locator, MirrorLocation: initSpaceIDFromURL(locator)}
 		if hasExisting {
 			// A re-init that rewrites the config must not drop what `connect`
@@ -838,9 +842,17 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// today's behaviour.
 	repoURL, spaceHost := initOpenLocator(c.Open, args[0])
 	urlID := initSpaceIDFromURL(repoURL)
+	if err := space.CheckMirrorKey("id", urlID); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot name a mirror for %s: %v\n", repoURL, err)
+		return 1
+	}
 	needsCredential := initHostNeedsCredential(spaceHost)
 
-	cfg, _ := c.loadProjectConfig(c.projectConfigPath) // absent config is fine — connect can be the first write
+	cfg, err := loadProjectConfigIfPresent(c.loadProjectConfig, c.projectConfigPath)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "connect: cannot read %s, so it is not rewritten: %v\n", c.projectConfigPath, err)
+		return 1
+	}
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
 	// The refs as loaded: the superseded-clone rule below needs the ref that
 	// every earlier read resolved through, before any repair edits it.
@@ -883,6 +895,10 @@ func (c *ConnectCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	id := connectResolveSpaceID(dir, urlID)
+	if err := space.CheckMirrorKey("id", id); err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "connect: the space.yaml of %s names an id this project cannot register: %v\n", repoURL, err)
+		return 1
+	}
 
 	// The authoritative id is known only HERE (it comes out of the freshly
 	// cloned mirror's space.yaml), and the machine config's credentials map
@@ -1205,6 +1221,17 @@ func connectResolveSpaceID(mirrorDir, fallback string) string {
 	return manifest.Space
 }
 
+// loadProjectConfigIfPresent is the project config for a verb that may write
+// it: an absent file is an empty config, and any other failure is returned, so
+// the verb never rewrites, or deletes by, a config it could not read.
+func loadProjectConfigIfPresent(load func(string) (space.ProjectConfig, error), path string) (space.ProjectConfig, error) {
+	cfg, err := load(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return space.ProjectConfig{}, err
+	}
+	return cfg, nil
+}
+
 var _ Command = (*ConnectCommand)(nil)
 
 // DisconnectCommand implements `a2a disconnect <space>`: removes the
@@ -1266,12 +1293,12 @@ func (c *DisconnectCommand) Run(ctx context.Context, args []string, stdio IO) in
 		return 2
 	}
 	ref, found, code := c.RemoveConnected(ctx, args[0], stdio)
+	if code != 0 {
+		return code
+	}
 	if !found {
 		_, _ = fmt.Fprintf(stdio.Stdout, "disconnect: %q is not connected (nothing to do)\n", args[0])
 		return 0
-	}
-	if code != 0 {
-		return code
 	}
 	_, _ = fmt.Fprintf(stdio.Stdout, "disconnect: removed space %q (config entry + mirror)\n", ref.ID)
 	return 0
@@ -1293,7 +1320,11 @@ func (c *DisconnectCommand) ConnectedRef(target string) (space.Ref, bool) {
 // already reported on stderr. It prints nothing on success, so each caller
 // words its own report.
 func (c *DisconnectCommand) RemoveConnected(ctx context.Context, target string, stdio IO) (ref space.Ref, found bool, code int) {
-	cfg, _ := c.loadProjectConfig(c.projectConfigPath)
+	cfg, err := loadProjectConfigIfPresent(c.loadProjectConfig, c.projectConfigPath)
+	if err != nil {
+		_, _ = fmt.Fprintf(stdio.Stderr, "disconnect: cannot read %s, so nothing was removed: %v\n", c.projectConfigPath, err)
+		return space.Ref{}, false, 1
+	}
 	machine, _ := c.loadMachineConfig(c.machineConfigPath)
 
 	ref, idx := disconnectFind(cfg, target)

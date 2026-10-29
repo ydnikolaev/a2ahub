@@ -619,6 +619,72 @@ func runGitInDir(t testing.TB, dir string, args ...string) {
 // "origin") — connect must register the manifest's id, not the URL's, and
 // the persisted ref must still resolve back to the one physical mirror
 // clone (submit/doctor/disconnect all key off ProjectConfig.Spaces[].ID).
+// TestConnectRefusesAManifestIDThatLeavesTheMirrorRoot: the id a space's own
+// space.yaml declares is written into the project config, and connect and
+// disconnect delete by it, so an id that is not one path segment is refused
+// and nothing is registered.
+func TestConnectRefusesAManifestIDThatLeavesTheMirrorRoot(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	clone := fx.Clone("axon")
+	if err := os.WriteFile(filepath.Join(clone, "space.yaml"), []byte("schema: manifest/v1\nspace: ../..\nmin_binary_version: \"0.0.0\"\n"), 0o644); err != nil {
+		t.Fatalf("rewrite fixture manifest: %v", err)
+	}
+	runGitInDir(t, clone, "add", "-A")
+	runGitInDir(t, clone, "commit", "-m", "manifest: an id that is a path")
+	runGitInDir(t, clone, "push", "origin", "main")
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	cmd := cli.NewConnectCommand(cfgPath, filepath.Join(dir, "machine.yaml"), dir)
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), []string{fx.RemoteURL()}, io); code != 1 {
+		t.Fatalf("Run: code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "one path segment") {
+		t.Fatalf("stderr = %q, want the refusal to say the id must be one path segment", errOut.String())
+	}
+	if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
+		t.Fatalf("config written despite the refusal: stat err = %v", err)
+	}
+}
+
+// TestConnectAndDisconnectNeverRewriteAConfigTheyCannotRead: a project config
+// that exists but fails to load is not an empty one. Connect must not
+// overwrite it and disconnect must not remove anything by it.
+func TestConnectAndDisconnectNeverRewriteAConfigTheyCannotRead(t *testing.T) {
+	t.Parallel()
+	fx := spacefixture.New(t, "axon")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	machinePath := filepath.Join(dir, "machine.yaml")
+	unreadable := []byte("system: axon\nspaces:\n  - id: ../..\n    repo_url: " + fx.RemoteURL() + "\n")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, unreadable, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	connect := cli.NewConnectCommand(cfgPath, machinePath, dir)
+	io1, _, errOut1 := newIO()
+	if code := connect.Run(context.Background(), []string{fx.RemoteURL()}, io1); code != 1 {
+		t.Fatalf("connect: code = %d, want 1; stderr=%s", code, errOut1.String())
+	}
+	disconnect := cli.NewDisconnectCommand(cfgPath, machinePath, dir, cli.NewNoopCacheRemover())
+	io2, _, errOut2 := newIO()
+	if code := disconnect.Run(context.Background(), []string{"../.."}, io2); code != 1 {
+		t.Fatalf("disconnect: code = %d, want 1; stderr=%s", code, errOut2.String())
+	}
+	got, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(unreadable) {
+		t.Fatalf("config rewritten:\n%s\nwant it untouched:\n%s", got, unreadable)
+	}
+}
+
 func TestConnectResolvesSpaceIDFromManifest(t *testing.T) {
 	t.Parallel()
 	fx := spacefixture.New(t, "axon")
