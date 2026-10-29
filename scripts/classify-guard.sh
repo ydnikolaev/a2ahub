@@ -299,7 +299,7 @@ while IFS= read -r f; do
     continue
   fi
   flag "tracked but NOT public: $f  → 'git rm --cached $f' (private), or add it to ALLOW in scripts/classify-guard.sh (public)"
-done < <(git ls-files)
+done < <(git -c core.quotePath=false ls-files)
 
 # ── 2. Every present top-level entry is classified. ──────────────────────────────
 # `for e in *` with dotglob/nullglob — NOT `$(ls -A)`, whose UNQUOTED word-split

@@ -179,7 +179,7 @@ tracked_files() { # $1 = root
   # a scanner that changes what it scans depending on how the tree was checked
   # out, without saying so.
   if ( cd "$root" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 ); then
-    ( cd "$root" && git ls-files )
+    ( cd "$root" && git -c core.quotePath=false ls-files )
   else
     find "$root" -type f | sed "s|^${root}/||"
   fi
