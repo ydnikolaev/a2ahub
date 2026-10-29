@@ -33,6 +33,42 @@ func TestNormalizeSkillDir(t *testing.T) {
 	}
 }
 
+// TestLoadProjectConfigRefusesAMirrorKeyThatLeavesItsRoot: connect and
+// disconnect remove the directory a space's id or mirror_location resolves to,
+// so a key that is not one path segment must fail the load.
+func TestLoadProjectConfigRefusesAMirrorKeyThatLeavesItsRoot(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		ref     Ref
+		wantErr bool
+	}{
+		{"plain keys", Ref{ID: "getvisa", MirrorLocation: "getvisa-mirror"}, false},
+		{"no mirror_location", Ref{ID: "getvisa"}, false},
+		{"id parent", Ref{ID: ".."}, true},
+		{"id traversal", Ref{ID: "../../home"}, true},
+		{"id empty", Ref{ID: ""}, true},
+		{"mirror_location traversal", Ref{ID: "getvisa", MirrorLocation: "../../.."}, true},
+		{"mirror_location nested", Ref{ID: "getvisa", MirrorLocation: "a/b"}, true},
+		{"mirror_location absolute", Ref{ID: "getvisa", MirrorLocation: "/etc"}, true},
+		{"mirror_location dot", Ref{ID: "getvisa", MirrorLocation: "."}, true},
+		{"mirror_location backslash", Ref{ID: "getvisa", MirrorLocation: `..\x`}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "project.yaml")
+			writeYAML(t, path, ProjectConfig{System: "axon", Spaces: []Ref{tc.ref}})
+			_, err := LoadProjectConfig(path)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("LoadProjectConfig(%+v) err=%v, want err=%v", tc.ref, err, tc.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrManifestInvalid) {
+				t.Fatalf("err=%v, want ErrManifestInvalid", err)
+			}
+		})
+	}
+}
+
 // TestMirrorLocationResolution is spec 05 §8 AC row 7: mirror clone
 // location resolves per the project config's per-space mirror-location
 // key.
