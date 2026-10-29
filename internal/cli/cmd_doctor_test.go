@@ -3072,22 +3072,19 @@ func TestDoctorLocalSpaceWritable(t *testing.T) {
 
 	t.Run("a read-only refs/ fails", func(t *testing.T) {
 		t.Parallel()
+		if os.Geteuid() == 0 {
+			// root writes through a read-only directory, and a refs/ that is
+			// gone makes the path no repository at all, so doctor cannot open
+			// it and rightly reports UNVERIFIED. The probe's own refusal under
+			// root is TestLocalHost_InspectUnwritable's missing-refs case.
+			t.Skip("root ignores directory permissions; this row needs a non-root user")
+		}
 		ref, dir := doctorRealLocalSpace(t, "acme")
 		refs := filepath.Join(dir, "refs")
-		if os.Geteuid() == 0 {
-			// root writes through a read-only directory; a refs/ that is gone
-			// is the same refusal to the probe.
-			moved := refs + ".moved"
-			if err := os.Rename(refs, moved); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = os.Rename(moved, refs) })
-		} else {
-			if err := os.Chmod(refs, 0o555); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = os.Chmod(refs, 0o755) })
+		if err := os.Chmod(refs, 0o555); err != nil {
+			t.Fatal(err)
 		}
+		t.Cleanup(func() { _ = os.Chmod(refs, 0o755) })
 		status, detail := doctorLocalCommand().doctorCheckLocalSpaceWritable(ctx, space.ProjectConfig{Spaces: []space.Ref{ref}})
 		if status != doctorCheckFail {
 			t.Fatalf("want FAIL, got %s %q", status, detail)
