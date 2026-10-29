@@ -33,6 +33,22 @@
 > `a2a doctor`'s "skill discoverable" check flags an installed-but-unlinked
 > skill.
 
+> **What to commit after `a2a init`.** Every path `a2a` writes into the
+> repository, and whether it belongs in git:
+>
+> | Path | Git | Why |
+> |---|---|---|
+> | `.a2a/config.yaml` | commit | the project's spaces; every clone needs it |
+> | `.a2a/bindings.yaml` | commit | which contract sites live where ([reference/bindings.md](reference/bindings.md)) |
+> | `.a2ahub/skill/` | commit | the installed manual; refresh it with `a2a skill install`, never by hand |
+> | `.claude/skills/a2ahub` and the other surface links | commit | a relative symlink into `.a2ahub/skill/`; commit both or neither, or a fresh clone gets a dangling link |
+> | `.a2a/cache/`, `.a2a/staging/` | ignore | a mirror cache and drafts; both are rebuilt |
+>
+> If the repository's own checks refuse files they do not know about, expect
+> `.a2a/config.yaml` to appear in that list right after setup: `a2a init`
+> creates it and `a2a connect` updates it. Add it to the repository's map of
+> checked paths when you commit it.
+
 ## Install profiles (§9.1)
 
 GitHub space. A local space skips the org/space admin row: see "Local space —
@@ -104,6 +120,11 @@ verification verdicts.
 ```sh
 a2a space init <space-id> --local
 ```
+
+**Naming the space.** Name it after the counterparty's repository, its
+monorepo if it has one. Sites and products inside that repository are fields
+of the contracts exchanged through the space, not spaces of their own. A local
+space cannot be renamed yet: choose the name before the first `space join`.
 
 It creates the space under this machine's a2a data root and prints its path;
 `--dir <path>` puts it elsewhere. Keep that path: every repository connects
