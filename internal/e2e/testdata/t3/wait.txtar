@@ -1,0 +1,24 @@
+# fast-loop P2 `a2a wait`, through the real binary over the offline fixture.
+# The in-process tests (internal/cli TestWait_*, internal/cache TestWait_*)
+# prove selection and wording against a fake source; this proves the built
+# binary reaches the production composition: it parses its flags, watches the
+# configured space, and says how the wait ended. A counterparty's move landing
+# DURING a wait needs a second participant writing concurrently, which this
+# fixture has no step for; spec 02 AC-14 proves that path by hand.
+
+# A non-positive timeout is a usage error, refused before anything is watched.
+! exec a2a wait --timeout 0s
+stderr 'usage: a2a wait'
+
+# Two selectors together are a usage error too.
+! exec a2a wait --mine --thread thread:fixture
+stderr 'usage: a2a wait'
+
+# Nothing concerning axon lands: the wait ends by its timeout with the one
+# configured space observed, so the verdict is "timed out", never
+# "unmeasured" (exit 124, not 3), and no event is invented.
+! exec a2a wait --json --timeout 3s
+stdout '"events":\[\]'
+stdout '"timed_out":true'
+stdout '"unmeasured":\[\]'
+! stderr 'could not observe'

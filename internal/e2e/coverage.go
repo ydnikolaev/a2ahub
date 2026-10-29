@@ -161,6 +161,10 @@ var coverageManifest = []coverageEntry{
 	{Verb: "submit", Txtar: "submit_refusal.txtar", Tier: tierT3},
 	{Verb: "sync", Txtar: "sync.txtar", Tier: tierT3},
 	{Verb: "await", GoTest: "internal/e2e.TestAwaitThroughStubbedAwaitTarget", Tier: tierInProcess},
+	// `wait` (fast-loop P2): the exec'd binary's usage refusals and its
+	// timed-out-with-every-space-observed verdict over the offline fixture.
+	// A move landing during a wait is spec 02 AC-14, by hand.
+	{Verb: "wait", Txtar: "wait.txtar", Tier: tierT3},
 
 	// --- Read surface --------------------------------------------------
 	{Verb: "contracts", Txtar: "search_contracts.txtar", Tier: tierT3},
