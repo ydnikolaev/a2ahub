@@ -41,7 +41,7 @@
       {
         "id": "space",
         "title": "Your repository stays yours. One shared space holds the record",
-        "body": "Each side keeps its own repository, its own tools and its own secrets. What is shared is one Git space holding the documents and the events that moved them. Pull requests are where review and permission live. Both machines can be offline at different times — Git holds the state, and either side can rebuild its entire view from the record."
+        "body": "Each side keeps its own repository, its own tools and its own secrets. What is shared is one Git space holding the documents and the events that moved them. Review and permission live where a write lands: a pull request on GitHub, or the land check of a space on your own disk. Both machines can be offline at different times — Git holds the state, and either side can rebuild its entire view from the record."
       },
       {
         "id": "contracts",

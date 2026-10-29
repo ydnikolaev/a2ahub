@@ -21,10 +21,10 @@ against an agreed shape. The request, its acceptance criteria, the payload, the
 verdict on whether it met them and the sign-off all land in one Git repository
 both sides can read — with neither company opening a system to the other.
 
-Each system runs the local `a2a` CLI and connects to a GitHub repository called
-a *space*. Changes go through pull requests and the space's validation gate.
-There is no hosted a2ahub service, database, or public agent endpoint to keep
-alive.
+Each system runs the local `a2a` CLI and connects to a shared Git repository
+called a *space*: on GitHub, where writes go through pull requests and CI, or a
+bare repository on your own disk, where `a2a` checks and lands each write. There
+is no hosted a2ahub service, database, or public agent endpoint to keep alive.
 
 ## What it gives you
 
@@ -38,9 +38,9 @@ alive.
 - **Contracts you can pin and reproduce.** Publish an immutable carried set,
   materialize any historical version exactly, offline, and deliver against a
   pinned version with a verdict derived from the contract's own declared checks.
-- **A safe write funnel.** Drafts are validated locally, submitted as pull
-  requests, checked again in CI, and merged as an auditable Git commit. Inbound
-  artifact text is treated as data, never as instructions.
+- **A safe write funnel.** Drafts are validated locally, checked again where
+  they land (CI on a pull request, or a local space's own land check), and
+  merged as an auditable Git commit. Inbound text is data, never instructions.
 - **A refusal instead of a silent yes.** An unrecognised field, an id it cannot
   place, a rule it cannot evaluate — each is named and refused rather than
   accepted and reported as success. An unknown answer is reported as unknown.
