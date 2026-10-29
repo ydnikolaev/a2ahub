@@ -148,8 +148,8 @@ check_history() {
   while IFS=$'\t' read -r code status owner meaning introduced retired; do
     case "$code" in ''|'#'*) continue ;; esac
     case "$status" in
-      live) printf '%s\n' "$registry_list" | grep -Fqx "$code" || fail "$code is live in history but absent from registry" ;;
-      reserved|tombstone) printf '%s\n' "$registry_list" | grep -Fqx "$code" && fail "$code is $status but appears in live registry" ;;
+      live) grep -Fqx "$code" <<<"$registry_list" || fail "$code is live in history but absent from registry" ;;
+      reserved|tombstone) grep -Fqx "$code" <<<"$registry_list" && fail "$code is $status but appears in live registry" ;;
       *) fail "$code has unknown history status '$status'" ;;
     esac
     [ -n "$owner" ] && [ -n "$meaning" ] && [ -n "$introduced" ] || fail "$code history row is incomplete"
@@ -175,7 +175,7 @@ check_history() {
   rm -f "$emit_err"
   while IFS= read -r code; do
     [ -z "$code" ] && continue
-    printf '%s\n' "$registry_list" | grep -Fqx "$code" || fail "live Go source emits unregistered $code"
+    grep -Fqx "$code" <<<"$registry_list" || fail "live Go source emits unregistered $code"
   done <<< "$emitted"
 }
 
@@ -370,8 +370,8 @@ expect_red() {
   local out rc
   out="$( (ERRORS=0; UNMEASURED=0; "$@"; [ "$ERRORS" -eq 0 ] && [ "$UNMEASURED" -eq 0 ]) 2>&1)"; rc=$?
   TEETH_LAST_OUT="$out"
-  [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "$needle" || { echo "operational-confidence-guard --teeth: $label did not red on '$needle'"; echo "$out"; exit 1; }
-  if printf '%s' "$out" | grep -q "UNMEASURED"; then
+  [ "$rc" -ne 0 ] && grep -q "$needle" <<<"$out" || { echo "operational-confidence-guard --teeth: $label did not red on '$needle'"; echo "$out"; exit 1; }
+  if grep -q "UNMEASURED" <<<"$out"; then
     echo "operational-confidence-guard --teeth: $label is a real finding about a document and must not be reported as an unmeasured run"; echo "$out"; exit 1
   fi
 }
@@ -391,10 +391,10 @@ expect_unmeasured() {
   if [ "$rc" -eq 0 ]; then
     echo "operational-confidence-guard --teeth: $label — wanted a recorded failed measurement, got UNMEASURED=0 and the output below; a check that could not run must never look like a check that passed"; echo "$out"; exit 1
   fi
-  if ! printf '%s' "$out" | grep -q "UNMEASURED"; then
+  if ! grep -q "UNMEASURED" <<<"$out"; then
     echo "operational-confidence-guard --teeth: $label did not use the measurement refusal — a reader that cannot run must say so in the word every gate uses for it"; echo "$out"; exit 1
   fi
-  if ! printf '%s' "$out" | grep -q "$needle"; then
+  if ! grep -q "$needle" <<<"$out"; then
     echo "operational-confidence-guard --teeth: $label refused without naming '$needle'"; echo "$out"; exit 1
   fi
 }
@@ -495,7 +495,7 @@ run_teeth() {
   if [ "$ta_out" = "$tb_out" ]; then
     echo "operational-confidence-guard --teeth: a measured finding and a failed measurement produced the SAME output — one verdict is masquerading as the other"; echo "$ta_out"; exit 1
   fi
-  if printf '%s' "$ta_out" | grep -q "UNMEASURED"; then
+  if grep -q "UNMEASURED" <<<"$ta_out"; then
     echo "operational-confidence-guard --teeth: the v1-immutability finding was reported as an unmeasured run"; exit 1
   fi
 
@@ -516,10 +516,10 @@ run_teeth() {
   if [ "$nopath_rc" -ne "$GATE_EXIT_UNMEASURED" ]; then
     echo "operational-confidence-guard --teeth: a runner with no ripgrep exited $nopath_rc, wanted $GATE_EXIT_UNMEASURED"; echo "$nopath_out"; exit 1
   fi
-  if ! printf '%s' "$nopath_out" | grep -q "UNMEASURED"; then
+  if ! grep -q "UNMEASURED" <<<"$nopath_out"; then
     echo "operational-confidence-guard --teeth: the missing-ripgrep refusal did not carry the measurement marker"; echo "$nopath_out"; exit 1
   fi
-  if printf '%s' "$nopath_out" | grep -q "must have exactly one normative definition"; then
+  if grep -q "must have exactly one normative definition" <<<"$nopath_out"; then
     echo "operational-confidence-guard --teeth: a missing search tool still accused the documents"; echo "$nopath_out"; exit 1
   fi
 
