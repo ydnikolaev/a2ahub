@@ -1,0 +1,27 @@
+
+feedback: v1
+id: fb-20261029-52753d
+kind: bug
+severity: minor
+title: contract check --suite rejects a root $id that is a URN
+summary: "`a2a contract check <id>@<v> --suite` answers unsupported-reference (passed=false, every schema unevaluated) when the schema's root carries `\"$id\": \"urn:...\"`. inspectSelfContainedSchema (internal/contract/conformance.go) treats any $id not starting with # like a remote $ref. A root $id that is a URN or absolute URI only names the document: fragment refs (#/$defs/...) still resolve inside it and nothing is fetched. JSON Schema 2020-12 recommends a root $id, and generated schemas commonly carry one, so producers must strip it to get a self-suite verdict, and the published schema then drifts from the source the producer test compiles."
+context:
+    a2a_version: 0.27.0
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a contract check XC-<system>-<slug>@1.0.0 --suite"
+evidence:
+    steps:
+        - "Write a JSON Schema 2020-12 with a root \"$id\": \"urn:example:schema:thing:v1\", only #/$defs refs, plus one valid and one invalid fixture."
+        - "Publish it as a contract (preflight, publish --approve)."
+        - "Run a2a contract check <id>@1.0.0 --suite."
+    expected: "The suite evaluates: the valid fixture conforms, the invalid one does not; a root $id that only names the document is accepted (an embedded non-fragment $id or a remote $ref may stay unsupported)."
+    actual: "outcome unsupported-reference, message \"schema contains a non-fragment reference or document identifier\", passed=false, results[].actual=unevaluated, no fixture checked."
+proposal: "Allow $id at the document root (the top-level object) when every $ref is a fragment; keep refusing $id on embedded subschemas and any non-fragment $ref. Name the offending key and JSON pointer in the message."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
