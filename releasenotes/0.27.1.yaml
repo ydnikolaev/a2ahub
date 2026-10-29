@@ -83,7 +83,9 @@ changes:
     by reading its bare repository's `main`, with no network; a GitHub space
     is fetched on an interval that grows from 30 seconds to 5 minutes while
     nothing changes. A cursor under `.a2a/cache/wait/` makes re-running it
-    lossless. The printed line never carries a note's or an artifact's text.
+    lossless. The printed line never carries a note's or an artifact's text,
+    and an event whose content disagrees with its file's path is reported by
+    path, never printed.
   action:
     scope: none
     why: >
@@ -95,3 +97,31 @@ changes:
     why: >
       An agent can now hear a counterparty's move without a person relaying
       it or a timer polling for it.
+- id: RN-02701-3
+  kind: feat
+  impact: normal
+  subject: a local space can be deleted, and connecting one no longer leaves a stray clone
+  detail: >
+    `a2a space delete --local <id>` removes a local space. Without
+    `--approve` it changes nothing and shows the repository, its commits and
+    every other participant; with it, it removes the repository and
+    disconnects this project. It refuses a repository `a2a space init
+    --local` did not make. Renaming a local space is a re-create; the
+    onboarding page has the four steps.
+
+    `a2a init` now records where the space's mirror lives, so a read before
+    `a2a connect` clones where every later read looks, and the first
+    `connect` says it cloned rather than "repaired". A clone an older
+    version left behind is removed when it is provably the superseded one.
+    `init` also prints which of the files it wrote to commit, and its hint
+    no longer mentions credentials for a local space.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. A project set up before this version may hold a stale
+      clone under `.a2a/cache/mirrors/`; the next `a2a connect` removes it
+      when it can prove it is the superseded one, and names it otherwise.
+  roadmap:
+    visibility: shipped
+    why: >
+      The local space, new in 0.27.0, gets its missing lifecycle step.
