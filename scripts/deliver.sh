@@ -31,7 +31,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 ROOT="$(cd "${A2A_DELIVER_ROOT:-$REPO}" && pwd -P)"
 # shellcheck source=lib/tree-identity.sh
-source "$REPO/scripts/lib/tree-identity.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/tree-identity.sh"
 
 TELEMETRY="$ROOT/.a2a/cache/verify/telemetry.jsonl"
 RECEIPTS="$ROOT/.a2a/release-gate"

@@ -126,3 +126,9 @@ scripts/lib/harness-roster-excuses.txt
 scripts/lib/cross-layer-test-import-ceiling.txt
 scripts/site-check.sh
 scripts/lib/site-overlay.txt
+# deliver.sh's teeth (fast-loop-2026-10 P1). Private: they source the shared
+# identity formula from scripts/tests/, a location classify-guard's literal
+# resolver cannot vouch for, and the public tree needs no teeth for an
+# installer of the owner's machine (D-040). deliver.sh itself stays public
+# because the public Makefile names it.
+scripts/tests/deliver_test.sh
