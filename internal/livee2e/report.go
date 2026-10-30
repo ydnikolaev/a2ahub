@@ -172,7 +172,7 @@ type Run struct {
 
 	// stages stamps the logic tier's per-family timeline. Nil (the live tier's
 	// value) makes every Mark a no-op.
-	stages *stageRecorder
+	stages *stageRecorder //nolint:unused // reason: written and read only by livee2e-tagged files (runFamilyMatrix, driveFamilies), which the default build the linter judges does not compile; P4 moves it to a driveFamilies parameter and deletes this field
 }
 
 // NewRun declares the matrix as the cross product of scenarios × systems ×

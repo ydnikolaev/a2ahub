@@ -403,7 +403,7 @@ VERIFY_STAGES="${A2A_VERIFY_STAGES:-$ROOT/.a2a/cache/verify/stages.jsonl}"
 
 # _json_string <text> — the text as the inside of a JSON string. Labels carry
 # spaces, quotes and backslashes (the dogfood member's label has quotes).
-_json_string() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+_json_string() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
 
 # _step_row <label> <verdict> <seconds> — best effort by design: a row that
 # cannot be written must not turn a passing member red, and the telemetry the

@@ -131,6 +131,10 @@ PUBLIC_VALIDATOR_FILES=(
   # top-level file every checkout and worktree reads, inert wherever the
   # host queue (~/Developer/_ops) is absent, which is every public checkout.
   scripts/tests/heavy_queue_shim_test.sh
+  # release-speed-2026-11 P2: the static block's own teeth. PUBLIC because
+  # scripts/verify.sh is, and harness-check runs every scripts/tests/*_test.sh
+  # in a public checkout.
+  scripts/tests/verify_static_block_test.sh
   scripts/check-mcp-publish-preconditions.sh
   scripts/check-mcp-schema-decodable.sh
   # answers-that-hold-2026-08 P4/P13. PUBLIC for the same reason the two above
