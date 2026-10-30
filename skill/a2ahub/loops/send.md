@@ -149,7 +149,11 @@
    (`lands_synchronously: true` in `a2a version --json`, a local space) there
    is no PR: the write is on `main` when `a2a submit` returns, so there is
    nothing to wait for and `a2a await` exits 1 at once with "no pending write
-   recorded" — the expected answer here, not a failed write.
+   recorded" — the expected answer here, not a failed write. If what you
+   are waiting for is the counterparty's answer rather than your own write
+   landing, `a2a await` is the wrong verb: `a2a wait` blocks until their move
+   on your artifact arrives — see [watch.md](watch.md) § "Waiting for a
+   counterparty's move".
 5. **Track, don't poll:** the item appears in your outbox with folded state;
    the statusline surfaces movement. If `needed_by` passes silently, escalate
    per 8.5.

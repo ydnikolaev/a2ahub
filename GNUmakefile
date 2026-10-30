@@ -22,7 +22,7 @@ kit_cores_docker := $(or $(KIT_QUEUE_CORES_DOCKER),8)
 kit_cores_web := $(or $(KIT_QUEUE_CORES_WEB),3)
 # Every goal over ~3 min or over 2 cores. scripts/tests/heavy_queue_shim_test.sh reads this line and proves each name
 # queues and is a real Makefile target.
-a2a_heavy_targets := check test coverage flaky-scan lane-run lane-run-strict harness-check ci-parity ci-parity-docker release-check release-preflight projection logic-e2e live-e2e web-quality site-check
+a2a_heavy_targets := check repo-gates test coverage flaky-scan lane-run lane-run-strict harness-check ci-parity ci-parity-docker release-check release-preflight projection logic-e2e live-e2e web-quality site-check
 a2a_docker_targets := ci-parity-docker release-check
 a2a_web_targets := web-quality
 kit_list := $(a2a_heavy_targets) $(subst $(kit_comma), ,$(KIT_HEAVY_TARGETS))
@@ -48,9 +48,15 @@ endif
 
 ifneq ($(kit_outer),)
 kit_first := $(firstword $(MAKECMDGOALS))
+# The queue estimates a run from earlier runs under the same label (heavy-run rule 6), and a run it believes is short
+# jumps the queue. So a label names exactly what runs: one goal is its own name; several goals are labelled as the
+# set, `multi-<count>:<first goal>`, never as one member. Labelling a 54-goal repo-gate sweep by its one pattern-heavy
+# member (`space-template-baseline-check`, ~0 s) once ran it as a 7-minute "short" job ahead of other projects.
+# devkit-workaround: FB-508
+kit_label := $(if $(word 2,$(MAKECMDGOALS)),multi-$(words $(MAKECMDGOALS)):$(kit_first),$(kit_first))
 .PHONY: $(MAKECMDGOALS)
 $(kit_first):
-	+@python3 $(KIT_HEAVY_RUN) run --project a2ahub --label $(firstword $(kit_heavy)) --cores $(kit_cores) -- $(MAKE) --no-print-directory $(MAKECMDGOALS)
+	+@python3 $(KIT_HEAVY_RUN) run --project a2ahub --label $(kit_label) --cores $(kit_cores) -- $(MAKE) --no-print-directory $(MAKECMDGOALS)
 $(filter-out $(kit_first),$(MAKECMDGOALS)): $(kit_first) ;
 else
 ifneq ($(KIT_HEAVY_RUN),)

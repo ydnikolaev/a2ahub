@@ -25,11 +25,11 @@ checks:
     no_sensitive_content: true
     duplicates_checked: true
 resolution: >-
-    Fixed in the private tree, ships with the next release. The self-contained
+    Shipped in v0.27.1 (RN-02701-0). The self-contained
     check now accepts an $id on the document root when it is an absolute URI
     with no fragment (a URN included), because it only names the document and
     fragment references still resolve inside it; the compiler already handled
     that offline. An $id on an embedded subschema, a relative or fragment root
     $id, and every non-fragment $ref stay unsupported-reference, and the
     message now names the keyword and its JSON pointer.
-status: accepted
+status: shipped

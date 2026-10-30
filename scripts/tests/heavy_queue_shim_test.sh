@@ -4,6 +4,7 @@
 #
 #   - every heavy goal typed bare is queued once, through heavy_run, with
 #     --project a2ahub, its own name as the label and its declared cores;
+#   - several goals queue once, labelled as the set, never as one member;
 #   - inside a hold (HEAVY_RUN_SLOT set) nothing queues again;
 #   - a light or unclassed goal is never queued and runs at 2 cores;
 #   - command-line variables reach the make that runs inside the hold;
@@ -102,9 +103,17 @@ done
 out="$(mk lane-run PROBE=reached 2>&1)" || fail "make lane-run PROBE=reached exited non-zero: $out"
 has "$out" "probe=reached" || fail "a command-line variable was lost across the queue: $out"
 
-# (6) Two goals queue once, under the first heavy goal's label.
+# (6) Two goals queue once, labelled as the set: the queue estimates by label,
+# so one member's name would lend the whole run that member's (shorter) history.
 out="$(mk check web-quality 2>&1)" || fail "make check web-quality exited non-zero: $out"
 [ "$(grep -c '^queued ' <<<"$out")" -eq 1 ] || fail "two goals were queued more than once: $out"
+has "$out" "--label multi-2:check --cores" || fail "two goals were not labelled as the set: $out"
+# A sweep of light goals with one pattern-heavy member is labelled as the
+# sweep, never as that member (it once ran 7 min under a ~0 s estimate).
+out="$(mk feature-lint epic-drift space-template-baseline-check 2>&1)" \
+  || fail "a mixed sweep exited non-zero: $out"
+has "$out" "--label multi-3:feature-lint --cores" \
+  || fail "a mixed sweep borrowed one member's label: $out"
 
 # (7) A dry run is not queued.
 out="$(mk -n check 2>&1)" || fail "make -n check exited non-zero: $out"

@@ -109,3 +109,13 @@ tab-separated and free of the counterparty's words; read those through
 
 Narrow it with `--space <id>`, or `--subject <artifact-id>` / `--thread
 <thread-id>` to wait on one thing instead of everything that concerns you.
+`--mine` is the default selector (events that concern this system), so naming
+it changes nothing. The three selectors are alternatives: combining any two of
+them is refused with the usage line and exit `2`, as is an empty `--subject` or
+`--thread` value, a non-positive `--timeout`, or a stray argument.
+
+`--json` prints one object: `events` (each carries `space`, `event`, `actor`,
+`transition`, `subject`, `thread`, `why`, `at`; `[]` when none), `timed_out`
+(true only when the wait ended with no events) and `unmeasured` (the spaces
+that could not be observed; `[]` when none). Exit codes are the same with and
+without `--json`.
