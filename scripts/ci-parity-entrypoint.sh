@@ -137,5 +137,13 @@ fi
 echo "parity: priming the module cache"
 (cd "$WORK" && GOPROXY="${PARITY_GOPROXY:-https://proxy.golang.org,direct}" go mod download all)
 
+# CI's next provisioning step, for the same reason: the deadcode oracle resolves
+# its OWN module graph, so `go mod download` never fetches it, and the gate reads
+# it offline. This container used to get it only by luck, from a warm module
+# volume; on 2026-10-30 a volume recreated the day before made deadcode-ceiling
+# UNMEASURED inside the v0.27.1 ship gate.
+echo "parity: priming the deadcode oracle"
+(cd "$WORK" && GOPROXY_PRIME="${PARITY_GOPROXY:-https://proxy.golang.org,direct}" bash scripts/check-deadcode-ceiling.sh --prime)
+
 echo "parity: $(uname -s)/$(uname -m) · go $(go version | awk '{print $3}') · node $(node --version) · awk $(awk --version 2>&1 | head -1)"
 exec "$@"

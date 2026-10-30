@@ -114,7 +114,9 @@ excused_reason() { # $1 = command
       # --prime is `go install` wearing the gate's own name: it exists so the
       # version has ONE home instead of being restated in a workflow. It
       # fetches the oracle and asserts nothing, and the thing it provisions is
-      # judged by the deadcode-ceiling phase this suite already runs.
+      # judged by the deadcode-ceiling phase this suite already runs. Excused
+      # from the audit, not from provisioning: the container's entrypoint runs
+      # both `go mod download` and --prime, as ci.yml does.
       echo "provisioning, not a check" ;;
     echo\ *)
       echo "a workflow's own explanatory echo, not a check" ;;
