@@ -1097,7 +1097,7 @@ macos_jobs() { # $1 = workflow dir
 # duration, mode — to .a2a/cache/verify/telemetry.jsonl. Counting the lines a
 # run appends therefore answers "how many phases did this actually execute",
 # per mode, and gives AC2's wall clock for free. Two callers bracket a run with
-# telemetry_offset / telemetry_report.
+# telemetry_cutoff / telemetry_report.
 #
 # lane-reads-opaque: telemetry_report reads "$VERIFY_TELEMETRY", a path built
 #   from ROOT and pointing inside .a2a/cache/, which is this repo's gitignored
@@ -1109,12 +1109,33 @@ macos_jobs() { # $1 = workflow dir
 # seen fail, and this one guards the composition's whole reason to exist.
 VERIFY_TELEMETRY="${A2A_VERIFY_TELEMETRY:-$ROOT/.a2a/cache/verify/telemetry.jsonl}"
 
-telemetry_offset() {
-  if [ -f "$VERIFY_TELEMETRY" ]; then
-    wc -l <"$VERIFY_TELEMETRY" | tr -d ' '
-  else
-    echo 0
-  fi
+# telemetry_cutoff — the instant a run starts, as a compact UTC stamp
+# (20261030T034907Z) that sorts as a string and carries no colon, so it can ride
+# in a "<path>:<cutoff>" pair.
+#
+# THE WINDOW IS A TIME, NOT A LINE NUMBER. It used to be `wc -l` of the file,
+# read back with `tail -n +offset`. verify.sh trims that file to TELEMETRY_LIMIT
+# lines on every exit, so once a file reached the limit the offset stayed at the
+# limit while the run's records pushed old ones out, and `tail` past the end
+# returned nothing: zero phases, UNMEASURED, no receipt, with nothing about the
+# tree having changed. Measured twice: v0.25.6 (2026-08-28), and v0.27.1
+# (2026-10-30) with the container file at exactly 2000 lines. Every record
+# carries its own "at", so a time window is immune to trimming by construction.
+telemetry_cutoff() { date -u +%Y%m%dT%H%M%SZ; }
+
+# _records_since <file> <cutoff> — the file's records whose "at" is at or after
+# the cutoff. A cutoff of 0 sorts below every stamp and reads the whole file,
+# which is what --phases 0 has always meant. A record with no "at" is counted
+# only under 0: it cannot be placed in time, and a stale one counted as this
+# run's would be a repeat the run never made.
+_records_since() {
+  awk -v cut="$2" '
+    cut == "0" { print; next }
+    match($0, /"at":"[^"]*"/) {
+      at = substr($0, RSTART + 6, RLENGTH - 7)
+      gsub(/[-:]/, "", at)
+      if (at >= cut) print
+    }' "$1"
 }
 
 # telemetry_report — print what the phases between $1 and now actually were,
@@ -1125,24 +1146,24 @@ telemetry_offset() {
 # a state that a future member could legitimately change; "no gate was paid for
 # twice in the same mode" is what the composition is FOR, and it stays true
 # however the member list grows. A repeat names both occurrences.
-# $3 (optional) — a SECOND telemetry file and its own offset, as
-# "<path>:<offset>". The container writes its phases into a bound-out file the
+# $3 (optional) — a SECOND telemetry file and its own cutoff, as
+# "<path>:<cutoff>". The container writes its phases into a bound-out file the
 # host cannot otherwise see; a report that read only the host's would say zero
 # after a suite that executed forty. Both are folded into one set, so the
 # no-phase-ran-twice invariant holds ACROSS the boundary rather than inside
 # each side of it.
-telemetry_report() { # $1 = offset recorded before the run; $2 = a label
-  local offset="$1" label="$2" new dupes total
+telemetry_report() { # $1 = cutoff recorded before the run (telemetry_cutoff); $2 = a label
+  local cutoff="$1" label="$2" new dupes total
   if [ ! -f "$VERIFY_TELEMETRY" ]; then
     gate_unmeasured "$label: scripts/verify.sh wrote no telemetry at $VERIFY_TELEMETRY, so the phase count is unknown. This is NOT a claim that fewer phases ran — it is a claim that nobody counted."
     return "$GATE_EXIT_UNMEASURED"
   fi
-  new="$(tail -n "+$((offset + 1))" "$VERIFY_TELEMETRY")"
+  new="$(_records_since "$VERIFY_TELEMETRY" "$cutoff")"
   if [ -n "${3:-}" ]; then
-    local extra_path="${3%:*}" extra_off="${3##*:}"
+    local extra_path="${3%:*}" extra_cut="${3##*:}"
     if [ -f "$extra_path" ]; then
       local extra
-      extra="$(tail -n "+$((extra_off + 1))" "$extra_path" 2>/dev/null || true)"
+      extra="$(_records_since "$extra_path" "$extra_cut" 2>/dev/null || true)"
       [ -n "$extra" ] && new="$(printf '%s\n%s' "$new" "$extra")"
     fi
   fi
@@ -1672,15 +1693,13 @@ release_gate() { # $1 = --dry-run | (empty)
     return 1
   fi
 
-  local offset rc=0 container_rc=0 macos_rc=0
+  local cutoff rc=0 container_rc=0 macos_rc=0
   # The container writes its phase telemetry into a directory bound out by
   # ci-parity-docker.sh (see its comment): verify.sh derives VERIFY_ROOT from
   # ROOT, which is /work in there. Read THAT file for phase 1 — the host's own
   # telemetry records nothing the container did.
   local container_telemetry="$ROOT/.a2a/cache/parity-container/telemetry.jsonl"
-  local container_offset=0
-  [ -f "$container_telemetry" ] && container_offset="$(wc -l <"$container_telemetry" | tr -d ' ')"
-  offset="$(telemetry_offset)"
+  cutoff="$(telemetry_cutoff)"
 
   # PHASE 1 — the container. Its daemon was proved reachable above, so a
   # non-zero status from here is the tree's, not the harness's.
@@ -1707,7 +1726,7 @@ release_gate() { # $1 = --dry-run | (empty)
     return 1
   fi
 
-  telemetry_report "$offset" "the composed run" "$container_telemetry:$container_offset" || rc=$?
+  telemetry_report "$cutoff" "the composed run" "$container_telemetry:$cutoff" || rc=$?
 
   ended="$(date +%s)"
   if [ "$container_rc" -ne 0 ] || [ "$macos_rc" -ne 0 ] || [ "$rc" -ne 0 ]; then
@@ -2591,12 +2610,39 @@ T26EOF
     fi
   fi
 
+  # T27 — THE PHASE WINDOW SURVIVES THE TRIM. A file whose oldest lines were
+  # pushed out after the run started must still report the run's own records.
+  # The fixture is the saturated shape itself: three old records, a cutoff,
+  # two new ones, then trimmed back to three lines the way verify.sh trims at
+  # TELEMETRY_LIMIT. A line-offset window (3) reads past the end and counts
+  # zero; the time window counts 2. One old record survives the trim and must
+  # NOT be counted, which is what keeps the window from reading everything.
+  local d27 out27 rc27=0
+  d27="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  cat > "$d27/full.jsonl" <<'EOF'
+{"gate":"go-test","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:00Z"}
+{"gate":"logic-e2e","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:01Z"}
+{"gate":"go-test","verdict":"pass","duration_ms":1,"mode":"lane","at":"2026-08-21T00:00:02Z"}
+{"gate":"go-test","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-23T00:00:00Z"}
+{"gate":"logic-e2e","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-23T00:00:01Z"}
+EOF
+  tail -n 3 "$d27/full.jsonl" > "$d27/trimmed.jsonl"
+  out27="$(env A2A_VERIFY_TELEMETRY="$d27/trimmed.jsonl" bash "$ROOT/scripts/ci-parity.sh" \
+    --phases 20260822T000000Z "the fixture" 2>&1)" || rc27=$?
+  rm -rf "$d27"
+  if [ "$rc27" -ne 0 ] || ! printf '%s\n' "$out27" | grep -qF 'executed 2 verify phase(s)'; then
+    printf 'ci-parity --teeth: FAIL — T27: a run whose file was trimmed after it started must count its own 2 records and not the surviving older one; got rc=%s\n%s\n' "$rc27" "$out27" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T27 — the phase window is a time, so a trimmed telemetry file still counts the run that trimmed it\n'
+  fi
+
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
 
-  printf 'ci-parity --teeth: 26 case(s) green.\n'
+  printf 'ci-parity --teeth: 27 case(s) green.\n'
 }
 
 case "${1:---run}" in
