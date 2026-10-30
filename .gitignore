@@ -95,6 +95,7 @@ scripts/*
 !scripts/check-skill-citations.sh
 !scripts/check-spec-verify-refs.sh
 !scripts/check-pendency-uniqueness.sh
+!scripts/check-pipefail-early-exit.sh
 !scripts/check-loop-coverage.sh
 !scripts/check-human-gates.sh
 !scripts/check-loop-reachability.sh
@@ -157,6 +158,7 @@ scripts/tests/*
 !scripts/tests/deliver_test.sh
 !scripts/tests/verify_static_block_test.sh
 !scripts/tests/harness_run_test.sh
+!scripts/tests/check_pipefail_early_exit_test.sh
 !scripts/tests/check_contract_carried_set_test.sh
 !scripts/tests/check_event_writer_receipts_test.sh
 !scripts/tests/check_live_e2e_evidence_test.sh
