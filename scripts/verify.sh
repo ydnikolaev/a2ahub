@@ -338,7 +338,11 @@ run_phase() {
   # two boundaries turn that list into the exit status. Outside the block this
   # branch is dead and the status is returned exactly as before.
   if [ "$rc" -ne 0 ] && [ "${STATIC_COLLECT:-}" = 1 ]; then
-    STATIC_REDS+=("$gate")
+    if [ "$verdict" = unmeasured ]; then
+      STATIC_REDS+=("$gate (unmeasured)")
+    else
+      STATIC_REDS+=("$gate")
+    fi
     echo "verify: RED $gate ($verdict) - the static block carries on and names every red at its boundary." >&2
     return 0
   fi

@@ -55,7 +55,7 @@ mkfx() {
     printf '_print-repo-gates-slow:\n\t@echo "%s"\n' "$3"
     printf '_print-early-go-tests:\n\t@echo ""\n'
     for g in $2; do
-      printf '%s:\n\t@case " $$FX_RED " in *" %s "*) echo "FAIL %s" >&2; exit 1;; esac\n' "$g" "$g" "$g"
+      printf '%s:\n\t@case " $$FX_UNMEASURED " in *" %s "*) echo "unmeasured" >>"$$A2A_UNMEASURED_MARKER"; exit 3;; esac\n\t@case " $$FX_RED " in *" %s "*) echo "FAIL %s" >&2; exit 1;; esac\n' "$g" "$g" "$g" "$g"
     done
   } >"$fx/Makefile"
   cat >"$fx/bin/go" <<'EOF'
@@ -160,6 +160,14 @@ run_mode "$fx" "vet f2" validators
 [ "$RC" -eq 1 ] || fail "vet+gate red: exit $RC, want 1: $OUT"
 want_phases "vet and f2 red (the block does not stop at vet)" "$fx" "$PRE f1 f2 f3"
 want_last "vet and f2 red" "static block: 2 red: vet, f2"
+
+# --- 4a. a gate that could not measure is named as that, not as a measured red -
+fx="$(mkfx unmeasured "f1 f2 f3 s1 s2" "s1 s2")"
+export FX_UNMEASURED=f2
+run_mode "$fx" "f1" validators
+unset FX_UNMEASURED
+[ "$RC" -eq 1 ] || fail "unmeasured gate: exit $RC, want 1: $OUT"
+want_last "unmeasured gate" "static block: 2 red: f1, f2 (unmeasured)"
 
 # --- 5. in `full`, the Go block does not start behind a static red -------------
 fx="$(mkfx full-red "f1 f2 f3 s1 s2" "s1 s2")"

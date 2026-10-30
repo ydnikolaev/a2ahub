@@ -3021,10 +3021,10 @@ func runPathGroup(ctx context.Context, t *testing.T, kind HostKind, h *harness, 
 			// property, not driveFamilies'. Best-effort, errors ignored by
 			// design — same as the existing precedent.
 			//
-			// The park is skipped ONLY when folds.record ran for this path: its
-			// projectPathThreads already syncs both checkouts, so a second pair
-			// would be an idle duplicate. folds == nil (the local-confirm group)
-			// and a failed path never reach record, so they still park.
+			// The park is skipped ONLY when folds.record succeeded for this path:
+			// its projectPathThreads has then synced both checkouts, so a second
+			// pair would be an idle duplicate. folds == nil (the local-confirm
+			// group), a failed path and a record whose read-back failed still park.
 			recorded := false
 			defer func() {
 				if recorded {
@@ -3041,8 +3041,7 @@ func runPathGroup(ctx context.Context, t *testing.T, kind HostKind, h *harness, 
 			// A path that already failed has no end state worth comparing
 			// across hosts: its red is the finding, a diff would only bury it.
 			if folds != nil && !t.Failed() {
-				recorded = true
-				folds.record(ctx, t, kind, h, id, ids)
+				recorded = folds.record(ctx, t, kind, h, id, ids)
 			}
 		})
 	}
@@ -3264,14 +3263,15 @@ func newHostFoldLog() *hostFoldLog {
 
 // record projects the path's artifacts on h and stores them under kind. A
 // projection that cannot be read is a failure of the path, not a quiet gap.
-func (l *hostFoldLog) record(ctx context.Context, t *testing.T, kind HostKind, h *harness, pathID string, ids pathIDs) {
+func (l *hostFoldLog) record(ctx context.Context, t *testing.T, kind HostKind, h *harness, pathID string, ids pathIDs) bool {
 	t.Helper()
 	projection, err := projectPathThreads(ctx, h, ids)
 	if err != nil {
 		t.Errorf("path %s: reading its fold back for the host comparison (%s): %v", pathID, kind, err)
-		return
+		return false
 	}
 	l.add(kind, pathID, projection)
+	return true
 }
 
 func (l *hostFoldLog) add(kind HostKind, pathID string, projection map[string]string) {
