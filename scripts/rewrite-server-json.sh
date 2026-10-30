@@ -45,7 +45,7 @@ test "$count" -gt 0 || { echo "$SERVER_JSON declares no packages" >&2; exit 2; }
 for i in $(seq 0 $((count - 1))); do
   identifier="$(jq -r ".packages[$i].identifier" "$tmp")"
   asset="${identifier##*/}"
-  digest="$(awk -v want="$asset" '$2 == want { print $1 }' "$SUMS" | head -1)"
+  digest="$(awk -v want="$asset" '$2 == want { print $1 }' "$SUMS" | sed -n '1p')"
   if [ -z "$digest" ]; then
     echo "$SUMS names no digest for $asset (declared by packages[$i])" >&2
     exit 1

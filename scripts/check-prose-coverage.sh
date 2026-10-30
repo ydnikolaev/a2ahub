@@ -321,8 +321,8 @@ class_members() { # $1 = yaml path, $2 = class name
 # fact, not a roadmap position) would false-positive; the fix is to word
 # the reason around the token, not to weaken this check.
 is_deferral_reason() { # $1 = reason text
-  printf '%s' "$1" | grep -qiE \
-    '\btodo\b|\bfixme\b|not (yet )?documented|\blater\b|\bsoon\b|\bpending\b|\bbacklog\b|\bdeferred\b|\bplanned\b|\bcoming\b|\bwill be\b|\bphase [0-9]+\b|\bwave[ -][0-9a-zA-Z]+\b|\bP[0-9]+\b|\bH[0-9]+\b'
+  grep -qiE \
+    '\btodo\b|\bfixme\b|not (yet )?documented|\blater\b|\bsoon\b|\bpending\b|\bbacklog\b|\bdeferred\b|\bplanned\b|\bcoming\b|\bwill be\b|\bphase [0-9]+\b|\bwave[ -][0-9a-zA-Z]+\b|\bP[0-9]+\b|\bH[0-9]+\b' <<<"$1"
 }
 
 # anchor_exists reports (via exit status) whether md carries a markdown
@@ -731,10 +731,10 @@ run_teeth() {
   fi
 
   local victim_cmd victim_field victim_field2 victim_tool
-  victim_cmd="cmd:$(printf '%s\n' "$commands" | head -1)"
-  victim_field="$(printf '%s\n' "$universe" | grep '^field:' | head -1)"
+  victim_cmd="cmd:$(printf '%s\n' "$commands" | sed -n '1p')"
+  victim_field="$(printf '%s\n' "$universe" | grep '^field:' | sed -n '1p')"
   victim_field2="$(printf '%s\n' "$universe" | grep '^field:' | sed -n '2p')"
-  victim_tool="tool:$(printf '%s\n' "$tools" | head -1)"
+  victim_tool="tool:$(printf '%s\n' "$tools" | sed -n '1p')"
 
   # write_good_fixture writes a small but FULLY declared, self-consistent
   # ledger against the REAL derived universe: victim_cmd is `covered:`
@@ -851,7 +851,7 @@ run_teeth() {
   # real surface must red naming it.
   write_good_fixture
   local first_surface
-  first_surface="$(printf '%s\n' "$snames" | head -1)"
+  first_surface="$(printf '%s\n' "$snames" | sed -n '1p')"
   grep -v "^  - $first_surface\$" "$tmp/schemas/prose-coverage.yaml" >"$tmp/schemas/prose-coverage.yaml.new"
   mv "$tmp/schemas/prose-coverage.yaml.new" "$tmp/schemas/prose-coverage.yaml"
   out="$(run_check "$tmp" 2>&1 || true)"

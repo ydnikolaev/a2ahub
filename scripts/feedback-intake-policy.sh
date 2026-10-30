@@ -82,7 +82,7 @@ classify() { # stdin: the files API response (JSON array)
     # Scoped to the public repository on purpose: the private repository takes
     # Dependabot pull requests, and refusing those would stop dependency
     # updates to fix a hole that does not exist there.
-    if [ "$repo" = "$PUBLIC_REPO" ] && printf '%s\n' $EXTERNAL_WRITE_BRANCHES | grep -qx -- "$base"; then
+    if [ "$repo" = "$PUBLIC_REPO" ] && grep -qx -- "$base" <<<"$(printf '%s\n' $EXTERNAL_WRITE_BRANCHES)"; then
       die "'$base' accepts external writes, so the only pull request it takes is a feedback record: exactly one file under $FEEDBACK_PREFIX. This one changes $n file(s), none of them there. Nothing validates an ordinary change to this branch, so nothing may merge one."
     fi
     echo "is-feedback=false"
@@ -327,7 +327,7 @@ verdict_diff() { # $1 = base blob, $2 = head blob
   fi
 
   for key in $differing; do
-    printf '%s\n' $VERDICT_FIELDS | grep -qx -- "$key" || \
+    grep -qx -- "$key" <<<"$(printf '%s\n' $VERDICT_FIELDS)" || \
       die "a triage verdict may change only: $VERDICT_FIELDS. This one also changes: $differing. A reporter's words are theirs; if the BODY needs correcting, that is a conversation on the pull request, not a rewrite."
   done
 
@@ -510,8 +510,8 @@ YAML
     fi
 
     # US-7: a `#` inside a folded block scalar is the reporter's own text.
-    if bash "$0" _internal-key-block "$corpus/folded-summary.dirty.yaml" summary \
-       | grep -q '# This heading is DATA'; then
+    if grep -q '# This heading is DATA' \
+       <<<"$(bash "$0" _internal-key-block "$corpus/folded-summary.dirty.yaml" summary)"; then
       t_ok "a '#' inside a folded summary is data, not a comment"
     else
       t_bad "a '#' inside a folded summary was eaten as a comment"

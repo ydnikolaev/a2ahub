@@ -10,8 +10,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="$ROOT/.golangci.yml"
 
 check_config() {
-  if sed -n '/^[[:space:]]*gosec:/,/^[[:space:]][^[:space:]]/p' "$CONFIG" |
-    grep -Eq '^[[:space:]]*-[[:space:]]*G(204|304)([[:space:]#]|$)'; then
+  if grep -Eq '^[[:space:]]*-[[:space:]]*G(204|304)([[:space:]#]|$)' \
+    <<<"$(sed -n '/^[[:space:]]*gosec:/,/^[[:space:]][^[:space:]]/p' "$CONFIG")"; then
     echo "gosec-scope: FAIL — G204/G304 are globally excluded under linters.settings.gosec.excludes." >&2
     return 1
   fi

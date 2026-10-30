@@ -423,7 +423,7 @@ cheaper_than() { # $1 = mode
     full)       echo "make lane-run — it judges what THIS tree's edits can actually reach, and refuses a path no gate claims rather than falling to the ceiling" ;;
     validators) echo "make lane-run — the derivation selects only the repo gates this diff can actually reach" ;;
     lane-run)   echo "the scoped test for the package you touched: make test PKG=./internal/<pkg>/..." ;;
-    logic-e2e)  echo "ONE path instead of the catalogue: go test -tags=livee2e ./internal/livee2e/ -run 'TestLogicMatrix/<row>'" ;;
+    logic-e2e)  echo "ONE path instead of the catalogue: go test -tags=livee2e ./internal/livee2e/ -run '^TestLogicMatrix\$/^paths\$/^group-[0-9]+\$/^<path-id>\$' (local host: ^local-group-[0-9]+\$; one family group: '^TestLogicMatrix\$/^family-A\$', family-B, family-C)" ;;
     projection) echo "bash scripts/check-projection.sh --template-only — the sub-second half, which rehearses the publisher's template projection alone" ;;
     harness)    echo "the one gate's own --teeth: bash scripts/check-<gate>.sh --teeth" ;;
     *)          echo "the scoped test or gate for the thing you actually changed" ;;
@@ -594,7 +594,7 @@ check_lint() {
 # The golangci-lint version CI installs: the tag in ci.yml's install.sh URL.
 ci_golangci_version() {
   grep -hoE 'golangci-lint/v[0-9]+(\.[0-9]+)*/install\.sh' "$ROOT/.github/workflows/ci.yml" 2>/dev/null \
-    | sed -E 's#golangci-lint/(v[0-9.]+)/install\.sh#\1#' | sort -u | head -1
+    | sed -E 's#golangci-lint/(v[0-9.]+)/install\.sh#\1#' | sort -u | sed -n '1p'
 }
 
 # THE STATIC BLOCK (release-speed P2, spec 02 T1). One roster, two cost tiers:
@@ -687,7 +687,7 @@ harness_stamp() {
   # with what the compiler will see.
   local floor_file="$ROOT/internal/version/operationalconfidence.go"
   local stamp
-  stamp="$(sed -n 's/^const OperationalConfidenceFloor = "\(.*\)"$/\1/p' "$floor_file" 2>/dev/null | head -1)"
+  stamp="$(sed -n 's/^const OperationalConfidenceFloor = "\(.*\)"$/\1/p' "$floor_file" 2>/dev/null | sed -n '1p')"
   if [ -z "$stamp" ]; then
     echo "verify.sh: cannot read OperationalConfidenceFloor from $floor_file — refusing to guess the harness stamp." >&2
     echo "           A wrong stamp does not fail loudly; it makes event/v2 verbs unreachable and the tier green (B33)." >&2
@@ -1818,7 +1818,7 @@ if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
   run_now="" run_last="" run_coverage=""
   for phase in $phases; do
     derived=$((derived + 1))
-    if [ -n "$ship_phases" ] && printf '%s\n' "$ship_phases" | grep -qxF "$phase"; then
+    if [ -n "$ship_phases" ] && grep -qxF "$phase" <<<"$ship_phases"; then
       deferred=$((deferred + 1))
       echo "lane: $phase — DERIVED and DEFERRED to the ship lane (\`lane-tier: ship\`). Not run here; the public candidate's CI runs its commands before promotion (release runbook steps 11-13), and \`make $phase\` pays it now."
       continue

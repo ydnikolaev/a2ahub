@@ -258,7 +258,7 @@ blob_lines() {
     p="${paths[$i]}"
     if [[ "$line" =~ ^([0-9a-f]{40,64})\ blob\ [0-9]+$ ]]; then
       blob="${BASH_REMATCH[1]}"
-      if [ -n "$links" ] && printf '%s\n' "$links" | grep -Fxq -- "$p"; then
+      if [ -n "$links" ] && grep -Fxq -- "$p" <<<"$links"; then
         rc=0
         blob="$(symlink_blob "$c" "$p")" || rc=$?
         case "$rc" in

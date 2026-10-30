@@ -133,7 +133,7 @@ ledger_keys() { # $1 = yaml path, $2 = section ("human:" or "json-only:")
 }
 
 ledger_has_key() { # $1 = yaml path, $2 = section, $3 = key
-  ledger_keys "$1" "$2" | grep -qxF "$3"
+  grep -qxF "$3" <<<"$(ledger_keys "$1" "$2")"
 }
 
 # ledger_value prints the (quote-stripped, `\"`-unescaped) value of one key
@@ -172,8 +172,8 @@ ledger_value() { # $1 = yaml path, $2 = section, $3 = key
 # run_check/run_teeth at file scope, so `source`ing it would run prose-
 # coverage's OWN gate as a side effect of loading one helper function.
 is_deferral_reason() { # $1 = reason text
-  printf '%s' "$1" | grep -qiE \
-    '\btodo\b|\bfixme\b|not (yet )?documented|\blater\b|\bsoon\b|\bpending\b|\bbacklog\b|\bdeferred\b|\bplanned\b|\bcoming\b|\bwill be\b|\bphase [0-9]+\b|\bwave[ -][0-9a-zA-Z]+\b|\bP[0-9]+\b|\bH[0-9]+\b'
+  grep -qiE \
+    '\btodo\b|\bfixme\b|not (yet )?documented|\blater\b|\bsoon\b|\bpending\b|\bbacklog\b|\bdeferred\b|\bplanned\b|\bcoming\b|\bwill be\b|\bphase [0-9]+\b|\bwave[ -][0-9a-zA-Z]+\b|\bP[0-9]+\b|\bH[0-9]+\b' <<<"$1"
 }
 
 # check_declared_keys refuses a human:/json-only: key that is not part of
@@ -183,7 +183,7 @@ check_declared_keys() { # $1 = yaml, $2 = universe(nl, sorted)
   for section in "human:" "json-only:"; do
     while IFS= read -r key; do
       [ -z "$key" ] && continue
-      if ! printf '%s\n' "$universe" | grep -qxF "$key"; then
+      if ! grep -qxF "$key" <<<"$universe"; then
         gate_fail "render-ledger: declared key \"$key\" in $section is not part of the derived universe (a stale/renamed field: entry)"
       fi
     done < <(ledger_keys "$yaml" "$section")
@@ -224,13 +224,13 @@ run_check() { # $1 = root, $2 = dump json
   ledger_snames="$(ledger_surfaces "$yaml" | sort -u)"
   while IFS= read -r s; do
     [ -z "$s" ] && continue
-    if ! printf '%s\n' "$ledger_snames" | grep -qxF "$s"; then
+    if ! grep -qxF "$s" <<<"$ledger_snames"; then
       gate_fail "render-ledger: the render-ledger dump derives surface \"$s\", which $yaml's own surfaces: list does not declare"
     fi
   done <<<"$snames"
   while IFS= read -r s; do
     [ -z "$s" ] && continue
-    if ! printf '%s\n' "$snames" | grep -qxF "$s"; then
+    if ! grep -qxF "$s" <<<"$snames"; then
       gate_fail "render-ledger: $yaml's surfaces: list declares \"$s\", which the render-ledger dump no longer derives"
     fi
   done <<<"$ledger_snames"
@@ -305,8 +305,8 @@ run_teeth() {
 
   local snames victim_surface victim_field victim_field2
   snames="$(dump_surface_names "$json" | sort -u)"
-  victim_surface="$(printf '%s\n' "$snames" | head -1)"
-  victim_field="field:$victim_surface:$(dump_surface_keys "$json" "$victim_surface" | sort -u | head -1)"
+  victim_surface="$(printf '%s\n' "$snames" | sed -n '1p')"
+  victim_field="field:$victim_surface:$(dump_surface_keys "$json" "$victim_surface" | sort -u | sed -n '1p')"
   victim_field2="field:$victim_surface:$(dump_surface_keys "$json" "$victim_surface" | sort -u | sed -n '2p')"
 
   # write_good_fixture writes a small but FULLY declared, self-consistent
@@ -353,7 +353,7 @@ run_teeth() {
   grep -v "^  $victim_field: " "$tmp/schemas/render-ledger.yaml" >"$tmp/schemas/render-ledger.yaml.new"
   mv "$tmp/schemas/render-ledger.yaml.new" "$tmp/schemas/render-ledger.yaml"
   out="$(run_check "$tmp" "$json" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "$victim_field has no ledger entry"; then
+  if ! grep -qF "$victim_field has no ledger entry" <<<"$out"; then
     echo "render-ledger --teeth: FAILED (a) — a field with no ledger row did not red naming it" >&2
     return 1
   fi
@@ -364,7 +364,7 @@ run_teeth() {
   sed -i.bak "s#^  $victim_field2: \".*\"#  $victim_field2: \"not documented yet\"#" "$tmp/schemas/render-ledger.yaml"
   rm -f "$tmp/schemas/render-ledger.yaml.bak"
   out="$(run_check "$tmp" "$json" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "$victim_field2" || ! printf '%s\n' "$out" | grep -q "reads as a DEFERRAL"; then
+  if ! grep -qF "$victim_field2" <<<"$out" || ! grep -q "reads as a DEFERRAL" <<<"$out"; then
     echo "render-ledger --teeth: FAILED (b) — a deferral-shaped json-only: reason did not red naming the member and 'reads as a DEFERRAL'" >&2
     return 1
   fi
@@ -375,7 +375,7 @@ run_teeth() {
   sed -i.bak "s#^  $victim_field2: \".*\"#  $victim_field2: \"\"#" "$tmp/schemas/render-ledger.yaml"
   rm -f "$tmp/schemas/render-ledger.yaml.bak"
   out="$(run_check "$tmp" "$json" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "$victim_field2 is declared json-only:" || ! printf '%s\n' "$out" | grep -q "blank reason"; then
+  if ! grep -qF "$victim_field2 is declared json-only:" <<<"$out" || ! grep -q "blank reason" <<<"$out"; then
     echo "render-ledger --teeth: FAILED (c) — a blank json-only: reason did not red naming the member and 'blank reason'" >&2
     return 1
   fi
@@ -385,7 +385,7 @@ run_teeth() {
   sed -i.bak "s#^  $victim_field: \".*\"#  $victim_field: \"\"#" "$tmp/schemas/render-ledger.yaml"
   rm -f "$tmp/schemas/render-ledger.yaml.bak"
   out="$(run_check "$tmp" "$json" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "$victim_field is declared human:" || ! printf '%s\n' "$out" | grep -q "blank value"; then
+  if ! grep -qF "$victim_field is declared human:" <<<"$out" || ! grep -q "blank value" <<<"$out"; then
     echo "render-ledger --teeth: FAILED (d) — a blank human: value did not red naming the member and 'blank value'" >&2
     return 1
   fi
@@ -399,7 +399,7 @@ run_teeth() {
   grep -v "^  - $victim_surface\$" "$tmp/schemas/render-ledger.yaml" >"$tmp/schemas/render-ledger.yaml.new"
   mv "$tmp/schemas/render-ledger.yaml.new" "$tmp/schemas/render-ledger.yaml"
   out="$(run_check "$tmp" "$json" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "derives surface \"$victim_surface\", which"; then
+  if ! grep -qF "derives surface \"$victim_surface\", which" <<<"$out"; then
     echo "render-ledger --teeth: FAILED (e) — a surface absent from surfaces: did not red naming it" >&2
     return 1
   fi
@@ -408,7 +408,7 @@ run_teeth() {
   write_good_fixture
   printf '  %s: "duplicated on purpose"\n' "$victim_field" >>"$tmp/schemas/render-ledger.yaml"
   out="$(run_check "$tmp" "$json" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "$victim_field is declared in more than one place"; then
+  if ! grep -qF "$victim_field is declared in more than one place" <<<"$out"; then
     echo "render-ledger --teeth: FAILED (f) — a member declared both human: and json-only: did not red naming it" >&2
     return 1
   fi
@@ -417,7 +417,7 @@ run_teeth() {
   write_good_fixture
   printf '  field:not-a-real-surface:not-a-real-key: "bogus fixture row"\n' >>"$tmp/schemas/render-ledger.yaml"
   out="$(run_check "$tmp" "$json" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'declared key "field:not-a-real-surface:not-a-real-key" in json-only: is not part of the derived universe'; then
+  if ! grep -qF 'declared key "field:not-a-real-surface:not-a-real-key" in json-only: is not part of the derived universe' <<<"$out"; then
     echo "render-ledger --teeth: FAILED (g) — a ledger key outside the derived universe did not red naming it" >&2
     return 1
   fi

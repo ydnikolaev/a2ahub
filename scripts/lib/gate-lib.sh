@@ -293,12 +293,12 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   }
 
   _teeth_want_in() { # $1 = label, $2 = needle, $3 = haystack
-    printf '%s\n' "$3" | grep -Fq -- "$2" && return 0
+    grep -Fq -- "$2" <<<"$3" && return 0
     _teeth_bad "$1: wanted the text '$2' — got: $(printf '%s' "$3" | tr '\n' '|')"
   }
 
   _teeth_want_not_in() { # $1 = label, $2 = needle, $3 = haystack
-    printf '%s\n' "$3" | grep -Fq -- "$2" || return 0
+    grep -Fq -- "$2" <<<"$3" || return 0
     _teeth_bad "$1: must NOT contain '$2' — got: $(printf '%s' "$3" | tr '\n' '|')"
   }
 

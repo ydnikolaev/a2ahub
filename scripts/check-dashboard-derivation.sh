@@ -42,7 +42,7 @@ build_component_graph() { # $1 = source root, $2 = output file
     current="${queue%%$'\n'*}"
     if [ "$queue" = "$current" ]; then queue=""; else queue="${queue#*$'\n'}"; fi
     [ -z "$current" ] && continue
-    if printf '%s\n' "$seen" | grep -Fqx "$current"; then continue; fi
+    if grep -Fqx "$current" <<<"$seen"; then continue; fi
     seen="${seen}${current}"$'\n'
     file="$source_root/$current.dc.html"
     if [ ! -f "$file" ]; then
@@ -219,7 +219,7 @@ teeth_expect() { # $1 = label, $2 = red|green, $3 = needle, $4 = source root
   rc=$?
   set -e
   if [ "$verdict" = "red" ]; then
-    if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq "$needle"; then
+    if [ "$rc" -eq 0 ] || ! grep -Fq "$needle" <<<"$out"; then
       echo "check-dashboard-derivation --teeth: FALSE GREEN — $label did not red with '$needle':" >&2
       echo "$out" >&2
       return 1

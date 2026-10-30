@@ -78,7 +78,7 @@ YAML
     echo "roadmap-release-decisions --teeth: FAILED — a newly added feature without a decision stayed green" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'RN-1 missing roadmap.visibility missing roadmap.why' || {
+  grep -q 'RN-1 missing roadmap.visibility missing roadmap.why' <<<"$out" || {
     echo "roadmap-release-decisions --teeth: FAILED — red did not name the undecided feature" >&2
     exit 1
   }
@@ -118,7 +118,7 @@ YAML
     echo "roadmap-release-decisions --teeth: FAILED — a fix-only release was required to carry a roadmap decision" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'ships no feature' || {
+  grep -q 'ships no feature' <<<"$out" || {
     echo "roadmap-release-decisions --teeth: FAILED — a fix-only release greened without saying why it was exempt" >&2
     exit 1
   }
@@ -145,7 +145,7 @@ YAML
     echo "roadmap-release-decisions --teeth: FAILED — an undecided feature written at the corpus's OTHER indentation stayed green: $out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'RN-1' || {
+  grep -q 'RN-1' <<<"$out" || {
     echo "roadmap-release-decisions --teeth: FAILED — the zero-indent red did not name the undecided feature" >&2
     exit 1
   }

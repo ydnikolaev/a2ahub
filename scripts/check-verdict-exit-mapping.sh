@@ -190,7 +190,7 @@ verb_universe() {
   read_v="$(map_literal_verbs "$wire" '^func readVerbs')" || return 1
   lifecycle_v="$(map_literal_verbs "$wire" '^func lifecycleVerbs')" || return 1
   all="$(printf '%s\n%s\n%s\n' "$direct" "$read_v" "$lifecycle_v" | sed '/^$/d' | sort -u)"
-  if printf '%s\n' "$all" | grep -qx "contract"; then
+  if grep -qx "contract" <<<"$all"; then
     all="$(printf '%s\n' "$all" | grep -vx "contract")"
     subs="$(contract_subcommands "$cli_dir")" || return 1
     while IFS= read -r s; do
@@ -253,7 +253,7 @@ registry_unsited_rows() {
 # split ceiling_stored/ceiling_count draws in check-cross-layer-test-import-
 # ceiling.sh.
 registry_unsited_ceiling() {
-  sed -n 's/^unsited_rows_ceiling:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | head -1
+  sed -n 's/^unsited_rows_ceiling:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | sed -n '1p'
 }
 
 
@@ -328,7 +328,7 @@ verify_all() {
   # ── Refusal A: every computed verb has a row ───────────────────────────
   while IFS= read -r verb; do
     [ -n "$verb" ] || continue
-    if ! registry_all_verbs "$registry" | grep -qFx "$verb"; then
+    if ! grep -qFx "$verb" <<<"$(registry_all_verbs "$registry")"; then
       gate_fail "verdict-exit-mapping: no declaration for verb '$verb' — the computed universe (cmd/a2a/wire.go's buildCommands(), expanded for contract via cli.ContractSubcommands()) names it, but $registry has no matching row; add one, even a trivial {clean: 0} mapping if it has no distinguishable objections verdict"
     fi
   done <<<"$universe"
@@ -339,7 +339,7 @@ verify_all() {
   sites_flat="$(registry_all_sites "$registry")"
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
-    if ! printf '%s\n' "$sites_flat" | grep -qFx "$rel"; then
+    if ! grep -qFx "$rel" <<<"$sites_flat"; then
       gate_fail "verdict-exit-mapping: $rel carries json.NewEncoder(stdio.Stdout) but no row in $registry names it in a site: list — a JSON-emitting file must be claimed by at least one verb's declaration"
     fi
   done <<<"$files"
@@ -369,7 +369,7 @@ verify_all() {
       value="${kv#*:}"
       value="${value# }"
       [ "$value" = "0" ] && continue # the universal success baseline needs no literal proof
-      if ! printf '%s\n' "$observed" | grep -qFx "$value"; then
+      if ! grep -qFx "$value" <<<"$observed"; then
         gate_fail "verdict-exit-mapping: verb '$verb' declares $class: $value, but no 'return $value' (literal, or a same-file named constant) appears in its own site file(s) ($sites) — the declaration disagrees with the verb's behaviour"
       fi
     done < <(registry_mapping_entries "$registry" "$verb")
@@ -440,7 +440,7 @@ teeth_expect_unmeasured() {
     echo "$out" >&2
     return 1
   fi
-  if ! printf '%s' "$out" | grep -q "unmeasured\|UNMEASURED"; then
+  if ! grep -q "unmeasured\|UNMEASURED" <<<"$out"; then
     echo "check-verdict-exit-mapping --teeth: SILENT UNMEASURED — $label exited 3 but said nothing a reader can see:" >&2
     echo "$out" >&2
     return 1
@@ -579,7 +579,7 @@ func (c *NewverbCommand) Run() int {
 }
 EOF
   out="$(teeth_run "$work/registry.yaml" "$work/cmd/a2a/wire.go" "$work/internal/cli" "$work" || true)"
-  if ! printf '%s' "$out" | grep -q "no declaration for verb 'newverb'"; then
+  if ! grep -q "no declaration for verb 'newverb'" <<<"$out"; then
     echo "check-verdict-exit-mapping --teeth: FALSE — row 12 (universe growth) did not name the new verb:" >&2
     echo "$out" >&2
     exit 1
@@ -592,12 +592,12 @@ EOF
   # this asserts the DISTINCT Refusal B message names the FILE, not just
   # the verb, and uses different wording than row 7's "disagrees with the
   # verb's behaviour".
-  if ! printf '%s' "$out" | grep -q "cmd_newverb.go carries json.NewEncoder(stdio.Stdout) but no row"; then
+  if ! grep -q "cmd_newverb.go carries json.NewEncoder(stdio.Stdout) but no row" <<<"$out"; then
     echo "check-verdict-exit-mapping --teeth: FALSE — row 13 (unclaimed json-carrying file) did not name the file distinctly from row 12's missing-verb message:" >&2
     echo "$out" >&2
     exit 1
   fi
-  if printf '%s' "$out" | grep -q "disagrees with the verb's behaviour"; then
+  if grep -q "disagrees with the verb's behaviour" <<<"$out"; then
     echo "check-verdict-exit-mapping --teeth: FALSE — row 13's fixture incorrectly also tripped row 7's disagreement message; the two refusals are not staying distinct" >&2
     exit 1
   fi
@@ -668,7 +668,7 @@ EOF
   write_baseline_registry
   sed -i.bak 's/objections: 1/objections: 9/' "$work/registry.yaml"
   out="$(teeth_run "$work/registry.yaml" "$work/cmd/a2a/wire.go" "$work/internal/cli" "$work" || true)"
-  if ! printf '%s' "$out" | grep -q "verb 'version' declares objections: 9.*disagrees with the verb's behaviour"; then
+  if ! grep -q "verb 'version' declares objections: 9.*disagrees with the verb's behaviour" <<<"$out"; then
     echo "check-verdict-exit-mapping --teeth: FALSE — row 7 (disagreeing declaration) did not name the verb and the disagreement:" >&2
     echo "$out" >&2
     exit 1
@@ -711,7 +711,7 @@ EOF
   # match an unused value — a false green built out of the fix for a false red.
   sed -i.bak 's/      unmeasured: 3/      unmeasured: 9/' "$work/registry.yaml"
   out="$(teeth_run "$work/registry.yaml" "$work/cmd/a2a/wire.go" "$work/internal/cli" "$work" || true)"
-  if ! printf '%s' "$out" | grep -q "verb 'version' declares unmeasured: 9"; then
+  if ! grep -q "verb 'version' declares unmeasured: 9" <<<"$out"; then
     echo "check-verdict-exit-mapping --teeth: FALSE — a declared-but-never-returned constant must NOT back a declaration:" >&2
     echo "$out" >&2
     exit 1
@@ -727,7 +727,7 @@ EOF
   printf '  - verb: newlyexempt\n    site: []\n    mapping:\n      clean: 0\n' >>"$work/registry.yaml"
   sed -i.bak 's/^      m\["submit"\].*/&\n\tm["newlyexempt"] = \&NewlyexemptCommand{}/' "$work/cmd/a2a/wire.go" 2>/dev/null || true
   out="$(teeth_run "$work/registry.yaml" "$work/cmd/a2a/wire.go" "$work/internal/cli" "$work" || true)"
-  if ! printf '%s' "$out" | grep -q "7 row(s) declare an empty site:, ceiling is 6"; then
+  if ! grep -q "7 row(s) declare an empty site:, ceiling is 6" <<<"$out"; then
     echo "check-verdict-exit-mapping --teeth: FALSE — a new empty-site row must red against the seeded ceiling and name both numbers:" >&2
     echo "$out" >&2
     exit 1

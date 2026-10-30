@@ -178,7 +178,7 @@ run_check() { # $1 = scan root (repo root, or a --teeth fixture tree)
       dir="$(dirname "$rel")"
       if ! import_allowed "$rel" "$dir"; then
         gate_fail "$rel:$lineno imports internal/pendency from outside the sanctioned homes (\`$trimmed\`) — read the verdict internal/cache already computed instead of resolving your own (see IMPORT_ALLOWLIST in scripts/check-pendency-uniqueness.sh)"
-      elif ! printf '%s\n' "$trimmed" | grep -Eq '^(import[[:space:]]+)?"[^"]*/internal/pendency"([[:space:]]*(//.*)?)?$'; then
+      elif ! grep -Eq '^(import[[:space:]]+)?"[^"]*/internal/pendency"([[:space:]]*(//.*)?)?$' <<<"$trimmed"; then
         gate_fail "$rel:$lineno aliases or dot-imports internal/pendency (\`$trimmed\`) — use the canonical unaliased package name so Rule 1 cannot be bypassed with p.Resolve or bare Resolve"
       fi
     done < <(printf '%s\n' "$formatted" | grep -nE '"[^"]*/internal/pendency"' || true)

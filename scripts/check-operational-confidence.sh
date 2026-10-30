@@ -291,7 +291,7 @@ check_dispatch() {
   fi
   grep -q '^[[:space:]]*- id: P0$' "$tracker" || fail "tracker is missing mandatory P0"
   for p in P1 P4; do
-    phase_record "$tracker" "$p" | grep -Eq 'blocked_by:.*P0' || fail "$p must be blocked_by P0"
+    grep -Eq 'blocked_by:.*P0' <<<"$(phase_record "$tracker" "$p")" || fail "$p must be blocked_by P0"
   done
   while IFS= read -r plan; do
     [ -f "$root/docs/features/archive/operational-confidence-2026-08/$plan" ] || fail "tracker plan path missing: $plan"

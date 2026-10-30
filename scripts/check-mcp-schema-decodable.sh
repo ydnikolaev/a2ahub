@@ -688,7 +688,7 @@ teeth_expect() { # $1=label $2=red|green|unmeasured $3=needle $4=pkg_dir
   rc=$?
   case "$verdict" in
     red)
-      if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq -- "$needle"; then
+      if [ "$rc" -eq 0 ] || ! grep -Fq -- "$needle" <<<"$out"; then
         echo "check-mcp-schema-decodable --teeth: FALSE GREEN — $label did not red with '$needle' (rc=$rc):" >&2
         echo "$out" >&2
         return 1
@@ -696,7 +696,7 @@ teeth_expect() { # $1=label $2=red|green|unmeasured $3=needle $4=pkg_dir
       echo "check-mcp-schema-decodable --teeth: $label reds"
       ;;
     unmeasured)
-      if [ "$rc" -ne "$GATE_EXIT_UNMEASURED" ] || ! printf '%s\n' "$out" | grep -Fq -- "$needle"; then
+      if [ "$rc" -ne "$GATE_EXIT_UNMEASURED" ] || ! grep -Fq -- "$needle" <<<"$out"; then
         echo "check-mcp-schema-decodable --teeth: FALSE — $label did not go UNMEASURED with '$needle' (rc=$rc, want $GATE_EXIT_UNMEASURED):" >&2
         echo "$out" >&2
         return 1

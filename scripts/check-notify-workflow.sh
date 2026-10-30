@@ -143,7 +143,7 @@ keys_match_exactly() { # $1 = actual (newline-separated), $2 = expected (newline
 
 check_no_forbidden_literal() { # $1 = label, $2 = stripped content, $3 = literal, $4 = citation (optional)
   local citation="${4:-spec 07 T5}"
-  if printf '%s\n' "$2" | grep -Fq -- "$3"; then
+  if grep -Fq -- "$3" <<<"$2"; then
     gate_fail "notify-workflow: $1 contains the literal \"$3\" outside a comment — forbidden ($citation)"
   fi
 }
@@ -158,13 +158,13 @@ check_no_forbidden_literal() { # $1 = label, $2 = stripped content, $3 = literal
 # actual defect entirely, which is exactly the "a rule true and inert"
 # failure this epic is about.
 check_no_remote_install_literal() { # $1 = label, $2 = stripped content
-  if printf '%s\n' "$2" | grep -Eq 'go install ["]?github\.com/ydnikolaev/a2ahub/cmd/a2a@'; then
+  if grep -Eq 'go install ["]?github\.com/ydnikolaev/a2ahub/cmd/a2a@' <<<"$2"; then
     gate_fail "notify-workflow: $1 contains \"go install github.com/ydnikolaev/a2ahub/cmd/a2a@\" — the RETIRED remote-module-ref mechanism (spec 08 T5 #6a)"
   fi
 }
 
 check_no_secrets_inherit_literal() { # $1 = label, $2 = stripped content
-  if printf '%s\n' "$2" | grep -Eq '^[[:space:]]*secrets:[[:space:]]*inherit[[:space:]]*$'; then
+  if grep -Eq '^[[:space:]]*secrets:[[:space:]]*inherit[[:space:]]*$' <<<"$2"; then
     gate_fail "notify-workflow: $1 sets \`secrets: inherit\` — declare each secret explicitly (spec 07 T5 #1)"
   fi
 }
@@ -173,7 +173,7 @@ check_no_run_step() { # $1 = label, $2 = stripped content
   local hits
   hits="$(printf '%s\n' "$2" | grep -nE '^[[:space:]]*run:')"
   if [ -n "$hits" ]; then
-    gate_fail "notify-workflow: $1 carries a \`run:\` step — the template caller must contain no logic (spec 07 T5 #4): $(printf '%s' "$hits" | head -1)"
+    gate_fail "notify-workflow: $1 carries a \`run:\` step — the template caller must contain no logic (spec 07 T5 #4): $(printf '%s' "$hits" | sed -n '1p')"
   fi
 }
 
@@ -936,7 +936,7 @@ teeth_expect() { # $1 = label, $2 = red|green, $3 = needle, $4 = reusable, $5 = 
   rc=$?
   set -e
   if [ "$verdict" = "red" ]; then
-    if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq "$needle"; then
+    if [ "$rc" -eq 0 ] || ! grep -Fq "$needle" <<<"$out"; then
       echo "check-notify-workflow --teeth: FALSE GREEN — $label did not red with '$needle':" >&2
       echo "$out" >&2
       return 1

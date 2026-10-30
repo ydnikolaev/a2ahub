@@ -168,7 +168,7 @@ legacy_scope_drift="$WORK/legacy-scope-drift"
 copy_tree "$legacy_scope_drift"
 target="$legacy_scope_drift/internal/contract/set.go"
 perl -0pi -e 's#(func insideLegacyRoot\(path string\) bool \{\n\treturn [^\n]+)#$1 || strings.HasPrefix(path, "artifacts/")#' "$target"
-grep -A1 -F 'func insideLegacyRoot' "$target" | grep -Fq 'artifacts/' || fail "could not seed legacy digest scope drift"
+grep -Fq 'artifacts/' <<<"$(grep -A1 -F 'func insideLegacyRoot' "$target")" || fail "could not seed legacy digest scope drift"
 expect_red "$legacy_scope_drift" "internal/contract legacy roots" "legacy digest scope drift"
 
 v1_mutation="$WORK/v1-mutation"

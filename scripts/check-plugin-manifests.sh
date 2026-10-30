@@ -232,7 +232,7 @@ canonical_credential_prefix() {
   local body prefix
   body="$(awk '/^func CredentialEnvVar\(/{flag=1} flag{print} /^}/{if(flag){exit}}' "$credfile")"
   [ -n "$body" ] || return 1
-  prefix="$(printf '%s\n' "$body" | grep -oE 'return "[A-Za-z0-9_]+" \+' | head -1 | sed -E 's/^return "//; s/" \+$//')"
+  prefix="$(printf '%s\n' "$body" | grep -oE 'return "[A-Za-z0-9_]+" \+' | sed -n '1p' | sed -E 's/^return "//; s/" \+$//')"
   [ -n "$prefix" ] || return 1
   printf '%s\n' "$prefix"
 }
@@ -243,7 +243,7 @@ canonical_skill_root() {
   local embedfile="$GATE_ROOT/skill/embed.go"
   [ -f "$embedfile" ] || return 1
   local root
-  root="$(grep -oE '//go:embed all:[A-Za-z0-9_.-]+' "$embedfile" | head -1 | sed -E 's#//go:embed all:##')"
+  root="$(grep -oE '//go:embed all:[A-Za-z0-9_.-]+' "$embedfile" | sed -n '1p' | sed -E 's#//go:embed all:##')"
   [ -n "$root" ] || return 1
   printf '%s\n' "$root"
 }
@@ -442,7 +442,7 @@ check_skill_path() { # $1 = scan_root, $2 = canonical root
       local key value
       key="$(printf '%s' "$doc" | jq -r ".[$i].key")"
       value="$(printf '%s' "$doc" | jq -r ".[$i].value")"
-      if ! printf '%s\n' "$value" | tr '/' '\n' | grep -qxF "$canonical"; then
+      if ! grep -qxF "$canonical" <<<"$(tr '/' '\n' <<<"$value")"; then
         gate_fail "$manifest: skill-tree declaration \"$key\": \"$value\" does not carry \"$canonical\" (skill/embed.go's own embed root) as a path component"
       fi
     done
@@ -577,7 +577,7 @@ check_publish_workflow() { # $1 = scan_root
   [ -f "$wf" ] || return 0
 
   local publish_line
-  publish_line="$(grep -n 'mcp-publisher publish' "$wf" | head -1 | cut -d: -f1)"
+  publish_line="$(grep -n 'mcp-publisher publish' "$wf" | sed -n '1p' | cut -d: -f1)"
   if [ -z "$publish_line" ]; then
     gate_fail "$wf: present but names no \`mcp-publisher publish\` step to guard"
     return
@@ -586,7 +586,7 @@ check_publish_workflow() { # $1 = scan_root
   local before missing=""
   before="$(head -n "$((publish_line - 1))" "$wf")"
   for token in version identifier fileSha256; do
-    if ! printf '%s\n' "$before" | grep -qF "$token"; then
+    if ! grep -qF "$token" <<<"$before"; then
       missing="$missing $token"
     fi
   done
@@ -715,7 +715,7 @@ run_teeth() {
   # T1 — an explicitly empty scan root: UNMEASURED.
   mkdir -p "$tmp/empty"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/empty" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  if [ "$rc" -ne "$GATE_EXIT_UNMEASURED" ] || ! printf '%s' "$out" | grep -q "UNMEASURED"; then
+  if [ "$rc" -ne "$GATE_EXIT_UNMEASURED" ] || ! grep -q "UNMEASURED" <<<"$out"; then
     bad "T1 (empty manifest set): wanted UNMEASURED/exit $GATE_EXIT_UNMEASURED, got exit $rc: $out"
   fi
 
@@ -772,7 +772,7 @@ MD
   write_control "$tmp/badverb"
   sed -i.bak 's/"command": "a2a"/"command": "a2a-frobnicate"/' "$tmp/badverb/.claude-plugin/plugin.json"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badverb" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "launch line"; } || bad "T3 (launch-line drift): wanted a red naming the launch line, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "launch line" <<<"$out"; } || bad "T3 (launch-line drift): wanted a red naming the launch line, got exit $rc: $out"
 
   # T4 — an existing verb with different args ("a2a mcp --http" instead of
   # the documented no-argument stdio form) must ALSO red — the spec calls
@@ -781,7 +781,7 @@ MD
   write_control "$tmp/badargs"
   sed -i.bak 's/"args": \["mcp"\]/"args": ["mcp", "--http"]/' "$tmp/badargs/.claude-plugin/plugin.json"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badargs" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "launch line"; } || bad "T4 (real verb, wrong args): wanted a red naming the launch line, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "launch line" <<<"$out"; } || bad "T4 (real verb, wrong args): wanted a red naming the launch line, got exit $rc: $out"
 
   # T5 — credential sentence PRESENT BUT ALTERED, inside the SHIPPED SKILL
   # CONTENT: the surrounding prose stays, the variable's prefix changes.
@@ -794,7 +794,7 @@ MD
   write_control "$tmp/badcred"
   sed -i.bak 's/A2A_TOKEN_<SPACE>/A2A_SPACE_TOKEN_<SPACE>/' "$tmp/badcred/skills/a2ahub/troubleshooting.md"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badcred" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "credential sentence present but altered"; } || bad "T5 (credential sentence present-but-altered, skill content, <SPACE> spelling): wanted a red naming the altered sentence, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "credential sentence present but altered" <<<"$out"; } || bad "T5 (credential sentence present-but-altered, skill content, <SPACE> spelling): wanted a red naming the altered sentence, got exit $rc: $out"
 
   # T6 — a SECOND, genuinely separate plugin root (its own manifest under
   # plugins/minimal/, no .claude-plugin nesting) that carries its OWN
@@ -841,8 +841,8 @@ MD
 JSON
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/catalogonly" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
   { [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ] \
-      && printf '%s' "$out" | grep -q "names a credential variable" \
-      && printf '%s' "$out" | grep -q "carries a skills/ entry"; } \
+      && grep -q "names a credential variable" <<<"$out" \
+      && grep -q "carries a skills/ entry" <<<"$out"; } \
     || bad "T6b (catalogue-only set: no discovered plugin root measures either fact): wanted UNMEASURED naming both the credential variable and the skills/ entry, got exit $rc: $out"
 
   # T7 — skill-tree path drift: names a directory the embed root does not
@@ -851,7 +851,7 @@ JSON
   write_control "$tmp/badskill"
   sed -i.bak 's#"skills/a2ahub"#"skills/a2ahub-legacy"#' "$tmp/badskill/.claude-plugin/plugin.json"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badskill" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "skill-tree declaration"; } || bad "T7 (skill-path drift, manifest key — the ADDITIONAL checked side): wanted a red naming the skill-tree declaration, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "skill-tree declaration" <<<"$out"; } || bad "T7 (skill-path drift, manifest key — the ADDITIONAL checked side): wanted a red naming the skill-tree declaration, got exit $rc: $out"
 
   # T7b — DANGLING skills symlink: the AUTHORITATIVE directory check.
   # skills/a2ahub exists as a symlink but resolves nowhere — the shape a
@@ -865,20 +865,20 @@ JSON
   rm -rf "$tmp/danglingskill/skills/a2ahub"
   ln -s "../does-not-exist" "$tmp/danglingskill/skills/a2ahub"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/danglingskill" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "dangling"; } || bad "T7b (dangling skills/a2ahub symlink): wanted a red naming the dangling symlink, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "dangling" <<<"$out"; } || bad "T7b (dangling skills/a2ahub symlink): wanted a red naming the dangling symlink, got exit $rc: $out"
 
   # T8 — description drift.
   mkdir -p "$tmp/baddesc"
   write_control "$tmp/baddesc"
   sed -i.bak 's/"description": "[^"]*"/"description": "Handoffs between agents."/' "$tmp/baddesc/.claude-plugin/plugin.json"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/baddesc" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "description"; } || bad "T8 (description drift): wanted a red naming the description, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "description" <<<"$out"; } || bad "T8 (description drift): wanted a red naming the description, got exit $rc: $out"
 
   # T9 — an unparseable manifest: UNMEASURED, never gate_fail.
   mkdir -p "$tmp/badjson/.claude-plugin"
   printf '{ this is not json' > "$tmp/badjson/.claude-plugin/plugin.json"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badjson" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ] && printf '%s' "$out" | grep -q "UNMEASURED"; } || bad "T9 (unparseable manifest): wanted UNMEASURED/exit $GATE_EXIT_UNMEASURED, got exit $rc: $out"
+  { [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ] && grep -q "UNMEASURED" <<<"$out"; } || bad "T9 (unparseable manifest): wanted UNMEASURED/exit $GATE_EXIT_UNMEASURED, got exit $rc: $out"
 
   # T10 — the asymmetry: point the scan root at a tree that mutates BOTH
   # the shipped skill content AND a copy of internal/space/credential.go
@@ -891,7 +891,7 @@ JSON
   sed -i.bak 's/A2A_TOKEN_<SPACE>/A2A_SPACE_TOKEN_<SPACE>/' "$tmp/asymmetry/skills/a2ahub/troubleshooting.md"
   sed 's/A2A_TOKEN_/A2A_SPACE_TOKEN_/' "$GATE_ROOT/internal/space/credential.go" > "$tmp/asymmetry/internal/space/credential.go"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/asymmetry" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "credential sentence present but altered"; } || bad "T10 (asymmetry — scan root cannot redirect the canonical side): wanted the SAME red as T5 even with a mutated internal/space/credential.go sitting inside the scan root, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "credential sentence present but altered" <<<"$out"; } || bad "T10 (asymmetry — scan root cannot redirect the canonical side): wanted the SAME red as T5 even with a mutated internal/space/credential.go sitting inside the scan root, got exit $rc: $out"
 
   # T11 — publish-mcp.yml absent: simply not checked, stays whatever the
   # rest of the fixture would already be (control fixture here → green).
@@ -915,7 +915,7 @@ jobs:
       - run: mcp-publisher publish
 YAML
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badworkflow" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "publish-mcp.yml"; } || bad "T12 (publish-mcp.yml missing substitution step): wanted a red naming publish-mcp.yml, got exit $rc: $out"
+  { [ "$rc" -ne 0 ] && grep -q "publish-mcp.yml" <<<"$out"; } || bad "T12 (publish-mcp.yml missing substitution step): wanted a red naming publish-mcp.yml, got exit $rc: $out"
 
   # T13 — publish-mcp.yml present WITH the substitution step correctly
   # placed before the publish call → green.
@@ -945,7 +945,7 @@ YAML
   sed -i.bak 's/"version": "[^"]*"/"version": "0.0.1-stale"/' "$tmp/badversion/.claude-plugin/plugin.json"
   rm -f "$tmp/badversion/.claude-plugin/plugin.json.bak"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/badversion" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "0.0.1-stale"; } \
+  { [ "$rc" -ne 0 ] && grep -q "0.0.1-stale" <<<"$out"; } \
     || bad "T14 (version drift): wanted a red naming the stale version, got exit $rc: $out"
 
   # T15 — server.json's placeholder is EXEMPT BY NAME, and the exemption is
@@ -957,7 +957,7 @@ YAML
 { "name": "io.github.example/x", "version": "0.0.0", "packages": [] }
 JSON
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/exemptversion" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "server.json declares version \"0.0.0\" and is exempt"; } \
+  { [ "$rc" -eq 0 ] && grep -q "server.json declares version \"0.0.0\" and is exempt" <<<"$out"; } \
     || bad "T15 (server.json version exempt and named): wanted exit 0 with the exemption printed, got exit $rc: $out"
 
   # T16 — a manifest with NO version contributes nothing rather than
@@ -967,7 +967,7 @@ JSON
   sed -i.bak '/"version":/d' "$tmp/noversion/.claude-plugin/plugin.json"
   rm -f "$tmp/noversion/.claude-plugin/plugin.json.bak"
   out="$(PLUGIN_MANIFESTS_ROOT="$tmp/noversion" bash "$SCRIPT_ABS" check 2>&1)"; rc=$?
-  { [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ] && printf '%s' "$out" | grep -q "declares a top-level \"version\""; } \
+  { [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ] && grep -q "declares a top-level \"version\"" <<<"$out"; } \
     || bad "T16 (no manifest declares a version): wanted UNMEASURED naming the absent comparison, got exit $rc: $out"
 
   if [ "$failures" -gt 0 ]; then

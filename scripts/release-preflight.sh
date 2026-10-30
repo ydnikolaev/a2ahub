@@ -74,7 +74,7 @@ ok()   { printf '\033[32m✓\033[0m %s\n' "$1"; }
 # (a) the version being cut must not already exist as a tag.
 assert_version_free() { # $1 = repo, $2 = version
   local repo="$1" want="$2"
-  if git -C "$repo" tag -l "$want" | grep -qx "$want"; then
+  if grep -qx "$want" <<<"$(git -C "$repo" tag -l "$want")"; then
     fail "release-preflight: $want ALREADY EXISTS as a tag — pick the next free version.
     (This is the P33 miss: v0.4.0 was already released and predated the workflow.)"
     return 1
@@ -179,7 +179,7 @@ assert_pins_resolve() { # $1 = repo, $2 = version being cut (for the message)
 #     space that takes the update locks out every binary in existence.
 assert_floor_not_ahead() { # $1 = repo, $2 = version (vX.Y.Z or X.Y.Z)
   local repo="$1" want="${2#v}" floor
-  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | head -1)"
+  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | sed -n '1p')"
   if [ -z "$floor" ]; then
     fail "release-preflight: $TEMPLATE_MANIFEST declares no min_binary_version —
     \`a2a space update\` could not decide any space's write floor."
@@ -258,7 +258,7 @@ _release_preflight_baseline_tag() { # $1 = repo, $2 = version (vX.Y.Z)
   local repo="$1" version="$2"
   { git -C "$repo" tag -l | grep -E '^v?[0-9]+(\.[0-9]+){1,2}$' || true; printf '%s\n' "$version"; } \
     | sort -V -u \
-    | awk -v v="$version" '$0==v{exit} {print}' \
+    | awk -v v="$version" '$0==v{d=1} !d{print}' \
     | tail -1
 }
 
@@ -357,7 +357,7 @@ assert_floor_moves_with_schema() { # $1 = repo, $2 = version (vX.Y.Z or X.Y.Z) a
     return 0
   fi
 
-  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | head -1)"
+  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | sed -n '1p')"
   formatted="$(printf '%s\n' "$new_triples" | awk '{printf "      - %s v%s %s\n", $1, $2, $3}')"
 
   if [ "$floor" != "$want" ]; then
@@ -389,7 +389,7 @@ $formatted"
 _ref_default_of() { # $1 = repo, $2 = wf_path (repo-relative)
   local repo="$1" wf_path="$2"
   sed -n '/^      a2a-ref:/,/^      [a-z-]*:/p' "$repo/$wf_path" 2>/dev/null \
-    | sed -n 's/^ *default:[[:space:]]*"\{0,1\}\(v\{0,1\}[0-9][0-9.]*\)"\{0,1\}.*/\1/p' | head -1
+    | sed -n 's/^ *default:[[:space:]]*"\{0,1\}\(v\{0,1\}[0-9][0-9.]*\)"\{0,1\}.*/\1/p' | sed -n '1p'
 }
 
 # _assert_ref_default_matches_one is the single-file check; assert_ref_
@@ -598,7 +598,7 @@ assert_notes_carry_a_date() { # $1 = repo root, $2 = version (vX.Y.Z or X.Y.Z)
     echo "release-preflight: FAIL — no releasenotes/$version.yaml to cut $version from." >&2
     return 1
   fi
-  raw="$(sed -n 's/^released:[[:space:]]*//p' "$notes" | head -1)"
+  raw="$(sed -n 's/^released:[[:space:]]*//p' "$notes" | sed -n '1p')"
   case "$raw" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
       echo "release-preflight: FAIL — releasenotes/$version.yaml reads 'released: $raw' UNQUOTED." >&2
@@ -606,7 +606,7 @@ assert_notes_carry_a_date() { # $1 = repo root, $2 = version (vX.Y.Z or X.Y.Z)
       echo "    and internal/notes TestLoad_CorpusIntegrity refuses it. Write it quoted." >&2
       return 1 ;;
   esac
-  value="$(sed -n 's/^released:[[:space:]]*//p' "$notes" | head -1 | tr -d '"'"'"'[:space:]')"
+  value="$(sed -n 's/^released:[[:space:]]*//p' "$notes" | sed -n '1p' | tr -d '"'"'"'[:space:]')"
   case "$value" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
       printf '\xe2\x9c\x93 release-preflight: releasenotes/%s.yaml is dated %s, not the pre-tag sentinel\n' "$version" "$value"
@@ -683,7 +683,7 @@ teeth() {
     echo "release-preflight --teeth: FAILED — gate stayed GREEN on a pin to a tag that predates the workflow" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "does NOT contain" || {
+  grep -q "does NOT contain" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — red, but not with the predates-the-workflow message" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 1: pin to a pre-workflow tag → RED"
@@ -722,10 +722,10 @@ teeth() {
     echo "release-preflight --teeth: FAILED — a workflow new in the release being cut was refused" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "NEW IN v0.3.0" || {
+  grep -q "NEW IN v0.3.0" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — green, but it did not name the first-release case" >&2
     echo "$out" >&2; exit 1; }
-  printf '%s\n' "$out" | grep -q "space-template-baseline" || {
+  grep -q "space-template-baseline" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — the first-release pass did not name step 15" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 4a: reusable workflow new in the release being cut → GREEN, naming step 15"
@@ -737,7 +737,7 @@ teeth() {
     echo "release-preflight --teeth: FAILED — a pin to a workflow that exists nowhere stayed GREEN" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "exists nowhere" || {
+  grep -q "exists nowhere" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — red, but not with the exists-nowhere message" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 4b: pin to a workflow present in no tag and no working tree → RED"
@@ -751,7 +751,7 @@ teeth() {
     echo "release-preflight --teeth: FAILED — the exemption swallowed the P33 miss" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "@v0.2.0 carries it" || {
+  grep -q "@v0.2.0 carries it" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — red, but it did not name the tag that carries the workflow" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 4c: pre-workflow pin still RED, and names the tag that carries it"
@@ -883,13 +883,13 @@ teeth() {
     echo "release-preflight --teeth: FAILED — case 2 (prev added a row, floor still at prev2) stayed GREEN" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "envelope v2 response" || {
+  grep -q "envelope v2 response" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — case 2 red, but the message does not name the triple" >&2
     echo "$out" >&2; exit 1; }
-  printf '%s\n' "$out" | grep -q "1\.0\.0" || {
+  grep -q "1\.0\.0" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — case 2 red, but the message does not name the current (wrong) floor 1.0.0" >&2
     echo "$out" >&2; exit 1; }
-  printf '%s\n' "$out" | grep -q "1\.1\.0" || {
+  grep -q "1\.1\.0" <<<"$out" || {
     echo "release-preflight --teeth: FAILED — case 2 red, but the message does not name the required floor 1.1.0 (prev)" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 14: prev added a corpus row vs prev2, floor still at prev2 → RED (names the triple and both versions)"

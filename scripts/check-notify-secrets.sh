@@ -367,7 +367,7 @@ scan_secrets() { # $1 = root, $2 = shapes
 # for a grep that errors rather than simply finding nothing.
 check_telegram_single_copy() { # $1 = root, $2 = shapes
   local root="$1" shapes="$2" pattern hits line file rel
-  pattern="$(printf '%s\n' "$shapes" | grep -m1 '^telegram-bot-token|' | cut -d'|' -f2-)"
+  pattern="$(printf '%s\n' "$shapes" | grep '^telegram-bot-token|' | sed -n '1p' | cut -d'|' -f2-)"
   if [ -z "$pattern" ]; then
     gate_unmeasured "notify-secrets: the projection carries no telegram-bot-token shape — invariant 2 (single-copy regex) was NOT checked this run"
     return
@@ -401,7 +401,7 @@ run_check() { # $1 = root
     return
   fi
   shapes="$(shape_pairs "$json")"
-  if [ -z "$shapes" ] || ! printf '%s\n' "$shapes" | grep -q '^telegram-bot-token|'; then
+  if [ -z "$shapes" ] || ! grep -q '^telegram-bot-token|' <<<"$shapes"; then
     gate_unmeasured "notify-secrets: the sensitive-shape projection parsed to zero usable shapes (or is missing telegram-bot-token) — REFUSING rather than policing an empty or wrong set"
     return
   fi
@@ -519,17 +519,17 @@ teeth_expect() { # $1 = label, $2 = domain-red|unmeasured-red|green, $3 = needle
   _TEETH_LAST_OUT="$out"
   case "$verdict" in
     domain-red|unmeasured-red)
-      if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq "$needle"; then
+      if [ "$rc" -eq 0 ] || ! grep -Fq "$needle" <<<"$out"; then
         echo "check-notify-secrets --teeth: FALSE GREEN — $label did not red with '$needle':" >&2
         echo "$out" >&2
         return 1
       fi
-      if [ "$verdict" = "unmeasured-red" ] && ! printf '%s\n' "$out" | grep -Fq "UNMEASURED"; then
+      if [ "$verdict" = "unmeasured-red" ] && ! grep -Fq "UNMEASURED" <<<"$out"; then
         echo "check-notify-secrets --teeth: WRONG VERDICT — $label is a failed MEASUREMENT and must say UNMEASURED, not announce a finding about the tree:" >&2
         echo "$out" >&2
         return 1
       fi
-      if [ "$verdict" = "domain-red" ] && printf '%s\n' "$out" | grep -Fq "UNMEASURED"; then
+      if [ "$verdict" = "domain-red" ] && grep -Fq "UNMEASURED" <<<"$out"; then
         echo "check-notify-secrets --teeth: WRONG VERDICT — $label is a real finding about the tree and must NOT be reported as an unmeasured run:" >&2
         echo "$out" >&2
         return 1
@@ -710,11 +710,11 @@ run_teeth() {
     echo "$ta_out" >&2
     return 1
   fi
-  if printf '%s\n' "$ta_out" | grep -Fq "UNMEASURED"; then
+  if grep -Fq "UNMEASURED" <<<"$ta_out"; then
     echo "check-notify-secrets --teeth: a real credential-shape finding was reported as an unmeasured run" >&2
     return 1
   fi
-  if ! printf '%s\n' "$tb_out" | grep -Fq "UNMEASURED"; then
+  if ! grep -Fq "UNMEASURED" <<<"$tb_out"; then
     echo "check-notify-secrets --teeth: an unreadable tracked path did not produce the measurement refusal" >&2
     return 1
   fi

@@ -177,7 +177,7 @@ checklist_hand_maintained() { # $1 = RELEASE-CHECKLIST.md path
       *'skill/a2ahub/'*) : ;;
       *) continue ;;
     esac
-    path="$(printf '%s' "$cell" | grep -oE '`[^`]+`' | head -1 | tr -d '`')"
+    path="$(printf '%s' "$cell" | grep -oE '`[^`]+`' | sed -n '1p' | tr -d '`')"
     path="${path#skill/a2ahub/}"
     [ -n "$path" ] && printf '%s\n' "$path"
   done < <(

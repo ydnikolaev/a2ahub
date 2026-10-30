@@ -48,7 +48,7 @@ for want in a2a-darwin-arm64 a2a-windows-amd64; do
 done
 
 # (2) The bundle carries what a host needs, and the windows one is .exe.
-unzip -l "$work/dist/a2a-darwin-arm64.mcpb" | grep -q 'server/a2a$' \
+grep -q 'server/a2a$' <<<"$(unzip -l "$work/dist/a2a-darwin-arm64.mcpb")" \
   || fail "the darwin bundle does not carry server/a2a"
 unzip -p "$work/dist/a2a-darwin-arm64.mcpb" manifest.json \
   | jq -e '.version == "9.9.9" and .server.entry_point == "server/a2a" and .server.mcp_config.command == "server/a2a"' >/dev/null \

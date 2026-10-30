@@ -152,7 +152,7 @@ _in_cut_window() {
 }
 
 _released_field() { # $1 = path
-  sed -n "s/^released:[[:space:]]*['\"]\\{0,1\\}\\([^'\"]*\\)['\"]\\{0,1\\}[[:space:]]*\$/\\1/p" "$1" 2>/dev/null | head -1
+  sed -n "s/^released:[[:space:]]*['\"]\\{0,1\\}\\([^'\"]*\\)['\"]\\{0,1\\}[[:space:]]*\$/\\1/p" "$1" 2>/dev/null | sed -n '1p'
 }
 
 # _min_binary_version_from reads space-template/space.yaml's
@@ -161,7 +161,7 @@ _released_field() { # $1 = path
 # the identical sed can be pointed at either the working tree or a
 # `git show HEAD~1:...` blob without a second copy of the pattern.
 _min_binary_version_from() { # stdin
-  sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' | head -1
+  sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' | sed -n '1p'
 }
 
 # _pin_versions_from prints every `-reusable.yml@vX.Y.Z` version token found
@@ -175,7 +175,7 @@ _pin_versions_from() { # stdin
 # Used by refusal 1's immutable-history carve-out (ADR-011) — sort -V is the
 # same comparator the release runbook's own ordering assumes.
 _version_lt() { # $1 = a, $2 = b (both bare X.Y.Z)
-  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]
+  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | sed -n '1p')" = "$1" ]
 }
 
 # _newest_tag prints the highest vX.Y.Z-shaped tag in $1, or nothing.
@@ -187,7 +187,7 @@ _newest_tag() { # $1 = repo
 # discriminator for the shallow-clone / untagged-checkout refusal — see the
 # header comment for why this, and not `--is-shallow-repository`.
 _has_any_version_tag() { # $1 = repo
-  git -C "$1" tag -l 'v*' 2>/dev/null | grep -qE '^v[0-9]+(\.[0-9]+){2}$'
+  grep -qE '^v[0-9]+(\.[0-9]+){2}$' <<<"$(git -C "$1" tag -l 'v*' 2>/dev/null)"
 }
 
 # _is_behind: is $1 strictly less than $2 by `sort -V` (semver-ish, dotted —
@@ -229,7 +229,7 @@ assert_released_dates_match_tags() { # $1 = repo
     # the gate that runs on every commit, while release-preflight is
     # ceremony-only and needs VERSION= plus the network. The everyday gate was
     # the blind one.
-    raw="$(sed -n 's/^released:[[:space:]]*//p' "$f" | head -1)"
+    raw="$(sed -n 's/^released:[[:space:]]*//p' "$f" | sed -n '1p')"
     case "$raw" in
       [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
         fail "check-release-record: releasenotes/$version.yaml reads 'released: $raw' UNQUOTED.
@@ -434,9 +434,9 @@ assert_floor_and_pins_not_backwards() { # $1 = repo
   for f in "$repo/$TEMPLATE_WORKFLOWS_DIR"/*.yml; do
     [ -e "$f" ] || continue
     base="${f#"$repo"/}"
-    cur_pin="$(_pin_versions_from < "$f" | sort -V | head -1)"
+    cur_pin="$(_pin_versions_from < "$f" | sort -V | sed -n '1p')"
     [ -n "$cur_pin" ] || continue
-    prev_pin="$(git -C "$repo" show "HEAD~1:$base" 2>/dev/null | _pin_versions_from | sort -V | head -1 || true)"
+    prev_pin="$(git -C "$repo" show "HEAD~1:$base" 2>/dev/null | _pin_versions_from | sort -V | sed -n '1p' || true)"
 
     if [ -z "$prev_pin" ]; then
       ok "check-release-record: $base has no reusable-workflow pin at the previous commit — nothing to compare"
@@ -481,7 +481,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — released-date check stayed GREEN with zero tags in the checkout" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "no vX.Y.Z tags at all" || {
+  grep -q "no vX.Y.Z tags at all" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but not with the no-tags message" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 1: releasenotes checked with zero tags in the checkout → RED (cannot check is never check passed)"
@@ -490,7 +490,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — a2a-ref check stayed GREEN with zero tags in the checkout" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "no vX.Y.Z tags at all" || {
+  grep -q "no vX.Y.Z tags at all" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but not with the no-tags message" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 2: a2a-ref default checked with zero tags in the checkout → RED (cannot check is never check passed)"
@@ -505,10 +505,10 @@ teeth() {
     echo "check-release-record --teeth: FAILED — gate stayed GREEN on 0.2.0's released: date with no v0.2.0 tag" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "0.2.0.yaml claims released: 2026-01-05" || {
+  grep -q "0.2.0.yaml claims released: 2026-01-05" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but did not name the version/date" >&2
     echo "$out" >&2; exit 1; }
-  printf '%s\n' "$out" | grep -q "newest existing tag is v0.1.0" || {
+  grep -q "newest existing tag is v0.1.0" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but did not name the newest existing tag" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 3: released: DATE for an untagged version → RED, naming the version and the newest tag"
@@ -527,7 +527,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — 3a: TODAY's date with no tag was refused; the cut window cannot open" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "the cut window" || {
+  grep -q "the cut window" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — 3a: green, but not by the cut-window branch (it may have passed for the wrong reason)" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 3a: TODAY's date with no tag → GREEN, by the cut window and saying so"
@@ -537,7 +537,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — 3c: YESTERDAY's date with no tag was refused; a cut that crossed midnight UTC would red mid-flight, which is the cliff this window exists to not be" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "the cut window" || {
+  grep -q "the cut window" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — 3c: green, but not by the cut-window branch" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 3c: YESTERDAY's date with no tag → GREEN, so a cut is never truncated by the calendar"
@@ -547,7 +547,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — 3b: a TWO-DAY-OLD date with no tag stayed GREEN; the window is a hole, not a window" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "is not a tag reachable" || {
+  grep -q "is not a tag reachable" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — 3b: red, but not with the untagged-claim message" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 3b: a TWO-DAY-OLD date with no tag → RED — the window has an outer edge, and an abandoned cut is still caught"
@@ -564,7 +564,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — 3c: an UNQUOTED bare date stayed GREEN; the reader strips the property the schema demands" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "UNQUOTED" || {
+  grep -q "UNQUOTED" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — 3c: red, but not for the unquoted reason" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 3d: TODAY's date written UNQUOTED → RED, even though the same date quoted is legal (3a)"
@@ -600,7 +600,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — a version predating the newest tag was REFUSED; that demands rewriting immutable history (ADR-011)" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "immutable history, not judged" || {
+  grep -q "immutable history, not judged" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — green, but did not say WHY it was not judged" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 5b: a version predating the newest tag, claiming a date with no tag → GREEN, reported as immutable history (ADR-011)"
@@ -613,10 +613,10 @@ teeth() {
     echo "check-release-record --teeth: FAILED — a2a-ref default naming an untagged version stayed GREEN" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "a2a-ref default is v0.3.0" || {
+  grep -q "a2a-ref default is v0.3.0" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but did not name the default" >&2
     echo "$out" >&2; exit 1; }
-  printf '%s\n' "$out" | grep -q "newest existing tag is v0.1.0" || {
+  grep -q "newest existing tag is v0.1.0" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but did not name the newest existing tag" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 6: a2a-ref default naming an untagged version → RED, naming the default and the newest tag"
@@ -672,10 +672,10 @@ teeth() {
     echo "check-release-record --teeth: FAILED — a2a-notify-reusable.yml's a2a-ref default naming an untagged version stayed GREEN" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "a2a-notify-reusable.yml's a2a-ref default is v0.3.0" || {
+  grep -q "a2a-notify-reusable.yml's a2a-ref default is v0.3.0" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but did not name a2a-notify-reusable.yml" >&2
     echo "$out" >&2; exit 1; }
-  printf '%s\n' "$out" | grep -q "a2a-validate-reusable.yml's a2a-ref default v0.1.0 names an existing tag" || {
+  grep -q "a2a-validate-reusable.yml's a2a-ref default v0.1.0 names an existing tag" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but a2a-validate-reusable.yml's own green line vanished (this must report per-file, not stop at the first)" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 7d: a SECOND *-reusable.yml (a2a-notify-reusable.yml) naming an untagged a2a-ref default → RED, naming that file specifically, while a2a-validate-reusable.yml's own green line still prints"
@@ -703,7 +703,7 @@ teeth() {
     echo "check-release-record --teeth: FAILED — floor/pin check stayed GREEN with no parent commit" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "no parent commit" || {
+  grep -q "no parent commit" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but not with the no-parent-commit message" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 8: single-commit checkout (no HEAD~1) → RED (cannot check is never check passed)"
@@ -724,10 +724,10 @@ teeth() {
     echo "check-release-record --teeth: FAILED — a floor+pin regression vs the previous commit stayed GREEN" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s\n' "$out" | grep -q "min_binary_version moved BACKWARDS, from 0.2.0" || {
+  grep -q "min_binary_version moved BACKWARDS, from 0.2.0" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but did not name the floor regression" >&2
     echo "$out" >&2; exit 1; }
-  printf '%s\n' "$out" | grep -q "pins a reusable workflow at v0.1.0, BACKWARDS from v0.2.0" || {
+  grep -q "pins a reusable workflow at v0.1.0, BACKWARDS from v0.2.0" <<<"$out" || {
     echo "check-release-record --teeth: FAILED — red, but did not name the pin regression" >&2
     echo "$out" >&2; exit 1; }
   ok "teeth 9: floor AND pin both moved backwards vs the previous commit → RED, naming both regressions (fixture commit pair)"

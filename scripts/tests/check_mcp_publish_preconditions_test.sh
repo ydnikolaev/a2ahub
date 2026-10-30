@@ -18,8 +18,8 @@ wf="$ROOT/.github/workflows/publish-mcp.yml"
 if [ -f "$wf" ]; then
   grep -q 'check-mcp-publish-preconditions.sh' "$wf" \
     || fail "publish-mcp.yml does not invoke the precondition script it is for"
-  pub="$(grep -n 'mcp-publisher publish' "$wf" | head -1 | cut -d: -f1)"
-  pre="$(grep -n 'check-mcp-publish-preconditions.sh' "$wf" | head -1 | cut -d: -f1)"
+  pub="$(grep -n 'mcp-publisher publish' "$wf" | sed -n '1p' | cut -d: -f1)"
+  pre="$(grep -n 'check-mcp-publish-preconditions.sh' "$wf" | sed -n '1p' | cut -d: -f1)"
   { [ -n "$pub" ] && [ -n "$pre" ] && [ "$pre" -lt "$pub" ]; } \
     || fail "the precondition step does not precede \`mcp-publisher publish\` (pre=$pre pub=$pub)"
 fi

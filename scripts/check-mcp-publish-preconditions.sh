@@ -127,7 +127,7 @@ run_teeth() {
   # the `release not found` it replaces.
   local out
   out="$(check_tag "0.26.2" 2>&1)"
-  printf '%s' "$out" | grep -q '0.26.2' || bad "T4: the refusal does not quote the value it rejected"
+  grep -q '0.26.2' <<<"$out" || bad "T4: the refusal does not quote the value it rejected"
 
   # T5 — a checksum set carrying bundles passes; T6 — one carrying none reds.
   printf 'abc  a2a-linux-amd64\ndef  a2a-linux-amd64.mcpb\n' > "$tmp/withbundles"
@@ -138,7 +138,7 @@ run_teeth() {
   # T7 — an absent checksum set is refused as a MISSING PRECONDITION naming
   # the cohort job, never silently treated as "no bundles".
   out="$(check_bundles v0.26.2 "$tmp/does-not-exist" 2>&1)"
-  { [ -n "$out" ] && printf '%s' "$out" | grep -q "cohort job"; } || bad "T7: an absent checksum set did not name the job that produces it"
+  { [ -n "$out" ] && grep -q "cohort job" <<<"$out"; } || bad "T7: an absent checksum set did not name the job that produces it"
 
   # T8 — `.mcpb` must be matched at END of line, so an asset merely mentioning
   # it (a signature over one, say) cannot satisfy the precondition alone.

@@ -285,7 +285,7 @@ notes_ids() {
 # already carries two warnings about.
 id_position() {
   local hit
-  hit="$(printf '%s\n' "$1" | grep -m1 -nxF -e "$2" || true)"
+  hit="$(grep -m1 -nxF -e "$2" <<<"$1" || true)"
   [ -n "$hit" ] || return 0
   printf '%s' "${hit%%:*}"
 }
@@ -357,7 +357,7 @@ check_record_covers_release() {
 
   local covers_line
   covers_line="$(grep -E "$COVERS_MARKER_RE" "$record" || true)"
-  if printf '%s' "$covers_line" | grep -q '<[^>]*>'; then
+  if grep -q '<[^>]*>' <<<"$covers_line"; then
     echo "provider-tier-deferral: FAIL — $record's covers-notes: line still contains a <placeholder>:" >&2
     printf '%s\n' "$covers_line" | sed 's/^/    /' >&2
     echo "" >&2
@@ -478,7 +478,7 @@ check_record_covers_release() {
     grep -nE "$CANDIDATE_SHA_MARKER_RE" "$record" | sed 's/^/    /' >&2
     return 1
   fi
-  if grep -E "$CANDIDATE_SHA_MARKER_RE" "$record" | grep -q '<[^>]*>'; then
+  if grep -q '<[^>]*>' <<<"$(grep -E "$CANDIDATE_SHA_MARKER_RE" "$record")"; then
     echo "provider-tier-deferral: FAIL — $record's candidate-sha: line still contains a <placeholder>:" >&2
     grep -E "$CANDIDATE_SHA_MARKER_RE" "$record" | grep '<[^>]*>' | sed 's/^/    /' >&2
     echo "" >&2
@@ -746,7 +746,7 @@ check_provider_tier_deferral() {
       # unsigned record read as signed, by the gate whose entire purpose is
       # refusing exactly that. Any angle-bracket placeholder left in the line
       # now disqualifies it.
-      if grep -E "$OVERRIDE_MARKER_RE" "$newest" 2>/dev/null | grep -q '<[^>]*>'; then
+      if grep -q '<[^>]*>' <<<"$(grep -E "$OVERRIDE_MARKER_RE" "$newest" 2>/dev/null)"; then
         echo "provider-tier-deferral: FAIL — $newest carries a marker line that still contains a <placeholder>:" >&2
         grep -E "$OVERRIDE_MARKER_RE" "$newest" | grep '<[^>]*>' | sed 's/^/    /' >&2
         echo "" >&2
@@ -761,7 +761,7 @@ check_provider_tier_deferral() {
         echo "(and this gate) cannot tell which count the operator stands behind." >&2
         return 1
       fi
-      signed="$(grep -oE "$OVERRIDE_MARKER_RE" "$newest" 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
+      signed="$(grep -oE "$OVERRIDE_MARKER_RE" "$newest" 2>/dev/null | grep -oE '[0-9]+' | sed -n '1p' || true)"
     fi
     if [ -n "$signed" ]; then
       if [ "$signed" -eq "$count" ]; then
@@ -911,7 +911,7 @@ teeth() {
     exit 1
   fi
   for name in v0.1.0-provider-tier-deferral.md v0.2.0-provider-tier-deferral.md v0.3.0-provider-tier-deferral.md; do
-    printf '%s' "$out" | grep -q "$name" || {
+    grep -q "$name" <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — red did not name $name" >&2
       exit 1
     }
@@ -932,7 +932,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q '^provider-tier-deferral: ok — 2 ' || {
+  grep -q '^provider-tier-deferral: ok — 2 ' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — green did not report the outstanding count" >&2
     exit 1
   }
@@ -969,7 +969,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q '^provider-tier-deferral: ok — 2 ' || {
+  grep -q '^provider-tier-deferral: ok — 2 ' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — green after the mid-run live-e2e evidence did not report 2 outstanding" >&2
     exit 1
   }
@@ -995,7 +995,7 @@ teeth() {
     echo "provider-tier-deferral --teeth: FAILED — 2 committed + 1 untracked release stayed green" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'v0.3.0 (v0.3.0-provider-tier-deferral.md, release note uncommitted)' || {
+  grep -q 'v0.3.0 (v0.3.0-provider-tier-deferral.md, release note uncommitted)' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — red did not name the untracked third release" >&2
     echo "$out" >&2
     exit 1
@@ -1023,7 +1023,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'acknowledges the streak of 3' || {
+  grep -q 'acknowledges the streak of 3' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — green did not report that the streak was acknowledged" >&2
     echo "$out" >&2
     exit 1
@@ -1060,7 +1060,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'acknowledges the streak of 3' || {
+  grep -q 'acknowledges the streak of 3' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the override was not read from an untracked record" >&2
     echo "$out" >&2
     exit 1
@@ -1096,7 +1096,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'does not carry forward' || {
+  grep -q 'does not carry forward' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — red did not explain that an earlier signature is not inherited" >&2
     echo "$out" >&2
     exit 1
@@ -1118,12 +1118,12 @@ teeth() {
     echo "provider-tier-deferral --teeth: FAILED — a recordless release with no live-e2e evidence stayed green" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'v0.1.0 (RELEASED — no deferral record, no live-e2e evidence)' || {
+  grep -q 'v0.1.0 (RELEASED — no deferral record, no live-e2e evidence)' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — red did not name the recordless release" >&2
     echo "$out" >&2
     exit 1
   }
-  printf '%s' "$out" | grep -q 'A recordless release cannot be covered' || {
+  grep -q 'A recordless release cannot be covered' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — red did not explain that a recordless release cannot be signed for" >&2
     echo "$out" >&2
     exit 1
@@ -1167,7 +1167,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'v0.3.0-provider-tier-deferral.md acknowledges 3' || {
+  grep -q 'v0.3.0-provider-tier-deferral.md acknowledges 3' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the signature was not read from the NEWEST RELEASE's record; a backfilled older record was picked instead:" >&2
     echo "$out" >&2
     exit 1
@@ -1182,7 +1182,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'carries 2 streak signatures' || {
+  grep -q 'carries 2 streak signatures' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — two signatures did not red as ambiguous:" >&2
     echo "$out" >&2
     exit 1
@@ -1208,7 +1208,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'still contains a <placeholder>' || {
+  grep -q 'still contains a <placeholder>' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — red did not name the placeholder:" >&2
     echo "$out" >&2
     exit 1
@@ -1231,7 +1231,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'skip — docs/features absent' || {
+  grep -q 'skip — docs/features absent' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — a stripped checkout must DECLINE by name, not answer green silently:" >&2
     echo "$out" >&2
     exit 1
@@ -1255,7 +1255,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'not yet a release' || {
+  grep -q 'not yet a release' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the skip was silent; a version dropping out of coverage must say so" >&2
     echo "$out" >&2
     exit 1
@@ -1268,7 +1268,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'v0.1.0 (RELEASED' || {
+  grep -q 'v0.1.0 (RELEASED' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — a dated, recordless release was not named" >&2
     echo "$out" >&2
     exit 1
@@ -1312,7 +1312,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'names all 3 of v0.2.0' || {
+  grep -q 'names all 3 of v0.2.0' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the green did not report what was verified:" >&2
     echo "$out" >&2
     exit 1
@@ -1321,7 +1321,7 @@ teeth() {
   # judged. This is the whole of ADR-011 compliance — the sixteen real older
   # records are unjudged by inheriting the newest-record lookup, not by an
   # exemption list.
-  if printf '%s' "$out" | grep -q 'v0.1.0-provider-tier-deferral'; then
+  if grep -q 'v0.1.0-provider-tier-deferral' <<<"$out"; then
     echo "provider-tier-deferral --teeth: FAILED — an OLDER record was judged; the scope is inherited from the newest-record lookup and must never be widened:" >&2
     echo "$out" >&2
     exit 1
@@ -1336,12 +1336,12 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'the record names 3 of them' || {
+  grep -q 'the record names 3 of them' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the red did not report how many of the shipped entries the record names:" >&2
     echo "$out" >&2
     exit 1
   }
-  printf '%s' "$out" | grep -qE '^  - fix-d$' || {
+  grep -qE '^  - fix-d$' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the red did not NAME the uncovered entry:" >&2
     echo "$out" >&2
     exit 1
@@ -1354,7 +1354,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'names all 4 of v0.2.0' || {
+  grep -q 'names all 4 of v0.2.0' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the re-signed green did not report the new count:" >&2
     echo "$out" >&2
     exit 1
@@ -1368,7 +1368,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -qE '^  - fix-e$' || {
+  grep -qE '^  - fix-e$' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the red did not name the id the notes file does not declare:" >&2
     echo "$out" >&2
     exit 1
@@ -1384,7 +1384,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -qE '^  - yura$' || {
+  grep -qE '^  - yura$' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the red did not quote the prose tail's tokens verbatim:" >&2
     echo "$out" >&2
     exit 1
@@ -1399,22 +1399,22 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'never says what it signs for' || {
+  grep -q 'never says what it signs for' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the red did not say the record names nothing:" >&2
     echo "$out" >&2
     exit 1
   }
-  printf '%s' "$out" | grep -qF "$COVERS_MARKER_EXAMPLE" || {
+  grep -qF "$COVERS_MARKER_EXAMPLE" <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the refusal did not print the template; a refusal that does not say what to write is a wall:" >&2
     echo "$out" >&2
     exit 1
   }
-  printf '%s' "$out" | grep -qF "$CANDIDATE_SHA_EXAMPLE" || {
+  grep -qF "$CANDIDATE_SHA_EXAMPLE" <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the refusal did not print the candidate-sha template:" >&2
     echo "$out" >&2
     exit 1
   }
-  printf '%s' "$out" | grep -q "v0.19.1" || {
+  grep -q "v0.19.1" <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the refusal did not say this makes an EXISTING voluntary discipline checkable (v0.19.1's record already does it by hand); a rule that reads as newly invented is a rule that gets deleted:" >&2
     echo "$out" >&2
     exit 1
@@ -1429,7 +1429,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'names all 4 of v0.2.0' || {
+  grep -q 'names all 4 of v0.2.0' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the range form parsed but did not resolve to the ids it covers:" >&2
     echo "$out" >&2
     exit 1
@@ -1440,7 +1440,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -qE '^  - fix-d$' || {
+  grep -qE '^  - fix-d$' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the short range's red did not name the entry left outside it:" >&2
     echo "$out" >&2
     exit 1
@@ -1451,7 +1451,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'backwards' || {
+  grep -q 'backwards' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the inverted range did not red as inverted:" >&2
     echo "$out" >&2
     exit 1
@@ -1462,7 +1462,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q "declares no id 'fix-z'" || {
+  grep -q "declares no id 'fix-z'" <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the unresolvable endpoint was not named:" >&2
     echo "$out" >&2
     exit 1
@@ -1484,7 +1484,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'covers-notes: lines; exactly one must be in force' || {
+  grep -q 'covers-notes: lines; exactly one must be in force' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — two coverage lines did not red as ambiguous:" >&2
     echo "$out" >&2
     exit 1
@@ -1499,7 +1499,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q "covers-notes: line still contains a <placeholder>" || {
+  grep -q "covers-notes: line still contains a <placeholder>" <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the placeholder coverage line was not named as one:" >&2
     echo "$out" >&2
     exit 1
@@ -1515,7 +1515,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'no candidate-sha: line' || {
+  grep -q 'no candidate-sha: line' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the missing candidate was not named as missing:" >&2
     echo "$out" >&2
     exit 1
@@ -1527,7 +1527,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q "candidate-sha: line still contains a <placeholder>" || {
+  grep -q "candidate-sha: line still contains a <placeholder>" <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the placeholder candidate was not named as one:" >&2
     echo "$out" >&2
     exit 1
@@ -1601,17 +1601,17 @@ teeth() {
       echo "$out" >&2
       exit 1
     fi
-    printf '%s' "$out" | grep -q 'Named: 0 of 44' || {
+    grep -q 'Named: 0 of 44' <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — the red did not measure the record against the release: 0 named of 44 shipped is the number:" >&2
       echo "$out" >&2
       exit 1
     }
-    printf '%s' "$out" | grep -qE '^  - RN-02300-0$' || {
+    grep -qE '^  - RN-02300-0$' <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — the red did not name the entries the record failed to cover:" >&2
       echo "$out" >&2
       exit 1
     }
-    printf '%s' "$out" | grep -qE '^  - RN-02300-43$' || {
+    grep -qE '^  - RN-02300-43$' <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — the red named some entries but not the last one; a truncated list hides the drift it exists to show:" >&2
       echo "$out" >&2
       exit 1
@@ -1630,12 +1630,12 @@ teeth() {
       echo "$out" >&2
       exit 1
     fi
-    printf '%s' "$out" | grep -q 'the record names 11 of them' || {
+    grep -q 'the record names 11 of them' <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — the partial red did not report how much of the release the signature covers:" >&2
       echo "$out" >&2
       exit 1
     }
-    printf '%s' "$out" | grep -qE '^  - RN-02300-11$' || {
+    grep -qE '^  - RN-02300-11$' <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — the partial red did not name the first uncovered entry:" >&2
       echo "$out" >&2
       exit 1
@@ -1644,12 +1644,12 @@ teeth() {
     # its first five entries left every other assertion here green, because they
     # all read the front of it. A refusal that shows the beginning of the drift
     # and hides the rest is the same false comfort as no refusal.
-    printf '%s' "$out" | grep -qE '^  - RN-02300-43$' || {
+    grep -qE '^  - RN-02300-43$' <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — the partial red truncated the uncovered list before its last entry:" >&2
       echo "$out" >&2
       exit 1
     }
-    if printf '%s' "$out" | grep -qE '^  - RN-02300-10$'; then
+    if grep -qE '^  - RN-02300-10$' <<<"$out"; then
       echo "provider-tier-deferral --teeth: FAILED — an entry INSIDE the signed range was reported as uncovered; the range does not resolve:" >&2
       echo "$out" >&2
       exit 1
@@ -1671,7 +1671,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'measurement-failed' || {
+  grep -q 'measurement-failed' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — an unmeasurable notes file produced a DOMAIN verdict instead of a measurement-failed refusal:" >&2
     echo "$out" >&2
     exit 1
@@ -1683,7 +1683,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'measurement-failed' || {
+  grep -q 'measurement-failed' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — an empty notes file did not refuse as a failed measurement:" >&2
     echo "$out" >&2
     exit 1
@@ -1702,7 +1702,7 @@ teeth() {
       echo "$out" >&2
       exit 1
     fi
-    printf '%s' "$out" | grep -q 'could not be read' || {
+    grep -q 'could not be read' <<<"$out" || {
       echo "provider-tier-deferral --teeth: FAILED — an unreadable notes file did not refuse as a failed measurement:" >&2
       echo "$out" >&2
       exit 1
@@ -1731,7 +1731,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'names all 8 of v0.9.0' || {
+  grep -q 'names all 8 of v0.9.0' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the non-modern notes file was not read as 8 entries:" >&2
     echo "$out" >&2
     exit 1
@@ -1742,7 +1742,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -qE '^  - RN-0900-8$' || {
+  grep -qE '^  - RN-0900-8$' <<<"$out" || {
     echo "provider-tier-deferral --teeth: FAILED — the entry outside the range was not named on the non-modern file:" >&2
     echo "$out" >&2
     exit 1

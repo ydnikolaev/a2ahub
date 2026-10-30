@@ -706,7 +706,7 @@ is_called_locally() { # $1 = workflow yaml file path, $2... = candidate callers
   base="$(basename "$target")"
   for other in "$@"; do
     [ "$other" = "$target" ] && continue
-    if grep -E '^[ \t]*uses:' "$other" 2>/dev/null | grep -qF "$base"; then
+    if grep -qF "$base" <<<"$(grep -E '^[ \t]*uses:' "$other" 2>/dev/null)"; then
       return 0
     fi
   done
@@ -1732,7 +1732,7 @@ release_gate() { # $1 = --dry-run | (empty)
   # failure this deliverable exists to close, one step earlier in the pipeline.
   if [ -n "$dirty" ]; then
     gate_fail "the working tree has staged, worktree or untracked changes, so a receipt for $head_before would name a tree that does not exist. Commit or clean first; a ship verdict must be about something a publisher can push."
-    printf '%s\n' "$dirty" | head -20 | sed 's/^/    /' >&2
+    printf '%s\n' "$dirty" | sed -n '1,20p' | sed 's/^/    /' >&2
     return 1
   fi
 
@@ -1910,7 +1910,7 @@ CARRY_TREE=""
 # _receipt_phases <file> — the receipt's "verify_phases", empty when absent or
 # not a number. The publisher reads it with the same expression.
 _receipt_phases() {
-  sed -n 's/.*"verify_phases"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | head -1
+  sed -n 's/.*"verify_phases"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | sed -n '1p'
 }
 
 # carry_plan <repo> <receipt dir> — steps 1 and 2 of the carry: find the base and
@@ -2004,7 +2004,7 @@ release_carry() {
   dirty="$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)"
   if [ -n "$dirty" ]; then
     gate_fail "the working tree has staged, worktree or untracked changes, so a carry for $head would describe a tree that does not exist. Commit or clean first."
-    printf '%s\n' "$dirty" | head -20 | sed 's/^/    /' >&2
+    printf '%s\n' "$dirty" | sed -n '1,20p' | sed 's/^/    /' >&2
     return 1
   fi
   # The identity refusal is a pure git read and decides which command the
@@ -2092,7 +2092,7 @@ run_teeth() {
   # that the extraction READS a command living only inside a literal block —
   # so that is what T1 asserts now, whether the corpus is green or red.
   run_audit_dir "$ROOT/.github/workflows"
-  if ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'if [ ! -f "$notes" ]; then'; then
+  if ! grep -qF 'if [ ! -f "$notes" ]; then' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T1: a command that lives ONLY inside a literal run: block (release.yml release-notes guard) is invisible to the audit; extraction is not reading block bodies\n%s\n' "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2117,7 +2117,7 @@ jobs:
 EOF
   )")"
   run_audit_dir "$d2"
-  if [ "$AUDIT_RC" -eq 0 ] || ! printf '%s\n' "$AUDIT_OUT" | grep -qF "$marker"; then
+  if [ "$AUDIT_RC" -eq 0 ] || ! grep -qF "$marker" <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T2: a literal-block command must RED naming itself; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2139,7 +2139,7 @@ jobs:
 EOF
   )")"
   run_audit_dir "$d3"
-  if [ "$AUDIT_RC" -eq 0 ] || ! printf '%s\n' "$AUDIT_OUT" | grep -qF "$marker"; then
+  if [ "$AUDIT_RC" -eq 0 ] || ! grep -qF "$marker" <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T3: the same command in single-line form must RED identically; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2162,7 +2162,7 @@ jobs:
 EOF
   )")"
   run_audit_dir "$d4"
-  if [ "$AUDIT_RC" -eq 0 ] || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'UNSUPPORTED'; then
+  if [ "$AUDIT_RC" -eq 0 ] || ! grep -qF 'UNSUPPORTED' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T4: a folded run block must be refused loudly, not silently skipped; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2192,12 +2192,12 @@ EOF
   )")"
   run_audit_dir "$d5"
   if [ "$AUDIT_RC" -eq 0 ] \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'teeth-marker-t5-alpha --one' \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'teeth-marker-t5-beta --two'; then
+    || ! grep -qF 'teeth-marker-t5-alpha --one' <<<"$AUDIT_OUT" \
+    || ! grep -qF 'teeth-marker-t5-beta --two' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T5: not every executable line in the block was counted; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
-  elif printf '%s\n' "$AUDIT_OUT" | grep -qF 'a leading comment' \
-    || printf '%s\n' "$AUDIT_OUT" | grep -qF 'another comment'; then
+  elif grep -qF 'a leading comment' <<<"$AUDIT_OUT" \
+    || grep -qF 'another comment' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T5: a comment line inside the block was treated as a command\n%s\n' "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2210,7 +2210,7 @@ EOF
   # executed locally or excused" over nothing.
   d6="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
   run_audit_dir "$d6"
-  if [ "$AUDIT_RC" -eq 0 ] || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'EMPTY CORPUS'; then
+  if [ "$AUDIT_RC" -eq 0 ] || ! grep -qF 'EMPTY CORPUS' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T6: zero workflow files must RED with an EMPTY CORPUS refusal, not a clean pass; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2251,15 +2251,15 @@ EOF
   )")"
   run_audit_dir "$d7"
   if [ "$AUDIT_RC" -eq 0 ] \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'teeth-marker-t7-bare.sh' \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'VERSION="x" scripts/teeth-marker-t7-prefixed.sh' \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'if teeth-marker-t7-ifcond; then' \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'teeth-marker-t7-afterlabel --run'; then
+    || ! grep -qF 'teeth-marker-t7-bare.sh' <<<"$AUDIT_OUT" \
+    || ! grep -qF 'VERSION="x" scripts/teeth-marker-t7-prefixed.sh' <<<"$AUDIT_OUT" \
+    || ! grep -qF 'if teeth-marker-t7-ifcond; then' <<<"$AUDIT_OUT" \
+    || ! grep -qF 'teeth-marker-t7-afterlabel --run' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T7: the noise filter dropped a real command; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
-  elif printf '%s\n' "$AUDIT_OUT" | grep -qF 'no local step runs ;;' \
-    || printf '%s\n' "$AUDIT_OUT" | grep -qF 'no local step runs fi' \
-    || printf '%s\n' "$AUDIT_OUT" | grep -qF 'no local step runs teeth-marker-t7-label)'; then
+  elif grep -qF 'no local step runs ;;' <<<"$AUDIT_OUT" \
+    || grep -qF 'no local step runs fi' <<<"$AUDIT_OUT" \
+    || grep -qF 'no local step runs teeth-marker-t7-label)' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T7: a bare delimiter or a case label alone surfaced as a command\n%s\n' "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2304,9 +2304,9 @@ jobs:
 EOF
   run_audit_dir "$d8"
   if [ "$AUDIT_RC" -eq 0 ] \
-    || printf '%s\n' "$AUDIT_OUT" | grep -qF "no local step runs $marker8_reusable" \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF "no local step runs $marker8_ordinary" \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'OUT OF SCOPE — 1 command(s) in 1 reusable workflow(s) (reusable-uncalled.yml)'; then
+    || grep -qF "no local step runs $marker8_reusable" <<<"$AUDIT_OUT" \
+    || ! grep -qF "no local step runs $marker8_ordinary" <<<"$AUDIT_OUT" \
+    || ! grep -qF 'OUT OF SCOPE — 1 command(s) in 1 reusable workflow(s) (reusable-uncalled.yml)' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T8: an uncalled reusable workflow must be excluded from scope (named in the OUT OF SCOPE line, its command never UNCOVERED) while a sibling ordinary workflow still reds; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2347,8 +2347,8 @@ jobs:
 EOF
   run_audit_dir "$d9"
   if [ "$AUDIT_RC" -eq 0 ] \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF "no local step runs $marker9" \
-    || ! printf '%s\n' "$AUDIT_OUT" | grep -qF 'OUT OF SCOPE — 0 command(s) in 0 reusable workflow(s)'; then
+    || ! grep -qF "no local step runs $marker9" <<<"$AUDIT_OUT" \
+    || ! grep -qF 'OUT OF SCOPE — 0 command(s) in 0 reusable workflow(s)' <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T9: a reusable workflow CALLED LOCALLY by a sibling must stay IN SCOPE (its command still UNCOVERED, zero workflows excluded); got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2377,7 +2377,7 @@ jobs:
 EOF
   )")"
   run_audit_dir "$d10"
-  if [ "$AUDIT_RC" -eq 0 ] || ! printf '%s\n' "$AUDIT_OUT" | grep -qF "no local step runs $marker10"; then
+  if [ "$AUDIT_RC" -eq 0 ] || ! grep -qF "no local step runs $marker10" <<<"$AUDIT_OUT"; then
     printf 'ci-parity --teeth: FAIL — T10: an unexcused, unexecuted command must still RED after this wave'"'"'s excused_reason() additions; got rc=%s\n%s\n' "$AUDIT_RC" "$AUDIT_OUT" >&2
     teeth_fail=1
   else
@@ -2420,9 +2420,9 @@ jobs:
       - run: echo hello
 EOF
   out11="$(bash "$ROOT/scripts/ci-parity.sh" --macos-jobs "$d11" 2>&1)"
-  if ! printf '%s\n' "$out11" | grep -qF 'needs-a-mac:macos-99' \
-    || printf '%s\n' "$out11" | grep -qF 'needs-no-mac' \
-    || ! printf '%s\n' "$out11" | grep -qF 'cannot-tell:UNRESOLVED'; then
+  if ! grep -qF 'needs-a-mac:macos-99' <<<"$out11" \
+    || grep -qF 'needs-no-mac' <<<"$out11" \
+    || ! grep -qF 'cannot-tell:UNRESOLVED' <<<"$out11"; then
     printf 'ci-parity --teeth: FAIL — T11: the macOS partition must be DERIVED from runs-on: — a macos-prefixed runner reported (including a future major), an ubuntu sibling not, and an unresolvable runs-on announced rather than silently dropped\n%s\n' "$out11" >&2
     teeth_fail=1
   else
@@ -2447,8 +2447,8 @@ EOF
   done
   out12="$(env PATH="$d12" /bin/bash "$ROOT/scripts/ci-parity.sh" --macos-delta 2>&1)" || rc12=$?
   if [ "$rc12" -ne "$GATE_EXIT_UNMEASURED" ] \
-    || ! printf '%s\n' "$out12" | grep -qF 'UNMEASURED' \
-    || printf '%s\n' "$out12" | grep -qF 'FAIL'; then
+    || ! grep -qF 'UNMEASURED' <<<"$out12" \
+    || grep -qF 'FAIL' <<<"$out12"; then
     printf 'ci-parity --teeth: FAIL — T12: a missing Swift toolchain must report UNMEASURED and exit %s, never FAIL and never a silent skip; got rc=%s\n%s\n' "$GATE_EXIT_UNMEASURED" "$rc12" "$out12" >&2
     teeth_fail=1
   else
@@ -2476,8 +2476,8 @@ EOF
 EOF
   out13="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d13/runbook.md" 2>&1)" || rc13=$?
   if [ "$rc13" -eq 0 ] \
-    || ! printf '%s\n' "$out13" | grep -qF 'UNCOMPOSED — make teeth-marker-t13-accreted' \
-    || printf '%s\n' "$out13" | grep -qF 'teeth-marker-t13-out-of-phase'; then
+    || ! grep -qF 'UNCOMPOSED — make teeth-marker-t13-accreted' <<<"$out13" \
+    || grep -qF 'teeth-marker-t13-out-of-phase' <<<"$out13"; then
     printf 'ci-parity --teeth: FAIL — T13: a release step naming an uncomposed command must RED naming it, and a step outside Phases 1-3 must not be judged; got rc=%s\n%s\n' "$rc13" "$out13" >&2
     teeth_fail=1
   else
@@ -2497,7 +2497,7 @@ EOF
 1. **`make teeth-marker-t14-was-a-member`** — a step whose member is gone.
 EOF
   out14="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d13/removed.md" 2>&1)" || rc14=$?
-  if [ "$rc14" -eq 0 ] || ! printf '%s\n' "$out14" | grep -qF 'the composed release gate runs nothing that covers it'; then
+  if [ "$rc14" -eq 0 ] || ! grep -qF 'the composed release gate runs nothing that covers it' <<<"$out14"; then
     printf 'ci-parity --teeth: FAIL — T14: a command absent from suite_members() must not satisfy a release step; membership is derived, so removing a member must red the step naming it. Got rc=%s\n%s\n' "$rc14" "$out14" >&2
     teeth_fail=1
   else
@@ -2511,7 +2511,7 @@ EOF
   local out15 rc15=0
   printf '### Phase 1 — prepare\n\n1. Author the notes.\n' > "$d13/empty.md"
   out15="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d13/empty.md" 2>&1)" || rc15=$?
-  if [ "$rc15" -eq 0 ] || ! printf '%s\n' "$out15" | grep -qF 'UNMEASURED'; then
+  if [ "$rc15" -eq 0 ] || ! grep -qF 'UNMEASURED' <<<"$out15"; then
     printf 'ci-parity --teeth: FAIL — T15: a runbook from which zero step commands were extracted must report UNMEASURED, not a clean pass; got rc=%s\n%s\n' "$rc15" "$out15" >&2
     teeth_fail=1
   else
@@ -2536,20 +2536,20 @@ EOF
   printf '{"gate":"logic-e2e","verdict":"pass","duration_ms":1,"mode":"full","at":"2026-08-21T00:00:03Z"}\n' >> "$d16/dupe.jsonl"
 
   out16="$(env A2A_VERIFY_TELEMETRY="$d16/clean.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
-  if [ "$rc16" -ne 0 ] || ! printf '%s\n' "$out16" | grep -qF 'no phase ran twice'; then
+  if [ "$rc16" -ne 0 ] || ! grep -qF 'no phase ran twice' <<<"$out16"; then
     printf 'ci-parity --teeth: FAIL — T16a: a run in which every phase appears once must pass and say so; got rc=%s\n%s\n' "$rc16" "$out16" >&2
     teeth_fail=1
   fi
   rc16=0
   out16="$(env A2A_VERIFY_TELEMETRY="$d16/dupe.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
-  if [ "$rc16" -eq 0 ] || ! printf '%s\n' "$out16" | grep -qF 'full logic-e2e' \
-    || ! printf '%s\n' "$out16" | grep -qF 'ran TWICE inside one composed run'; then
+  if [ "$rc16" -eq 0 ] || ! grep -qF 'full logic-e2e' <<<"$out16" \
+    || ! grep -qF 'ran TWICE inside one composed run' <<<"$out16"; then
     printf 'ci-parity --teeth: FAIL — T16b: a phase executed twice in one composed run must RED naming the repeated (mode, gate) pair; got rc=%s\n%s\n' "$rc16" "$out16" >&2
     teeth_fail=1
   fi
   rc16=0
   out16="$(env A2A_VERIFY_TELEMETRY="$d16/absent.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
-  if [ "$rc16" -ne "$GATE_EXIT_UNMEASURED" ] || ! printf '%s\n' "$out16" | grep -qF 'UNMEASURED'; then
+  if [ "$rc16" -ne "$GATE_EXIT_UNMEASURED" ] || ! grep -qF 'UNMEASURED' <<<"$out16"; then
     printf 'ci-parity --teeth: FAIL — T16c: absent telemetry must be UNMEASURED (exit %s), never a phase count of zero reported as clean; got rc=%s\n%s\n' "$GATE_EXIT_UNMEASURED" "$rc16" "$out16" >&2
     teeth_fail=1
   fi
@@ -2567,7 +2567,7 @@ EOF
   receipts_after="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
   if [ "$rc17" -ne 0 ] \
     || [ "$receipts_before" != "$receipts_after" ] \
-    || ! printf '%s\n' "$out17" | grep -qF 'NO RECEIPT WAS WRITTEN'; then
+    || ! grep -qF 'NO RECEIPT WAS WRITTEN' <<<"$out17"; then
     printf 'ci-parity --teeth: FAIL — T17: a dry run must execute nothing, write no receipt, and say so; got rc=%s receipts %s->%s\n%s\n' "$rc17" "$receipts_before" "$receipts_after" "$out17" >&2
     teeth_fail=1
   else
@@ -2595,8 +2595,8 @@ EOF
   out18="$(env PATH="$d18" A2A_RELEASE_LOG_DIR="$d18/logs" /bin/bash "$ROOT/scripts/ci-parity.sh" --release 2>&1)" || rc18=$?
   after18="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
   if [ "$rc18" -ne "$GATE_EXIT_UNMEASURED" ] \
-    || ! printf '%s\n' "$out18" | grep -qF 'UNMEASURED' \
-    || ! printf '%s\n' "$out18" | grep -qF 'could not START' \
+    || ! grep -qF 'UNMEASURED' <<<"$out18" \
+    || ! grep -qF 'could not START' <<<"$out18" \
     || [ "$before18" != "$after18" ]; then
     printf 'ci-parity --teeth: FAIL — T18: an unreachable Docker daemon must red as UNMEASURED (exit %s) naming the container'"'"'s own value, and must write no receipt; got rc=%s receipts %s->%s\n%s\n' \
       "$GATE_EXIT_UNMEASURED" "$rc18" "$before18" "$after18" "$out18" >&2
@@ -2630,14 +2630,14 @@ EOF
 EOF
   out19="$(env A2A_VERIFY_TELEMETRY="$d19/host.jsonl" bash "$ROOT/scripts/ci-parity.sh" \
     --phases 0 "the fixture" "$d19/container.jsonl:0" 2>&1)" || rc19=$?
-  if [ "$rc19" -ne 0 ] || ! printf '%s\n' "$out19" | grep -qF 'executed 3 verify phase(s)'; then
+  if [ "$rc19" -ne 0 ] || ! grep -qF 'executed 3 verify phase(s)' <<<"$out19"; then
     printf 'ci-parity --teeth: FAIL — T19a: phases written only by the container must still be counted; wanted 3, got rc=%s\n%s\n' "$rc19" "$out19" >&2
     teeth_fail=1
   fi
   rc19=0
   out19="$(env A2A_VERIFY_TELEMETRY="$d19/host.jsonl" bash "$ROOT/scripts/ci-parity.sh" \
     --phases 0 "the fixture" 2>&1)" || rc19=$?
-  if [ "$rc19" -ne "$GATE_EXIT_UNMEASURED" ] || ! printf '%s\n' "$out19" | grep -qF 'UNMEASURED'; then
+  if [ "$rc19" -ne "$GATE_EXIT_UNMEASURED" ] || ! grep -qF 'UNMEASURED' <<<"$out19"; then
     printf 'ci-parity --teeth: FAIL — T19b: the same host file read alone must be UNMEASURED, which is what proves T19a counted across the boundary; got rc=%s\n%s\n' "$rc19" "$out19" >&2
     teeth_fail=1
   fi
@@ -2646,7 +2646,7 @@ EOF
   # what T19d did on its first run, against the comment naming `-eq 0` as the
   # thing not to do.
   body19="$(awk '/^write_receipt\(\) \{/,/^\}/' "$ROOT/scripts/ci-parity.sh" | grep -v '^[[:space:]]*#')"
-  if printf '%s\n' "$body19" | grep -q 'VERIFY_TELEMETRY'; then
+  if grep -q 'VERIFY_TELEMETRY' <<<"$body19"; then
     printf 'ci-parity --teeth: FAIL — T19c: write_receipt reads the telemetry again. The count has ONE producer (telemetry_report) and is passed in; a second reading here is exactly how the receipt came to claim 0 over 71.\n' >&2
     teeth_fail=1
   fi
@@ -2654,7 +2654,7 @@ EOF
   # non-integer, so an arithmetic guard lets a non-numeric count through and
   # writes `"verify_phases": abc,` — invalid JSON the publisher's own
   # `grep '"verdict": "pass"'` still accepts. The guard must be a NUMERIC test.
-  if printf '%s\n' "$body19" | grep -qE '\$phases" -eq 0|\$3" -eq 0'; then
+  if grep -qE '\$phases" -eq 0|\$3" -eq 0' <<<"$body19"; then
     printf 'ci-parity --teeth: FAIL — T19d: the receipt count is guarded arithmetically. `[ "$n" -eq 0 ]` exits 2 on a non-integer and the refusal is skipped; use a numeric case pattern so a non-numeric count refuses instead of producing invalid JSON.\n' >&2
     teeth_fail=1
   fi
@@ -2708,11 +2708,11 @@ EOF
     printf 'ci-parity --teeth: FAIL — T21: the coverage haystack is EMPTY; every command would read as uncovered\n' >&2
     teeth_fail=1
   fi
-  if printf '%s\n' "$haystack" | grep -qE '^[[:space:]]*#'; then
+  if grep -qE '^[[:space:]]*#' <<<"$haystack"; then
     printf 'ci-parity --teeth: FAIL — T21: the coverage haystack still contains comment lines; a command named in prose counts as executed\n' >&2
     teeth_fail=1
   fi
-  if ! printf '%s\n' "$haystack" | grep -q 'run_step'; then
+  if ! grep -q 'run_step' <<<"$haystack"; then
     printf 'ci-parity --teeth: FAIL — T21: the coverage haystack carries no run_step line; stripping comments removed the claim itself\n' >&2
     teeth_fail=1
   fi
@@ -2744,9 +2744,9 @@ EOF
     >"$fpd/releasenotes/0.99.0.yaml"
   out22="$(bash "$ROOT/scripts/ci-parity.sh" --fast-pass "$fpd" 2>&1)" || rc22=$?
   if [ "$rc22" -eq 0 ] \
-    || ! printf '%s\n' "$out22" | grep -qF "released: unreleased" \
-    || ! printf '%s\n' "$out22" | grep -qF "docs/runbooks/release.md Phase 1 step 1" \
-    || ! printf '%s\n' "$out22" | grep -qiF "the container was never started"; then
+    || ! grep -qF "released: unreleased" <<<"$out22" \
+    || ! grep -qF "docs/runbooks/release.md Phase 1 step 1" <<<"$out22" \
+    || ! grep -qiF "the container was never started" <<<"$out22"; then
     printf 'ci-parity --teeth: FAIL — T22: a tree carrying the pre-tag sentinel must be refused by the fast pass, naming the runbook step and saying the container never ran; got rc=%s\n%s\n' "$rc22" "$out22" >&2
     teeth_fail=1
   else
@@ -2760,8 +2760,8 @@ EOF
   printf 'schema: release-notes/v1\nversion: "0.99.0"\nreleased: "2026-08-23"\nheadline: fixture\n' \
     >"$fpd/releasenotes/0.99.0.yaml"
   out23="$(bash "$ROOT/scripts/ci-parity.sh" --fast-pass "$fpd" 2>&1)" || rc23=$?
-  if printf '%s\n' "$out23" | grep -qF "released: unreleased" \
-    || ! printf '%s\n' "$out23" | grep -qF "the three static release-preflight assertions OK"; then
+  if grep -qF "released: unreleased" <<<"$out23" \
+    || ! grep -qF "the three static release-preflight assertions OK" <<<"$out23"; then
     printf 'ci-parity --teeth: FAIL — T23: a dated fixture must pass the three static assertions, or T22 proved nothing about the sentinel; got rc=%s\n%s\n' "$rc23" "$out23" >&2
     teeth_fail=1
   else
@@ -2780,7 +2780,7 @@ EOF
   printf 'schema: release-notes/v1\nversion: "0.99.10"\nreleased: unreleased\nheadline: fixture\n' \
     >"$fpd/releasenotes/0.99.10.yaml"
   out24="$(bash "$ROOT/scripts/ci-parity.sh" --fast-pass "$fpd" 2>&1)" || true
-  got24="$(printf '%s\n' "$out24" | sed -n 's/.*the cut commit for v\([0-9.]*\).*/\1/p' | head -1)"
+  got24="$(printf '%s\n' "$out24" | sed -n 's/.*the cut commit for v\([0-9.]*\).*/\1/p' | sed -n '1p')"
   if [ "$got24" != "0.99.10" ]; then
     printf 'ci-parity --teeth: FAIL — T24: the version being cut must be the highest by semver; wanted 0.99.10, got %s\n%s\n' "${got24:-<none>}" "$out24" >&2
     teeth_fail=1
@@ -2817,10 +2817,10 @@ EOF
   # and the spec's original objection becomes true again — so this tooth reds.
   local body25 line_dirty line_fast line_container line_receipt
   body25="$(awk '/^release_gate\(\)/{f=1} f{print} f && /^}/{exit}' "$ROOT/scripts/ci-parity.sh")"
-  line_dirty="$(printf '%s\n' "$body25" | grep -n 'the working tree has staged, worktree or untracked changes' | head -1 | cut -d: -f1)"
-  line_fast="$(printf '%s\n' "$body25" | grep -n 'if ! fast_pass "\$ROOT"; then' | head -1 | cut -d: -f1)"
-  line_container="$(printf '%s\n' "$body25" | grep -n 'release gate phase 1 — container suite' | head -1 | cut -d: -f1)"
-  line_receipt="$(printf '%s\n' "$body25" | grep -n 'write_receipt' | head -1 | cut -d: -f1)"
+  line_dirty="$(printf '%s\n' "$body25" | grep -n 'the working tree has staged, worktree or untracked changes' | sed -n '1p' | cut -d: -f1)"
+  line_fast="$(printf '%s\n' "$body25" | grep -n 'if ! fast_pass "\$ROOT"; then' | sed -n '1p' | cut -d: -f1)"
+  line_container="$(printf '%s\n' "$body25" | grep -n 'release gate phase 1 — container suite' | sed -n '1p' | cut -d: -f1)"
+  line_receipt="$(printf '%s\n' "$body25" | grep -n 'write_receipt' | sed -n '1p' | cut -d: -f1)"
   if [ -z "$line_dirty" ] || [ -z "$line_fast" ] || [ -z "$line_container" ] || [ -z "$line_receipt" ]; then
     printf 'ci-parity --teeth: FAIL — T25: release_gate no longer contains one of the four anchors this tooth reads (dirty=%s fast_pass=%s container=%s write_receipt=%s); the ordering guarantee is unproven\n' \
       "${line_dirty:-<none>}" "${line_fast:-<none>}" "${line_container:-<none>}" "${line_receipt:-<none>}" >&2
@@ -2833,7 +2833,7 @@ EOF
     printf 'ci-parity --teeth: FAIL — T25: the fast pass must be dispatched BEFORE the container and before any receipt is written; got fast_pass at %s, container at %s, write_receipt at %s\n' \
       "$line_fast" "$line_container" "$line_receipt" >&2
     teeth_fail=1
-  elif ! printf '%s\n' "$body25" | awk -v n="$line_fast" 'NR==n+1' | grep -qE '^[[:space:]]*return 1[[:space:]]*$'; then
+  elif ! grep -qE '^[[:space:]]*return 1[[:space:]]*$' <<<"$(awk -v n="$line_fast" 'NR==n+1' <<<"$body25")"; then
     printf 'ci-parity --teeth: FAIL — T25: the fast pass'"'"'s failure arm must RETURN; anything else lets a refused tree fall through into the container and on to a receipt\n' >&2
     teeth_fail=1
   else
@@ -2849,10 +2849,10 @@ EOF
   # audit).
   local members26 out26 rc26=0 d26
   members26="$(list_members)"
-  if ! printf '%s\n' "$members26" | grep -qE '(^|[[:space:]])make projection$'; then
+  if ! grep -qE '(^|[[:space:]])make projection$' <<<"$members26"; then
     printf 'ci-parity --teeth: FAIL — T26: the suite must run make projection (R-1 / D-041: the local release-check is the one judge); members were:\n%s\n' "$members26" >&2
     teeth_fail=1
-  elif printf '%s\n' "$members26" | grep -qF 'check-projection --template-only'; then
+  elif grep -qF 'check-projection --template-only' <<<"$members26"; then
     printf 'ci-parity --teeth: FAIL — T26: a separate check-projection --template-only member runs the rehearsal twice (R-1 / D-041; make projection runs it first)\n' >&2
     teeth_fail=1
   else
@@ -2871,10 +2871,10 @@ T26EOF
     local outu26 rcu26=0
     outu26="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d26/unknown.md" 2>&1)" || rcu26=$?
     rm -rf "$d26"
-    if [ "$rc26" -ne 0 ] || ! printf '%s\n' "$out26" | grep -qF 'an EXECUTES member of the composed suite'; then
+    if [ "$rc26" -ne 0 ] || ! grep -qF 'an EXECUTES member of the composed suite' <<<"$out26"; then
       printf 'ci-parity --teeth: FAIL — T26: a runbook step naming make projection must pass as an EXECUTES member (R-1 / D-041). Got rc=%s\n%s\n' "$rc26" "$out26" >&2
       teeth_fail=1
-    elif [ "$rcu26" -eq 0 ] || ! printf '%s\n' "$outu26" | grep -qF 'the composed release gate runs nothing that covers it'; then
+    elif [ "$rcu26" -eq 0 ] || ! grep -qF 'the composed release gate runs nothing that covers it' <<<"$outu26"; then
       printf 'ci-parity --teeth: FAIL — T26: a step naming make no-such-release-gate must still red; the audit was loosened. Got rc=%s\n%s\n' "$rcu26" "$outu26" >&2
       teeth_fail=1
     else
@@ -2902,7 +2902,7 @@ EOF
   out27="$(env A2A_VERIFY_TELEMETRY="$d27/trimmed.jsonl" bash "$ROOT/scripts/ci-parity.sh" \
     --phases 20260822T000000Z "the fixture" 2>&1)" || rc27=$?
   rm -rf "$d27"
-  if [ "$rc27" -ne 0 ] || ! printf '%s\n' "$out27" | grep -qF 'executed 2 verify phase(s)'; then
+  if [ "$rc27" -ne 0 ] || ! grep -qF 'executed 2 verify phase(s)' <<<"$out27"; then
     printf 'ci-parity --teeth: FAIL — T27: a run whose file was trimmed after it started must count its own 2 records and not the surviving older one; got rc=%s\n%s\n' "$rc27" "$out27" >&2
     teeth_fail=1
   else
@@ -2924,10 +2924,10 @@ EOF
   rows28="$(cat "$d28/stages.jsonl" 2>/dev/null || true)"
   [ "$rc28" -eq 0 ] || ok28=0
   [ "$(printf '%s\n' "$rows28" | grep -c .)" -eq 2 ] || ok28=0
-  printf '%s\n' "$rows28" | sed -n 1p | grep -qF '"gate":"step:a member with \"quotes\" and spaces","verdict":"pass"' || ok28=0
-  printf '%s\n' "$rows28" | sed -n 2p | grep -qF '"gate":"step:a failing member","verdict":"fail"' || ok28=0
-  printf '%s\n' "$rows28" | grep -vqF '"mode":"release-check"' && ok28=0
-  printf '%s\n' "$rows28" | grep -qF '"duration_ms":' || ok28=0
+  grep -qF '"gate":"step:a member with \"quotes\" and spaces","verdict":"pass"' <<<"$(sed -n 1p <<<"$rows28")" || ok28=0
+  grep -qF '"gate":"step:a failing member","verdict":"fail"' <<<"$(sed -n 2p <<<"$rows28")" || ok28=0
+  grep -vqF '"mode":"release-check"' <<<"$rows28" && ok28=0
+  grep -qF '"duration_ms":' <<<"$rows28" || ok28=0
   [ ! -s "$d28/telemetry.jsonl" ] || ok28=0
   rm -rf "$d28"
   if [ "$ok28" -ne 1 ]; then
@@ -2986,10 +2986,10 @@ EOF
   local out30 rc30=0 ok30=1 members30
   out30="$(bash "$ROOT/scripts/ci-parity.sh" --audit 2>&1)" || rc30=$?
   [ "$rc30" -eq 0 ] || ok30=0
-  printf '%s\n' "$out30" | grep -qF 'excused — make vulncheck' || ok30=0
+  grep -qF 'excused — make vulncheck' <<<"$out30" || ok30=0
   members30="$(list_members)"
   case "$members30" in *'make vulncheck'*) ok30=0 ;; esac
-  excused_reason 'make vulncheck' | grep -qF 'release-preflight' || ok30=0
+  grep -qF 'release-preflight' <<<"$(excused_reason 'make vulncheck')" || ok30=0
   if [ "$ok30" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL — T30: make vulncheck must be absent from suite_members and excused by name (release-preflight) while the audit stays green; got rc=%s\n%s\n' "$rc30" "$out30" >&2
     teeth_fail=1
@@ -3026,7 +3026,7 @@ EOF
   _t31
   ok31=1
   [ "$rc31" -eq 0 ] || ok31=0
-  printf '%s\n' "$out31" | grep -qF "base $base31 tree " || ok31=0
+  grep -qF "base $base31 tree " <<<"$out31" || ok31=0
   if [ "$ok31" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL - T31: a docs-only delta over a receipted base must carry (rc 0, naming the base); got rc=%s\n%s\n' "$rc31" "$out31" >&2
     teeth_fail=1
@@ -3048,10 +3048,10 @@ EOF
   gates31="$(make --no-print-directory -s -C "$ROOT" _print-repo-gates 2>/dev/null || true)"
   [ "$rc31" -eq 0 ] || ok36=0
   [ "$rnrc31" -ne 0 ] || ok36=0
-  printf '%s\n' "$rn31" | grep -qF 'fix(widget): close visible defect' || ok36=0
-  carry_members | grep -qxF 'make check-validators' || ok36=0
+  grep -qF 'fix(widget): close visible defect' <<<"$rn31" || ok36=0
+  grep -qxF 'make check-validators' <<<"$(carry_members)" || ok36=0
   for g31 in release-notes-freshness release-note-detect epic-drift feature-lint; do
-    printf '%s\n' "$gates31" | tr ' ' '\n' | grep -qxF "$g31" || ok36=0
+    grep -qxF "$g31" <<<"$(tr ' ' '\n' <<<"$gates31")" || ok36=0
   done
   if [ "$ok36" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL - T32: an identical tree behind a post-notes fix: commit must pass the identity plan (rc %s), RED release-notes-freshness naming the commit (rc %s), and the carry must run make check-validators with the four history gates in REPO_GATES\n%s\n%s\n' "$rc31" "$rnrc31" "$out31" "$rn31" >&2
@@ -3068,7 +3068,7 @@ EOF
   _t31
   ok31=1
   [ "$rc31" -eq 0 ] || ok31=0
-  printf '%s\n' "$out31" | grep -qF "base $base31 tree " || ok31=0
+  grep -qF "base $base31 tree " <<<"$out31" || ok31=0
   if [ "$ok31" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL - T33: a carry receipt nearer than the full one must be walked past, never used as the base; got rc=%s\n%s\n' "$rc31" "$out31" >&2
     teeth_fail=1
@@ -3082,8 +3082,8 @@ EOF
   _t31
   ok31=1
   [ "$rc31" -eq 1 ] || ok31=0
-  printf '%s\n' "$out31" | grep -qF 'internal/widget/widget.go' || ok31=0
-  printf '%s\n' "$out31" | grep -qF 'make release-check' || ok31=0
+  grep -qF 'internal/widget/widget.go' <<<"$out31" || ok31=0
+  grep -qF 'make release-check' <<<"$out31" || ok31=0
   if [ "$ok31" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL - T34: a changed shipped byte must be refused (rc 1), naming the path and "make release-check"; got rc=%s\n%s\n' "$rc31" "$out31" >&2
     teeth_fail=1
@@ -3098,7 +3098,7 @@ EOF
   _t31
   ok31=1
   [ "$rc31" -eq 1 ] || ok31=0
-  printf '%s\n' "$out31" | grep -qF 'scripts/lib/strip-set.txt' || ok31=0
+  grep -qF 'scripts/lib/strip-set.txt' <<<"$out31" || ok31=0
   if [ "$ok31" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL - T35: a strip-set.txt change must be refused, naming the file; got rc=%s\n%s\n' "$rc31" "$out31" >&2
     teeth_fail=1
@@ -3111,7 +3111,7 @@ EOF
   _t31
   ok31=1
   [ "$rc31" -eq 1 ] || ok31=0
-  printf '%s\n' "$out31" | grep -qF 'nothing to carry' || ok31=0
+  grep -qF 'nothing to carry' <<<"$out31" || ok31=0
   if [ "$ok31" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL - T36: no full receipt in the ancestry must be refused ("nothing to carry"); got rc=%s\n%s\n' "$rc31" "$out31" >&2
     teeth_fail=1

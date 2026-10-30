@@ -76,7 +76,7 @@ git config --global --add safe.directory "$WORK"
 # tracked set then fail for reasons that have nothing to do with the repo — the
 # defect above, found the expensive way. Deletions relative to the host tree are
 # the exact signature, so they are refused here rather than diagnosed later.
-deleted="$(git -C "$WORK" ls-files --deleted | head -20)"
+deleted="$(git -C "$WORK" ls-files --deleted | sed -n '1,20p')"
 if [ -n "$deleted" ]; then
   echo "parity: the synced copy is missing tracked files — an exclude names a tracked path:" >&2
   printf '%s\n' "$deleted" | sed 's/^/  /' >&2
@@ -145,5 +145,5 @@ echo "parity: priming the module cache"
 echo "parity: priming the deadcode oracle"
 (cd "$WORK" && GOPROXY_PRIME="${PARITY_GOPROXY:-https://proxy.golang.org,direct}" bash scripts/check-deadcode-ceiling.sh --prime)
 
-echo "parity: $(uname -s)/$(uname -m) · go $(go version | awk '{print $3}') · node $(node --version) · awk $(awk --version 2>&1 | head -1)"
+echo "parity: $(uname -s)/$(uname -m) · go $(go version | awk '{print $3}') · node $(node --version) · awk $(awk --version 2>&1 | sed -n '1p')"
 exec "$@"

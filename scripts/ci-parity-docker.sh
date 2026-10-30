@@ -59,7 +59,7 @@ NODE_MAJOR="$(grep -hoE '^[[:space:]]*node-version:[[:space:]]*[0-9]+' .github/w
   || die "workflows disagree on Node major ($(printf '%s' "$NODE_MAJOR" | tr '\n' ' ')) — the container cannot be parity with two of them."
 
 GITLEAKS_VERSION="$(grep -oE 'GITLEAKS_VERSION:[[:space:]]*[0-9]+(\.[0-9]+)*' .github/workflows/gitleaks.yml \
-  | head -1 | grep -oE '[0-9]+(\.[0-9]+)*')"
+  | sed -n '1p' | grep -oE '[0-9]+(\.[0-9]+)*')"
 [ -n "$GITLEAKS_VERSION" ] || die ".github/workflows/gitleaks.yml declares no GITLEAKS_VERSION."
 
 GOLANGCI_VERSION="$(grep -hoE 'golangci-lint/v[0-9]+(\.[0-9]+)*/install\.sh' .github/workflows/*.yml \

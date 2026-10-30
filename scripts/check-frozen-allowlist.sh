@@ -254,7 +254,7 @@ wave_table_allowlist_entries() { # $1=plan.md
 }
 
 has_wave_table_allowlist_column() { # $1=plan.md
-  awk -F'|' '/^\|/ { for (i=1;i<=NF;i++) { h=$i; gsub(/^[[:space:]]+|[[:space:]]+$/,"",h); if (h ~ /[Aa]llowlist/) { print "y"; exit } } }' "$1" | grep -q y
+  grep -q y <<<"$(awk -F'|' '/^\|/ { for (i=1;i<=NF;i++) { h=$i; gsub(/^[[:space:]]+|[[:space:]]+$/,"",h); if (h ~ /[Aa]llowlist/) { print "y"; exit } } }' "$1")"
 }
 
 judge_wave_table() { # $1=plan.md, $2=label
@@ -298,7 +298,7 @@ scan_corpus() {
   done < <(find "$root/docs/features" -path '*/plans/*.plan.md' | sort)
 
   while IFS= read -r readme; do
-    kind="$(sed -n 's/^kind:[[:space:]]*//p' "$readme" | head -1)"
+    kind="$(sed -n 's/^kind:[[:space:]]*//p' "$readme" | sed -n '1p')"
     [ "$kind" = "spec" ] || continue
     spec_total=$((spec_total + 1))
     feature_dir="$(dirname "$readme")"
@@ -337,7 +337,7 @@ expect_red() { # $1=label $2=needle, then the command
     echo "check-frozen-allowlist --teeth: FAILED — $label stayed GREEN" >&2
     echo "$out" >&2; exit 1
   fi
-  printf '%s' "$out" | grep -q "$needle" || {
+  grep -q "$needle" <<<"$out" || {
     echo "check-frozen-allowlist --teeth: FAILED — $label reds, but not with '$needle'" >&2
     echo "$out" >&2; exit 1
   }
@@ -386,11 +386,11 @@ EOF
 EOF
   out="$(judge_plan_entries "$tmp/dir.plan.md" "teeth/dir.plan.md" 2>&1)" && {
     echo "check-frozen-allowlist --teeth: FAILED — AC2 directory grant stayed GREEN" >&2; echo "$out" >&2; exit 1; }
-  printf '%s' "$out" | grep -q "schemas/release-notes/" || {
+  grep -q "schemas/release-notes/" <<<"$out" || {
     echo "check-frozen-allowlist --teeth: FAILED — AC2 red, but did not name the granted entry" >&2; echo "$out" >&2; exit 1; }
-  printf '%s' "$out" | grep -q "schemas/release-notes/v1/release-notes.schema.json" || {
+  grep -q "schemas/release-notes/v1/release-notes.schema.json" <<<"$out" || {
     echo "check-frozen-allowlist --teeth: FAILED — AC2 red, but did not name the frozen file it covers" >&2; echo "$out" >&2; exit 1; }
-  printf '%s' "$out" | grep -q "how to add a field to a frozen v1 schema" || {
+  grep -q "how to add a field to a frozen v1 schema" <<<"$out" || {
     echo "check-frozen-allowlist --teeth: FAILED — AC2 red, but did not quote the sanctioned alternative" >&2; echo "$out" >&2; exit 1; }
   ok "AC2/AC5 directory grant (parenthetical caveat inside backticks) → RED, naming plan/entry/frozen-file and quoting the sanctioned alternative"
 
@@ -402,7 +402,7 @@ EOF
     cp "$p6" "$tmp/p6.plan.md"
     out="$(judge_plan_entries "$tmp/p6.plan.md" "teeth/p6.plan.md (one-answer-2026-08 P6, copied)" 2>&1)" && {
       echo "check-frozen-allowlist --teeth: FAILED — AC3 P6's real plan allowlist stayed GREEN" >&2; echo "$out" >&2; exit 1; }
-    printf '%s' "$out" | grep -q "schemas/release-notes/" || {
+    grep -q "schemas/release-notes/" <<<"$out" || {
       echo "check-frozen-allowlist --teeth: FAILED — AC3 red, but did not name P6's granted entry" >&2; echo "$out" >&2; exit 1; }
     ok "AC3 one-answer-2026-08 P6's real plan file (copied, unmodified) → RED"
   else
@@ -440,7 +440,7 @@ EOF
 EOF
   out="$(judge_plan_entries "$tmp/tolerance.plan.md" "teeth/tolerance.plan.md" 2>&1)" && {
     echo "check-frozen-allowlist --teeth: FAILED — a glob grant covering a frozen path stayed GREEN" >&2; echo "$out" >&2; exit 1; }
-  printf '%s' "$out" | grep -q "schemas/manifest/v1/space.schema.json" || {
+  grep -q "schemas/manifest/v1/space.schema.json" <<<"$out" || {
     echo "check-frozen-allowlist --teeth: FAILED — glob-grant red, but did not name the frozen file" >&2; echo "$out" >&2; exit 1; }
   ok "parser tolerance: trailing comma ignored; a glob entry (schemas/manifest/v1/*.schema.json) still covers and reds"
 
@@ -469,7 +469,7 @@ EOF
 EOF
   out="$(judge_wave_table "$tmp/wave.plan.md" "teeth/wave.plan.md" 2>&1)" && {
     echo "check-frozen-allowlist --teeth: FAILED — AC9b wave-table Allowlist column grant stayed GREEN" >&2; echo "$out" >&2; exit 1; }
-  printf '%s' "$out" | grep -q "schemas/manifest/v1/space.schema.json" || {
+  grep -q "schemas/manifest/v1/space.schema.json" <<<"$out" || {
     echo "check-frozen-allowlist --teeth: FAILED — AC9b red, but did not name the frozen file" >&2; echo "$out" >&2; exit 1; }
   ok "AC9b spec-mode wave-table Allowlist COLUMN grant → RED (proven by fixture — no live example exists today)"
 

@@ -57,7 +57,7 @@ scan_violations() {
 # budget_ceiling reads the `# frozen-ceiling: N` line from $1 — the ONE
 # place AC-14's ratchet number lives.
 budget_ceiling() {
-  sed -n 's/^# frozen-ceiling:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | head -1
+  sed -n 's/^# frozen-ceiling:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | sed -n '1p'
 }
 
 # budget_ids prints $1's listed change ids, one per line (comments and

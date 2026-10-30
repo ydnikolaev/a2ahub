@@ -224,7 +224,7 @@ run_check() { # $1 = root, $2 = absolute source dir for the AST walk
   local v topiclist
   while IFS=$'\t' read -r _ v topiclist; do
     [ -z "$v" ] && continue
-    if ! printf '%s\n' "$pairs" | cut -f2 | grep -qxF "$v"; then
+    if ! grep -qxF "$v" <<<"$(cut -f2 <<<"$pairs")"; then
       gate_fail "usage-workflow: verb \"$v\" has a non-empty docs-manifest.json topic set {$topiclist}, but no usage output in $src_dir names its workflow via workflowLine(...) — the pointer has rotted or was never written"
     fi
   done <<<"$sets"
@@ -235,12 +235,12 @@ run_check() { # $1 = root, $2 = absolute source dir for the AST walk
   local t own_set
   while IFS=$'\t' read -r _ v t; do
     [ -z "$v" ] && continue
-    own_set="$(printf '%s\n' "$sets" | awk -F'\t' -v verb="$v" '$2==verb{print $3; exit}')"
+    own_set="$(printf '%s\n' "$sets" | awk -F'\t' -v verb="$v" '$2==verb && !seen {print $3; seen=1}')"
     if [ -z "$own_set" ]; then
       gate_fail "usage-workflow: workflowLine(\"$t\") in $src_dir is attributed to verb \"$v\", which has no topic set at all (docs-manifest.json/the loop corpus name it no workflow)"
       continue
     fi
-    if ! printf '%s\n' "$own_set" | tr ',' '\n' | grep -qxF "$t"; then
+    if ! grep -qxF "$t" <<<"$(tr ',' '\n' <<<"$own_set")"; then
       gate_fail "usage-workflow: workflowLine(\"$t\") in $src_dir is attributed to verb \"$v\", but \"$t\" is not among $v's own topic set {$own_set} — a valid manifest topic named for the WRONG verb"
     fi
   done <<<"$pairs"
@@ -250,7 +250,7 @@ run_check() { # $1 = root, $2 = absolute source dir for the AST walk
   # `a2a docs <topic>` verb (P9's absorbed AC-2).
   while IFS= read -r t; do
     [ -z "$t" ] && continue
-    if ! printf '%s\n' "$topics_manifest" | grep -qxF "$t"; then
+    if ! grep -qxF "$t" <<<"$topics_manifest"; then
       gate_fail "usage-workflow: a workflow: line in $src_dir names topic \"$t\", which $manifest declares no section for"
       continue
     fi
@@ -301,7 +301,7 @@ run_teeth() {
   copy_real_baseline
   rm -f "$tmp/cmd_notify.go"
   out="$(run_check "$GATE_ROOT" "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'verb "notify" has a non-empty docs-manifest.json topic set'; then
+  if ! grep -qF 'verb "notify" has a non-empty docs-manifest.json topic set' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (AC-2) — removing notify's own file did not red naming \"notify\" as missing its pair" >&2
     return 1
   fi
@@ -318,11 +318,11 @@ func usageBogusTopic() string {
 }
 EOF
   out="$(run_check "$GATE_ROOT" "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'names topic "not-a-real-manifest-topic", which'; then
+  if ! grep -qF 'names topic "not-a-real-manifest-topic", which' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (AC-4) — a workflowLine call naming a nonexistent manifest topic did not red naming it" >&2
     return 1
   fi
-  if printf '%s\n' "$out" | grep -qF 'verb "feedback" has'; then
+  if grep -qF 'verb "feedback" has' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (AC-4) — adding an extra bogus topic wrongly disturbed the real \"feedback\" verb's own satisfied state" >&2
     return 1
   fi
@@ -342,7 +342,7 @@ func usageDynamicArg() string {
 EOF
   out="$(run_check "$GATE_ROOT" "$tmp" 2>&1)"
   rc=$?
-  if [ "$rc" -ne 0 ] || printf '%s\n' "$out" | grep -qF "FAIL "; then
+  if [ "$rc" -ne 0 ] || grep -qF "FAIL " <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (AC-6 negative) — an unresolvable dynamic workflowLine argument wrongly disturbed the gate (exit $rc): $out" >&2
     return 1
   fi
@@ -359,7 +359,7 @@ const usageDecoyComment = "workflow: notify — not a real call"
 EOF
   out="$(run_check "$GATE_ROOT" "$tmp" 2>&1)"
   rc=$?
-  if [ "$rc" -ne 0 ] || printf '%s\n' "$out" | grep -qF "FAIL "; then
+  if [ "$rc" -ne 0 ] || grep -qF "FAIL " <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (decoy text) — a decoy string mentioning a topic name outside any workflowLine(...) call wrongly disturbed the gate (exit $rc): $out" >&2
     return 1
   fi
@@ -382,11 +382,11 @@ func usageVerifyPassOnly() string {
 }
 EOF
   out="$(run_check "$GATE_ROOT" "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'verb "verify" has a non-empty docs-manifest.json topic set'; then
+  if ! grep -qF 'verb "verify" has a non-empty docs-manifest.json topic set' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (longest-match) — \"verify\" was not reported missing once cmd_lifecycle.go's own pair was removed" >&2
     return 1
   fi
-  if printf '%s\n' "$out" | grep -qF 'verb "verify-pass" has'; then
+  if grep -qF 'verb "verify-pass" has' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (longest-match) — \"verify-pass\"'s own usage text was wrongly credited to \"verify\" instead (a boundary-blind longest match)" >&2
     return 1
   fi
@@ -406,11 +406,11 @@ func usageServeWrongTopic() string {
 }
 EOF
   out="$(run_check "$GATE_ROOT" "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'attributed to verb "serve", but "loop-send" is not among'; then
+  if ! grep -qF 'attributed to verb "serve", but "loop-send" is not among' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (pair-correctness) — a real, valid manifest topic outside serve's own topic set did not red naming both" >&2
     return 1
   fi
-  if printf '%s\n' "$out" | grep -qF 'which .* declares no section for'; then
+  if grep -qF 'which .* declares no section for' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (pair-correctness) — the out-of-set topic wrongly tripped the AC-4 \"no such section\" branch instead of pair-correctness" >&2
     return 1
   fi
@@ -429,7 +429,7 @@ var zzzLifecycleWorkflowLines = map[string]string{
 }
 EOF
   out="$(run_check "$GATE_ROOT" "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'attributed to verb "ack", but "loop-send" is not among'; then
+  if ! grep -qF 'attributed to verb "ack", but "loop-send" is not among' <<<"$out"; then
     echo "usage-workflow --teeth: FAILED (mechanism 2) — a map-literal-keyed pair naming a topic outside its own verb's set did not red" >&2
     return 1
   fi
@@ -441,7 +441,7 @@ EOF
   copy_real_baseline
   out="$(run_check "$missing_root" "$tmp" 2>&1 || true)"
   rm -rf "$missing_root"
-  if ! printf '%s\n' "$out" | grep -qF "does not exist"; then
+  if ! grep -qF "does not exist" <<<"$out"; then
     echo "usage-workflow --teeth: FAILED — a missing docs-manifest.json did not red naming it" >&2
     return 1
   fi

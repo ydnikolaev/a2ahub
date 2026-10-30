@@ -98,7 +98,7 @@ rewrite() { # $1 = file, $2 = ERE matching the OLD line, $3 = replacement line, 
   mv "$tmp" "$file"
 }
 
-floor_now()  { sed -nE 's/^min_binary_version:[[:space:]]*"?([0-9]+\.[0-9]+\.[0-9]+)"?.*/\1/p' "$MANIFEST" | head -1; }
+floor_now()  { sed -nE 's/^min_binary_version:[[:space:]]*"?([0-9]+\.[0-9]+\.[0-9]+)"?.*/\1/p' "$MANIFEST" | sed -n '1p'; }
 
 # callers_now lists every template workflow that pins a reusable workflow by
 # tag. A caller that pins none is not a caller and is skipped; a NEW caller
@@ -259,7 +259,7 @@ teeth() {
     echo "bump-space-template --teeth: FAILED — an unpublished tag was written" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'NO JOBS' || {
+  grep -q 'NO JOBS' <<<"$out" || {
     echo "bump-space-template --teeth: FAILED — refusal did not name what an unpublished tag actually costs" >&2
     exit 1
   }
@@ -297,7 +297,7 @@ teeth() {
     echo "$out" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'expected mid-release' || {
+  grep -q 'expected mid-release' <<<"$out" || {
     echo "bump-space-template --teeth: FAILED — mid-release green did not say why the two differ" >&2
     exit 1
   }
@@ -326,7 +326,7 @@ teeth() {
     echo "bump-space-template --teeth: FAILED — a template with no floor line reported success" >&2
     exit 1
   fi
-  printf '%s' "$out" | grep -q 'matches nothing succeeds silently' || {
+  grep -q 'matches nothing succeeds silently' <<<"$out" || {
     echo "bump-space-template --teeth: FAILED — refusal did not explain the silent-no-op hazard" >&2
     exit 1
   }

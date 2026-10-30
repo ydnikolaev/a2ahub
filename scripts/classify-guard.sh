@@ -217,6 +217,10 @@ PUBLIC_VALIDATOR_FILES=(
   # script must be too.
   scripts/check-usage-workflow.sh
   scripts/tests/check_usage_workflow_test.sh
+  # release-speed-2026-11 P9. PUBLIC: it runs as a repo gate (REPO_GATES) in
+  # public CI, reads only tracked shell, and the Makefile that names it is public.
+  scripts/check-pipefail-early-exit.sh
+  scripts/tests/check_pipefail_early_exit_test.sh
 )
 ALLOW_FILES=( server.json .gitignore .golangci.yml .goreleaser.yaml .gitleaks.toml .govulncheck-allow.txt Makefile GNUmakefile SECURITY.md README.md LICENSE NOTICE go.mod go.sum cc-coverage.yaml scripts/install.sh scripts/dev-install.sh scripts/deliver.sh scripts/lib/tree-identity.sh scripts/lib/harness-run.sh scripts/lib/projection-tree.sh scripts/e2e-authoring-smoke.sh scripts/classify-guard.sh scripts/release-preflight.sh scripts/check-release-notes-freshness.sh scripts/check-flaky-tests.sh scripts/lib/flaky-tests.txt scripts/check-roadmap-release-decisions.sh scripts/check-provider-tier-deferral.sh scripts/check-unmeasured-reach.sh scripts/bump-space-template.sh scripts/check-gosec-scope.sh scripts/check-readme.sh scripts/dashboard-template-drift.sh scripts/check-view-vocabulary.sh scripts/check-pendency-uniqueness.sh scripts/check-loop-coverage.sh scripts/check-human-gates.sh scripts/check-loop-reachability.sh scripts/check-prose-roster.sh scripts/check-prose-coverage.sh scripts/check-operational-confidence.sh scripts/check-error-codes.sh scripts/verify.sh scripts/build-release-cohort.sh scripts/build-mcpb.sh scripts/lib/mcpb-manifest.template.json scripts/rewrite-server-json.sh scripts/release-postflight.sh scripts/lib/strip-set.txt "${PUBLIC_VALIDATOR_FILES[@]}" )
 DENY_DIRS=( .agents .claude .codex .mate .sporo )   # scripts/ handled below (install.sh + e2e-authoring-smoke.sh are the public exceptions)

@@ -133,7 +133,7 @@ if [ ! -f "$LIST" ]; then
 fi
 
 listed() { # $1 = Package/TestName
-  grep -vE '^[[:space:]]*(#|$)' "$LIST" | grep -qxF "$1"
+  grep -qxF "$1" <<<"$(grep -vE '^[[:space:]]*(#|$)' "$LIST")"
 }
 
 out="$(mktemp)"
@@ -176,7 +176,7 @@ fi
 stale=""
 while IFS= read -r entry; do
   [ -n "$entry" ] || continue
-  printf '%s\n' "$failed" | grep -qxF "$entry" || stale="$stale $entry"
+  grep -qxF "$entry" <<<"$failed" || stale="$stale $entry"
 done < <(grep -vE '^[[:space:]]*(#|$)' "$LIST")
 if [ -n "$stale" ]; then
   gate_fail "these entries in scripts/lib/flaky-tests.txt passed all $COUNT runs, so their reason has expired — delete them:$stale"

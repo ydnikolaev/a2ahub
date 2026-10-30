@@ -78,7 +78,7 @@ vocabulary_json() {
 # CLOSED on, never silently falling back to a hardcoded loops.md path.
 loop_corpus_files() { # $1 = manifest path
   local line tokens
-  line="$(grep -E '^[[:space:]]*"loop_corpus"[[:space:]]*:' "$1" | head -1)"
+  line="$(grep -E '^[[:space:]]*"loop_corpus"[[:space:]]*:' "$1" | sed -n '1p')"
   if [ -z "$line" ]; then
     return 1
   fi
@@ -108,7 +108,7 @@ derived_gated_verbs() { # $1 = vocabulary json
 # `ledger_has_key` in check-loop-coverage.sh exists to avoid.
 declared_gated_verbs() { # $1 = loops.md path
   local line
-  line="$(grep -F "$MARKER_PREFIX" "$1" | head -1)"
+  line="$(grep -F "$MARKER_PREFIX" "$1" | sed -n '1p')"
   if [ -z "$line" ]; then
     return 1
   fi
@@ -199,7 +199,7 @@ run_check() { # $1 = root
     gate_fail "human-gates: the \"$MARKER_PREFIX\" line appears in more than one loop_corpus file ($(printf '%s\n' "$roster_files" | paste -sd, -)) — a duplicated roster is how two answers drift apart"
   else
     local roster_file
-    roster_file="$(printf '%s\n' "$roster_files" | head -1)"
+    roster_file="$(printf '%s\n' "$roster_files" | sed -n '1p')"
     declared="$(declared_gated_verbs "$roster_file")"
     have_roster=1
   fi
@@ -207,12 +207,12 @@ run_check() { # $1 = root
   if [ "$have_roster" -eq 1 ]; then
     local verb
     for verb in $derived; do
-      if ! printf '%s\n' "$declared" | grep -qx "$verb"; then
+      if ! grep -qx "$verb" <<<"$declared"; then
         gate_fail "human-gates: the loop corpus's machine roster omits \"$verb\", which the binary's human_gates object reports as human-gated"
       fi
     done
     for verb in $declared; do
-      if ! printf '%s\n' "$derived" | grep -qx "$verb"; then
+      if ! grep -qx "$verb" <<<"$derived"; then
         gate_fail "human-gates: the loop corpus's machine roster names \"$verb\", which the binary's human_gates object does not gate"
       fi
     done
@@ -272,7 +272,7 @@ run_teeth() {
       echo "# fixture"
       echo ""
       echo "**Human-gated verbs (machine roster):** $backticked."
-      echo "Prose may still name a gated verb, e.g. \`$( printf '%s\n' "$derived" | head -1 )\` is discussed here, just never as a command."
+      echo "Prose may still name a gated verb, e.g. \`$( printf '%s\n' "$derived" | sed -n '1p' )\` is discussed here, just never as a command."
     } >"$tmp/skill/a2ahub/loops.md"
     rm -f "$tmp/skill/a2ahub/loops-extra.md"
   }
@@ -287,7 +287,7 @@ run_teeth() {
   write_good_fixture
   printf '# fixture\n\nNo roster line here.\n' >"$tmp/skill/a2ahub/loops.md"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "has a \"$MARKER_PREFIX\" line"; then
+  if ! grep -qF "has a \"$MARKER_PREFIX\" line" <<<"$out"; then
     echo "human-gates --teeth: FAILED — a loops.md with no machine-roster line did not red naming the missing marker" >&2
     return 1
   fi
@@ -300,14 +300,14 @@ run_teeth() {
   rm -f "$tmp/skill/a2ahub/loops.md.bak"
   grep -Fq '`withdraw`' "$tmp/skill/a2ahub/loops.md" || { echo "human-gates --teeth: could not seed a third-verb fixture" >&2; return 1; }
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'names "withdraw", which the binary'"'"'s human_gates object does not gate'; then
+  if ! grep -qF 'names "withdraw", which the binary'"'"'s human_gates object does not gate' <<<"$out"; then
     echo "human-gates --teeth: FAILED — a roster naming an ungated third verb did not red naming it" >&2
     return 1
   fi
 
   # 3. The roster omitting a real gated verb must red naming it.
   local victim rest
-  victim="$(printf '%s\n' "$derived" | head -1)"
+  victim="$(printf '%s\n' "$derived" | sed -n '1p')"
   rest="$(printf '%s\n' "$derived" | tail -n +2 | sed 's/^/`/; s/$/`/' | paste -sd, - | sed 's/,/, /g')"
   write_good_fixture
   if [ -n "$rest" ]; then
@@ -317,7 +317,7 @@ run_teeth() {
   fi
   rm -f "$tmp/skill/a2ahub/loops.md.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "omits \"$victim\""; then
+  if ! grep -qF "omits \"$victim\"" <<<"$out"; then
     echo "human-gates --teeth: FAILED — a roster omitting a real gated verb ($victim) did not red naming it" >&2
     return 1
   fi
@@ -328,7 +328,7 @@ run_teeth() {
   write_good_fixture
   printf '\n1. Run `a2a %s` yourself, no human needed.\n' "$victim" >>"$tmp/skill/a2ahub/loops.md"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "spells the command form of gated verb \"$victim\""; then
+  if ! grep -qF "spells the command form of gated verb \"$victim\"" <<<"$out"; then
     echo "human-gates --teeth: FAILED — a loop step self-serving \"a2a $victim\" did not red naming it" >&2
     return 1
   fi
@@ -344,7 +344,7 @@ run_teeth() {
     echo '}'
   } >"$tmp/skill/a2ahub/docs-manifest.json"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'has no non-empty "loop_corpus" array'; then
+  if ! grep -qF 'has no non-empty "loop_corpus" array' <<<"$out"; then
     echo "human-gates --teeth: FAILED — a manifest with no loop_corpus array did not red naming the missing key" >&2
     return 1
   fi
@@ -355,7 +355,7 @@ run_teeth() {
   sed -i.bak 's#"loop_corpus": \["a2ahub/loops.md"\]#"loop_corpus": ["a2ahub/nonexistent.md"]#' "$tmp/skill/a2ahub/docs-manifest.json"
   rm -f "$tmp/skill/a2ahub/docs-manifest.json.bak"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF 'names "a2ahub/nonexistent.md", which does not exist'; then
+  if ! grep -qF 'names "a2ahub/nonexistent.md", which does not exist' <<<"$out"; then
     echo "human-gates --teeth: FAILED — a loop_corpus entry naming a nonexistent file did not red naming it" >&2
     return 1
   fi
@@ -372,7 +372,7 @@ run_teeth() {
     echo "**Human-gated verbs (machine roster):** $backticked."
   } >"$tmp/skill/a2ahub/loops-extra.md"
   out="$(run_check "$tmp" 2>&1 || true)"
-  if ! printf '%s\n' "$out" | grep -qF "the \"$MARKER_PREFIX\" line appears in more than one loop_corpus file"; then
+  if ! grep -qF "the \"$MARKER_PREFIX\" line appears in more than one loop_corpus file" <<<"$out"; then
     echo "human-gates --teeth: FAILED — a roster marker duplicated across two corpus files did not red naming the duplication" >&2
     return 1
   fi

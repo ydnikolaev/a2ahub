@@ -243,7 +243,8 @@ go_severity_in_file() { # $1 = code, $2 = file
   # "SeverityXxx" form severity_label already expects, so one label
   # function serves both emitter shapes.
   sev="$(grep -A8 "Code:[[:space:]]*\"${code}\"" "$f" 2>/dev/null \
-    | grep -m1 -Eo 'Severity:[[:space:]]*(validate\.)?Severity[A-Za-z]+|Severity:[[:space:]]*"(reject|warning|unmeasured)"' \
+    | grep -Eo 'Severity:[[:space:]]*(validate\.)?Severity[A-Za-z]+|Severity:[[:space:]]*"(reject|warning|unmeasured)"' \
+    | sed -n '1p' \
     | sed -E 's/^Severity:[[:space:]]*//; s/^validate\.//')"
   case "$sev" in
     \"*\")
@@ -775,7 +776,7 @@ teeth_expect() { # $1 = label, $2 = red|green, $3 = needle, $4 = registry, $5 = 
   rc=$?
   set -e
   if [ "$verdict" = "red" ]; then
-    if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -Fq "$needle"; then
+    if [ "$rc" -eq 0 ] || ! grep -Fq "$needle" <<<"$out"; then
       echo "check-error-codes --teeth: FALSE GREEN — $label did not red with '$needle':" >&2
       echo "$out" >&2
       return 1

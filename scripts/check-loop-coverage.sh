@@ -80,7 +80,7 @@ vocabulary_json() {
 # fail CLOSED on, never silently falling back to a hardcoded loops.md path.
 loop_corpus_files() { # $1 = manifest path
   local line tokens
-  line="$(grep -E '^[[:space:]]*"loop_corpus"[[:space:]]*:' "$1" | head -1)"
+  line="$(grep -E '^[[:space:]]*"loop_corpus"[[:space:]]*:' "$1" | sed -n '1p')"
   if [ -z "$line" ]; then
     return 1
   fi
@@ -419,7 +419,7 @@ run_teeth() {
     return 1
   fi
   local victim
-  victim="$(printf '%s\n' "$types" | head -1)"
+  victim="$(printf '%s\n' "$types" | sed -n '1p')"
 
   # write_good_fixture writes a small but FULLY declared, self-consistent
   # ledger against the REAL derived type universe: one originator phase

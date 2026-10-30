@@ -107,7 +107,7 @@ vocabulary_states() { # $1 = vocabulary json
 # a carried/derived outcome — the words alone cannot grant an exemption.
 vocabulary_outcomes() { # $1 = vocabulary json
   printf '%s\n' "$1" |
-    awk '/"outcomes"/{f=1} f{print} f&&/\]/{exit}' |
+    awk '!d&&/"outcomes"/{f=1} f{print} f&&/\]/{f=0;d=1}' |
     grep -oE '"[a-z_]+"' | tail -n +2 | tr -d '"' | sort -u
 }
 
@@ -286,7 +286,7 @@ CHAIN_AWK
 # checks. It intentionally carries no transition roster of its own.
 vocabulary_transitions() { # $1 = vocabulary json
   printf '%s\n' "$1" |
-    awk '/"transitions"/{f=1} f{print} f&&/\]/{exit}' |
+    awk '!d&&/"transitions"/{f=1} f{print} f&&/\]/{f=0;d=1}' |
     grep -oE '"[a-z_-]+"' | tail -n +2 | tr -d '"' | sort -u
 }
 

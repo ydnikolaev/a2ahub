@@ -256,8 +256,8 @@ $head
   # receipt. The publisher refuses a HEAD without one, so that commit is the
   # release source. The wording says which of the two answers this is; a reader
   # must never have to guess whether the SHA was HEAD or inferred.
-  nearest="$(git -C "$root" rev-list --max-count=500 HEAD 2>/dev/null \
-    | grep -m1 -F -x -f <(printf '%s' "$passing") || true)"
+  nearest="$(grep -m1 -F -x -f <(printf '%s' "$passing") \
+    <<<"$(git -C "$root" rev-list --max-count=500 HEAD 2>/dev/null)" || true)"
   if [ -n "$nearest" ]; then
     printf '%s (nearest passing receipt; HEAD %s has none)\n' "$nearest" "$head"
     return 0
@@ -337,7 +337,7 @@ _known_release_note_line() { # $1=repo $2=version -> prints the line, or empty
   local repo="$1" version="$2" notes
   notes="$repo/releasenotes/${version#v}.yaml"
   [ -f "$notes" ] || return 0
-  sed -n 's/^  subject:[[:space:]]*//p' "$notes" | head -1
+  sed -n 's/^  subject:[[:space:]]*//p' "$notes" | sed -n '1p'
 }
 
 # _release_versions_desc_from: every releasenotes/*.yaml version <= $2,
@@ -699,7 +699,7 @@ assert_postflight_bypass_recorded() { # $1=repo $2=version $3=evidence_dir
   fi
 
   nth="$(_ordinal "$streak")"
-  ack="$(grep -oE '^postflight-bypass-acknowledged:[[:space:]]*[0-9]+' "$record" 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
+  ack="$(grep -oE '^postflight-bypass-acknowledged:[[:space:]]*[0-9]+' "$record" 2>/dev/null | grep -oE '[0-9]+' | sed -n '1p' || true)"
   if [ "${ack:-}" = "$streak" ]; then
     gate_ok "postflight: $version is the $nth CONSECUTIVE bypassed site check, and $record explicitly acknowledges the streak of $streak."
     return 0
@@ -719,7 +719,7 @@ assert_postflight_bypass_recorded() { # $1=repo $2=version $3=evidence_dir
 assert_template_names_tag() { # $1=repo $2=version
   local repo="$1" version="$2" floor line ref problems refs=()
 
-  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | head -1)"
+  floor="$(sed -n 's/^min_binary_version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "$repo/$TEMPLATE_MANIFEST" 2>/dev/null | sed -n '1p')"
 
   while IFS= read -r line; do
     line="${line%%#*}"
