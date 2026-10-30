@@ -485,118 +485,167 @@ check_resolver_monopoly() { # $1 = scan root
   done <<< "$tone_lines"
 }
 
-# provenance_records tags each source line BEGIN/END/BAD/CODE for the
-# allow-provenance marker, reusing the exact bounded-marker shape
-# check-dashboard-derivation.sh uses for allow-sort. Comments are stripped
-# from CODE lines so a phrase inside a comment cannot fail the gate.
-provenance_records() { # $1 = file
-  awk '
-    function strip_comments(text, out, start, rest, finish, slash) {
-      out=""
-      while (1) {
-        if (in_block) {
-          finish=index(text, "*/")
-          if (!finish) return out
-          text=substr(text, finish+2)
-          in_block=0
-        }
-        start=index(text, "/*")
-        slash=index(text, "//")
-        if (slash && (!start || slash < start)) return out substr(text, 1, slash-1)
-        if (!start) return out text
-        out=out substr(text, 1, start-1)
-        rest=substr(text, start+2)
-        finish=index(rest, "*/")
-        if (!finish) { in_block=1; return out }
-        text=substr(rest, finish+2)
-      }
+# PROVENANCE_AWK is Rule B's scan as ONE awk program over a set of component
+# files. It replaced a bash loop that forked per file (a tagger awk), per
+# source line (`grep -oE` for the quoted segments) and per segment (a
+# `grep -qE` for the word list): ~154 s on the real tree for a verdict this
+# program reaches in seconds (release-speed-2026-11 P5; the old and new scripts
+# were run over the tree and every fixture and agree byte for byte —
+# audits/p5-scanner-equality.md — and the per-rule fixtures in --teeth keep
+# that).
+#
+# The rules, in the order the program applies them to each line:
+#
+#   marker grammar — `// dashboard-derivation: allow-provenance-begin -- <reason>`
+#       / `allow-provenance-end`, reusing the exact bounded-marker shape
+#       check-dashboard-derivation.sh uses for allow-sort. A line naming either
+#       keyword but not matching the exact grammar is malformed; the check is
+#       made on the RAW line, even inside a block comment, as it always was.
+#   comments — stripped from every other line before judging, so a phrase inside
+#       a comment cannot fail the gate. Block-comment state is per file and is
+#       not advanced by marker lines.
+#   segments — each quoted string together with its OWN immediately preceding
+#       `key:` (if any), not the whole line: several kind components pack a
+#       whole `{ key:"value", key2:"value2" }` locale dictionary onto one
+#       physical line, so a line-wide "does this line mention technical
+#       anywhere" test would exempt an unrelated sibling key's provenance leak
+#       by accident. A segment whose key contains `technical` is exempt: that is
+#       where Rule B says provenance moves TO, not a second escape hatch that
+#       needs its own marker.
+#   phrase — the Rule B word list from card-spec/README.md §Rule B: перенесённ*,
+#       carried, точный набор, exact set, полон и пуст, and the English
+#       equivalents, tested against the value padded with one space each side.
+#       Word-boundary via [^A-Za-z] padding rather than `\b`, which neither BSD
+#       grep nor BSD awk accept.
+#
+# The program prints one finished message per line and no verdict; the caller
+# turns each into a gate_fail, so the tally, the colour and the CI annotation
+# form are the shared helper's, exactly as before. A message that belongs to a
+# FILE (an unclosed marker) is printed when that file ends, in file order.
+IFS= read -r -d '' PROVENANCE_AWK <<'AWK' || true
+function strip_comments(text,   out, start, rest, finish, slash) {
+  out = ""
+  while (1) {
+    if (in_block) {
+      finish = index(text, "*/")
+      if (!finish) return out
+      text = substr(text, finish + 2)
+      in_block = 0
     }
-    /dashboard-derivation:[[:space:]]*allow-provenance-begin/ {
-      if ($0 ~ /^[[:space:]]*\/[\/][[:space:]]*dashboard-derivation:[[:space:]]*allow-provenance-begin[[:space:]]+--[[:space:]]+[^[:space:]].*$/)
-        printf "%d\tBEGIN\t%s\n", FNR, $0
-      else printf "%d\tBAD\t%s\n", FNR, $0
-      next
-    }
-    /dashboard-derivation:[[:space:]]*allow-provenance-end/ {
-      if ($0 ~ /^[[:space:]]*\/[\/][[:space:]]*dashboard-derivation:[[:space:]]*allow-provenance-end[[:space:]]*$/)
-        printf "%d\tEND\t%s\n", FNR, $0
-      else printf "%d\tBAD\t%s\n", FNR, $0
-      next
-    }
-    { printf "%d\tCODE\t%s\n", FNR, strip_comments($0) }
-  ' "$1"
+    start = index(text, "/*")
+    slash = index(text, "//")
+    if (slash && (!start || slash < start)) return out substr(text, 1, slash - 1)
+    if (!start) return out text
+    out = out substr(text, 1, start - 1)
+    rest = substr(text, start + 2)
+    finish = index(rest, "*/")
+    if (!finish) { in_block = 1; return out }
+    text = substr(rest, finish + 2)
+  }
 }
+function phrase(v) {
+  v = " " v " "
+  return v ~ /[Пп]еренесённ|[^A-Za-z]([Cc]arried)[^A-Za-z]|[Тт]очный[[:space:]]+набор|[Ee]xact[[:space:]]+set|[Пп]олон[[:space:]]+и[[:space:]]+пуст/
+}
+function finish_file() {
+  if (cur != "" && marker == 1)
+    print "view-vocabulary: " base " has an unclosed allow-provenance block"
+}
+function begin_file(   parts, n) {
+  finish_file()
+  cur = FILENAME
+  n = split(FILENAME, parts, "/")
+  base = parts[n]
+  in_block = 0
+  marker = 0
+}
+FNR == 1 { begin_file() }
+/dashboard-derivation:[[:space:]]*allow-provenance-begin/ {
+  if ($0 ~ /^[[:space:]]*\/[\/][[:space:]]*dashboard-derivation:[[:space:]]*allow-provenance-begin[[:space:]]+--[[:space:]]+[^[:space:]].*$/) {
+    if (marker == 1) print "view-vocabulary: " base ":" FNR " nests an allow-provenance marker — keep each exception bounded and independent"
+    else marker = 1
+  } else print "view-vocabulary: " base ":" FNR " has a malformed allow-provenance marker — use the exact documented begin/end syntax with a non-empty reason"
+  next
+}
+/dashboard-derivation:[[:space:]]*allow-provenance-end/ {
+  if ($0 ~ /^[[:space:]]*\/[\/][[:space:]]*dashboard-derivation:[[:space:]]*allow-provenance-end[[:space:]]*$/) {
+    if (marker == 0) print "view-vocabulary: " base ":" FNR " has an allow-provenance end without a matching begin"
+    else marker = 0
+  } else print "view-vocabulary: " base ":" FNR " has a malformed allow-provenance marker — use the exact documented begin/end syntax with a non-empty reason"
+  next
+}
+{
+  rest = strip_comments($0)
+  if (marker == 1) next
+  while (match(rest, /([A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*:[[:space:]]*)?"[^"]*"/)) {
+    seg = substr(rest, RSTART, RLENGTH)
+    rest = substr(rest, RSTART + RLENGTH)
+    q = index(seg, "\"")
+    key = substr(seg, 1, q - 1)
+    if (key ~ /[Tt]echnical/) continue
+    value = substr(seg, q + 1, length(seg) - q - 1)
+    if (phrase(value))
+      print "view-vocabulary: " base ":" FNR " carries provenance vocabulary in a user-facing string — \"" value "\" describes how the snapshot was carried, not what is happening; move it to Технические подробности or bound it with a reasoned // dashboard-derivation: allow-provenance-begin -- <reason> marker"
+  }
+}
+END { finish_file() }
+AWK
 
-# provenance_phrase tests one already-extracted quoted-string segment (without
-# its surrounding quotes) against the Rule B word list from card-spec/README.md
-# §Rule B: перенесённ*, carried, точный набор, exact set, полон и пуст, and
-# the English equivalents. Word-boundary via [^A-Za-z] padding rather than
-# `\b`, which BSD grep -E (the default on the macOS gates run under) does not
-# accept.
-provenance_phrase() { # $1 = segment content
-  printf '%s' " $1 " | grep -qE '[Пп]еренесённ|[^A-Za-z]([Cc]arried)[^A-Za-z]|[Тт]очный[[:space:]]+набор|[Ee]xact[[:space:]]+set|[Пп]олон[[:space:]]+и[[:space:]]+пуст'
+# provenance_scan_batch runs PROVENANCE_AWK over the files it is given and
+# turns each printed message into a gate_fail.
+provenance_scan_batch() { # $@ = readable component files, in order
+  local out rc msg
+  [ "$#" -eq 0 ] && return 0
+  out="$(awk "$PROVENANCE_AWK" "$@")"
+  rc=$?
+  while IFS= read -r msg; do
+    [ -z "$msg" ] && continue
+    gate_fail "$msg"
+  done <<< "$out"
+  # A scan that died part way returned a SHORTER list, not an error; say so
+  # rather than letting the shorter list read as a clean bill of health.
+  if [ "$rc" -ne 0 ]; then
+    gate_unmeasured "view-vocabulary: the provenance-vocabulary scan exited $rc part way, so the components it had not reached were NOT judged by it"
+  fi
 }
 
 check_provenance_ban() { # $1 = scan root
-  local root="$1" file lineno record content marker=0 segments seg records
+  local file
+  local batch=()
   while IFS= read -r file; do
     [ -z "$file" ] && continue
-    marker=0
-    # A file the tagger cannot read is not a file without provenance leaks.
-    if ! records="$(provenance_records "$file")"; then
+    # A file the scan cannot read is not a file without provenance leaks. awk
+    # aborts the WHOLE program on an unopenable file (BSD) or skips it with a
+    # warning (GNU), so it is named and judged here, in file order, and kept
+    # out of the batch: the files before it are scanned first, so the output
+    # order is the order the files are in.
+    if [ ! -r "$file" ]; then
+      provenance_scan_batch ${batch[@]+"${batch[@]}"}
+      batch=()
       gate_unmeasured "view-vocabulary: could not tag $(basename "$file") for the provenance-vocabulary rule, so that file was NOT judged by it"
       continue
     fi
-    while IFS=$'\t' read -r lineno record content; do
-      case "$record" in
-        BEGIN)
-          if [ "$marker" -eq 1 ]; then
-            gate_fail "view-vocabulary: $(basename "$file"):$lineno nests an allow-provenance marker — keep each exception bounded and independent"
-          else
-            marker=1
-          fi
-          ;;
-        END)
-          if [ "$marker" -eq 0 ]; then
-            gate_fail "view-vocabulary: $(basename "$file"):$lineno has an allow-provenance end without a matching begin"
-          else
-            marker=0
-          fi
-          ;;
-        BAD)
-          gate_fail "view-vocabulary: $(basename "$file"):$lineno has a malformed allow-provenance marker — use the exact documented begin/end syntax with a non-empty reason"
-          ;;
-        CODE)
-          [ "$marker" -eq 1 ] && continue
-          # Extract each quoted segment together with its OWN immediately
-          # preceding `key:` (if any), not the whole line: several kind
-          # components pack a whole `{ key:"value", key2:"value2" }` locale
-          # dictionary onto one physical line, so a line-wide "does this line
-          # mention technical anywhere" test would exempt an unrelated
-          # sibling key's provenance leak by accident.
-          segments="$(printf '%s\n' "$content" | grep -oE '([A-Za-z_$][A-Za-z0-9_$]*[[:space:]]*:[[:space:]]*)?"[^"]*"' 2>/dev/null || true)"
-          while IFS= read -r seg; do
-            [ -z "$seg" ] && continue
-            local key value
-            key="${seg%%\"*}"
-            # Технические подробности exemption: a quoted string assigned to
-            # a `technical`-ish key is where Rule B says provenance moves TO,
-            # not a second escape hatch that needs its own marker.
-            case "$key" in
-              *[Tt]echnical*) continue ;;
-            esac
-            value="${seg#*\"}"; value="${value%\"}"
-            if provenance_phrase "$value"; then
-              gate_fail "view-vocabulary: $(basename "$file"):$lineno carries provenance vocabulary in a user-facing string — \"$value\" describes how the snapshot was carried, not what is happening; move it to Технические подробности or bound it with a reasoned // dashboard-derivation: allow-provenance-begin -- <reason> marker"
-            fi
-          done <<< "$segments"
-          ;;
-      esac
-    done <<< "$records"
-    if [ "$marker" -eq 1 ]; then
-      gate_fail "view-vocabulary: $(basename "$file") has an unclosed allow-provenance block"
-    fi
+    batch[${#batch[@]}]="$file"
   done <<< "$COMPONENT_FILES"
+  provenance_scan_batch ${batch[@]+"${batch[@]}"}
+}
+
+# is_listed answers "is WORD one of LIST's lines" with builtins only. It
+# replaced a printf piped into a quiet exact-line match, which forked twice per
+# word AND was a coin-flip: the quiet match exits at its first hit, the printf
+# then dies of SIGPIPE, and under the pipefail option the pipeline reports
+# failure, so a state that IS in the list read as absent. Seen while proving this
+# rewrite: the old script printed a different inline-chain verdict for one
+# fixture in one of 116 comparisons (audits/p5-scanner-equality.md). The words
+# compared are state,
+# transition or operand names, so the old regex reading and this literal one
+# agree on every input the gate meets; they differ only for a bare identifier
+# carrying `.` or `$` on the right of `===`, which the old code read as a regex.
+is_listed() { # $1 = word, $2 = newline-separated list
+  case $'\n'"$2"$'\n' in
+    *$'\n'"$1"$'\n'*) return 0 ;;
+  esac
+  return 1
 }
 
 run_check() { # $1 = scan root
@@ -664,7 +713,7 @@ run_check() { # $1 = scan root
     known=0
     unknown=""
     for word in $words; do
-      if printf '%s\n' "$states" | grep -qx "$word"; then
+      if is_listed "$word" "$states"; then
         known=$((known + 1))
       else
         unknown="$unknown $word"
@@ -717,7 +766,7 @@ run_check() { # $1 = scan root
       known=0
       unknown=""
       for word in $operand_records; do
-        if printf '%s\n' "$states" | grep -qx "$word"; then
+        if is_listed "$word" "$states"; then
           known=$((known + 1))
         else
           unknown="$unknown $word"
@@ -764,7 +813,7 @@ run_check() { # $1 = scan root
       [ -z "$pair" ] && continue
       word="${pair%%|*}"
       value="${pair#*|}"
-      if printf '%s\n' "$transitions" | grep -qx "$word"; then
+      if is_listed "$word" "$transitions"; then
         transition_count=$((transition_count + 1))
         case "$value" in
           positive|negative|caution) classification_count=$((classification_count + 1)) ;;
@@ -783,6 +832,40 @@ run_check() { # $1 = scan root
   done <<< "$transition_map_lines"
 
   gate_summary "view-vocabulary"
+}
+
+# teeth_exact pins ONE rule's output byte for byte. Most fixtures in run_teeth
+# only prove "red" or grep a needle, which a rewrite of the scan loops can keep
+# satisfying while losing a line number, a quote or the exit status. This runs
+# `run_check` as production does, with colour and the CI annotation form
+# switched off, and demands the WHOLE output (the finding lines then the tally
+# line) and the exact exit status: 1 for a measured finding, 3 for an unmeasured
+# run. The vocabulary comes from EXACT_BIN, a stub that replays one captured
+# payload, so every fixture below costs milliseconds instead of a `go run`.
+EXACT_BIN=""
+teeth_exact() { # $1 = label, $2 = exit status, $3 = expected output (may be empty), $4 = scan root
+  local label="$1" want_rc="$2" expected="$3" root="$4" out rc
+  out="$( (unset GITHUB_ACTIONS; GATE_RED=''; GATE_YEL=''; GATE_GRN=''; GATE_NC=''
+           _GATE_ERRORS=0; _GATE_UNMEASURED=0; _GATE_WARNINGS=0
+           [ -n "$EXACT_BIN" ] && export A2A_VERIFY_BINARY="$EXACT_BIN"
+           run_check "$root") 2>&1)"
+  rc=$?
+  if [ "$rc" -ne "$want_rc" ] || [ "$out" != "$expected" ]; then
+    echo "view-vocabulary --teeth: FAILED — $label: want exit $want_rc and exactly:" >&2
+    printf '%s\n' "$expected" >&2
+    echo "got exit $rc and:" >&2
+    printf '%s\n' "$out" >&2
+    return 1
+  fi
+  echo "view-vocabulary --teeth: $label — exact output held"
+}
+
+# exact_fixture builds one fixture dir holding the production resolver owner
+# (the same copy the first tooth proves green), so a fixture's output is its
+# own finding and nothing else.
+exact_fixture() { # $1 = dir
+  mkdir -p "$1"
+  cp "$GATE_ROOT/web/design-source/VocabularyResolver.dc.html" "$1/VocabularyResolver.dc.html"
 }
 
 # teeth_skipped records any fixture this environment could not build, so the
@@ -1260,6 +1343,39 @@ FIXTURE
       echo "$unreadable_out" >&2
       return 1
     fi
+    # V3 — the provenance rule's own line for the file it could not tag. The
+    # tagger's diagnostic that used to precede it is the platform's text, so
+    # only the gate's line is pinned.
+    if [[ "$unreadable_out" != *"UNMEASURED view-vocabulary: could not tag Unreadable.dc.html for the provenance-vocabulary rule, so that file was NOT judged by it"* ]]; then
+      chmod 644 "$unreadable"
+      echo "view-vocabulary --teeth: FAILED — V3 the could-not-tag line changed:" >&2
+      echo "$unreadable_out" >&2
+      return 1
+    fi
+    # The unreadable file is named IN FILE ORDER, between the findings of the
+    # files either side of it: the scan of the files before it is flushed
+    # first. Presence is asserted before position, because a missing marker
+    # would otherwise leave its prefix whole and read as "later".
+    printf '<p>"carried"</p>\n' >"$paired/A-before.dc.html"
+    printf '<p>"carried"</p>\n' >"$paired/Z-after.dc.html"
+    local order_out head_a head_u head_z
+    order_out="$( ( unset GITHUB_ACTIONS; run_check "$paired" ) 2>&1 )"
+    if [[ "$order_out" != *"A-before.dc.html:1 carries"* || "$order_out" != *"could not tag Unreadable.dc.html"* || "$order_out" != *"Z-after.dc.html:1 carries"* ]]; then
+      chmod 644 "$unreadable"
+      echo "view-vocabulary --teeth: FAILED — the files either side of an unreadable one were not all reported:" >&2
+      echo "$order_out" >&2
+      return 1
+    fi
+    head_a="${order_out%%A-before.dc.html:1 carries*}"
+    head_u="${order_out%%could not tag Unreadable.dc.html*}"
+    head_z="${order_out%%Z-after.dc.html:1 carries*}"
+    if [ "${#head_a}" -ge "${#head_u}" ] || [ "${#head_u}" -ge "${#head_z}" ]; then
+      chmod 644 "$unreadable"
+      echo "view-vocabulary --teeth: FAILED — an unreadable component was not reported in file order:" >&2
+      echo "$order_out" >&2
+      return 1
+    fi
+    rm -f "$paired/A-before.dc.html" "$paired/Z-after.dc.html"
   fi
   chmod 644 "$unreadable"
   rm -f "$unreadable"
@@ -1314,10 +1430,303 @@ FIXTURE
     return 1
   fi
 
+
+  # ── one fixture per rule, exact output and exit status ────────────────
+  #
+  # The scan loops these pin (the provenance ban and the post-scan word loops)
+  # were once a bash loop forking per file, per line and per word; the
+  # provenance ban is now one `awk` pass (release-speed-2026-11 P5). Equality
+  # with the old script was proven once, over the tree and every fixture, in
+  # audits/p5-scanner-equality.md; these keep it. Rules and their fixtures:
+  #   V1  missing resolver owner            V2  tone- class outside the owner
+  #   V3  could not tag a component         V4  nested provenance marker
+  #   V5  end without begin                 V6  malformed marker
+  #   V7  provenance phrase                 V8  unclosed marker
+  #   V9  AC6 own list of states            V10 AC5 unknown name in that list
+  #   V11 inline chain over states          V12 unknown name inside a chain
+  #   V13 unknown name against `state`      V14 transition label map
+  #   V15 transition classification map     V16 a scanner that did not run
+  #   V17 no scratch file for a scanner     V18 vocabulary unreadable
+  #   V19 no states returned                V20 no transitions returned
+  #   V21 component walk failed             V22 no component found
+  local vjson x="$tmp/exact"
+  if ! vjson="$(vocabulary_json)"; then
+    echo "view-vocabulary --teeth: FAILED — the per-rule fixtures need the vocabulary payload and the binary could not give it" >&2
+    return 1
+  fi
+  printf '%s\n' "$vjson" > "$tmp/vocab.json"
+  printf '#!/bin/sh\ncat "%s"\n' "$tmp/vocab.json" > "$tmp/vocab-stub"
+  printf '%s\n' "$vjson" | awk '/"states"/{print;f=1;next} f&&/^  \}/{f=0} !f' > "$tmp/vocab-nostates.json"
+  printf '#!/bin/sh\ncat "%s"\n' "$tmp/vocab-nostates.json" > "$tmp/vocab-stub-nostates"
+  printf '%s\n' "$vjson" | awk '/"transitions"/{print;f=1;next} f&&/\]/{f=0} !f' > "$tmp/vocab-notransitions.json"
+  printf '#!/bin/sh\ncat "%s"\n' "$tmp/vocab-notransitions.json" > "$tmp/vocab-stub-notransitions"
+  chmod +x "$tmp/vocab-stub" "$tmp/vocab-stub-nostates" "$tmp/vocab-stub-notransitions"
+  EXACT_BIN="$tmp/vocab-stub"
+
+  local E1='✗ view-vocabulary: 1 error(s), 0 warning(s)' E2='✗ view-vocabulary: 2 error(s), 0 warning(s)'
+  local U1='✗ view-vocabulary: 1 unmeasured, 0 error(s), 0 warning(s) — this run could not measure everything it judges, so its verdict is incomplete'
+  local prov_tail='describes how the snapshot was carried, not what is happening; move it to Технические подробности or bound it with a reasoned // dashboard-derivation: allow-provenance-begin -- <reason> marker'
+  local ac6_tail='— a component must read `outcome` and `terminal` off the payload. Being type-blind is what made the retired sets wrong: `retired` filed as cancelled, handoff `accepted` conflated with question `accepted`'
+  local chain_tail='— a component must read the server-carried outcome/terminal verdict instead of spelling the state set branch by branch'
+  local malformed='has a malformed allow-provenance marker — use the exact documented begin/end syntax with a non-empty reason'
+
+  # V1 — no resolver owner.
+  mkdir -p "$x/v1"; printf '<p>plain</p>\n' > "$x/v1/Plain.dc.html"
+  teeth_exact "V1 missing resolver owner" 1 "FAIL view-vocabulary: missing exact resolver owner VocabularyResolver.dc.html — failing closed rather than allowing tone classes without an owner
+$E1" "$x/v1" || return 1
+
+  # V2 — a tone- class outside the owner.
+  exact_fixture "$x/v2"; printf '<p>ok</p>\n<span class="tone-invented">bad</span>\n' > "$x/v2/Offender.dc.html"
+  teeth_exact "V2 tone- class outside the owner" 1 "FAIL Offender.dc.html:2 spells a tone- class outside VocabularyResolver.dc.html — every chroma treatment must come from the one resolver
+$E1" "$x/v2" || return 1
+
+  # V4 / V5 / V6 / V8 — the marker grammar.
+  exact_fixture "$x/v4"
+  cat > "$x/v4/Nested.dc.html" <<'FIXTURE'
+<script>
+// dashboard-derivation: allow-provenance-begin -- outer
+// dashboard-derivation: allow-provenance-begin -- inner
+// dashboard-derivation: allow-provenance-end
+</script>
+FIXTURE
+  teeth_exact "V4 nested marker" 1 "FAIL view-vocabulary: Nested.dc.html:3 nests an allow-provenance marker — keep each exception bounded and independent
+$E1" "$x/v4" || return 1
+
+  exact_fixture "$x/v5"
+  printf '<script>\n// dashboard-derivation: allow-provenance-end\n</script>\n' > "$x/v5/Orphan.dc.html"
+  teeth_exact "V5 end without begin" 1 "FAIL view-vocabulary: Orphan.dc.html:2 has an allow-provenance end without a matching begin
+$E1" "$x/v5" || return 1
+
+  exact_fixture "$x/v6"
+  cat > "$x/v6/Malformed.dc.html" <<'FIXTURE'
+<script>
+// dashboard-derivation: allow-provenance-begin --
+// dashboard-derivation: allow-provenance-end trailing words
+</script>
+FIXTURE
+  teeth_exact "V6 malformed begin and end markers" 1 "FAIL view-vocabulary: Malformed.dc.html:2 $malformed
+FAIL view-vocabulary: Malformed.dc.html:3 $malformed
+$E2" "$x/v6" || return 1
+
+  exact_fixture "$x/v8"
+  cat > "$x/v8/Unclosed.dc.html" <<'FIXTURE'
+<script>
+// dashboard-derivation: allow-provenance-begin -- never closed
+const hint = "exact carried set";
+</script>
+FIXTURE
+  teeth_exact "V8 unclosed marker (the phrase inside it stays legal)" 1 "FAIL view-vocabulary: Unclosed.dc.html has an unclosed allow-provenance block
+$E1" "$x/v8" || return 1
+
+  # V7 — every alternative of the Rule B word list, once each, plus near
+  # misses that must stay quiet. `carried` needs a non-letter on both sides.
+  exact_fixture "$x/v7"
+  cat > "$x/v7/Phrases.dc.html" <<'FIXTURE'
+<script>
+const a = "перенесённый";
+const b = "Перенесённый";
+const c = "it was carried over";
+const d = "Carried";
+const e = "точный  набор";
+const f = "Точный набор";
+const g = "the exact set";
+const h = "Exact   set";
+const i = "полон и пуст";
+const j = "Полон   и пуст";
+</script>
+FIXTURE
+  teeth_exact "V7 each Rule B alternative, in order" 1 "FAIL view-vocabulary: Phrases.dc.html:2 carries provenance vocabulary in a user-facing string — \"перенесённый\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:3 carries provenance vocabulary in a user-facing string — \"Перенесённый\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:4 carries provenance vocabulary in a user-facing string — \"it was carried over\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:5 carries provenance vocabulary in a user-facing string — \"Carried\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:6 carries provenance vocabulary in a user-facing string — \"точный  набор\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:7 carries provenance vocabulary in a user-facing string — \"Точный набор\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:8 carries provenance vocabulary in a user-facing string — \"the exact set\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:9 carries provenance vocabulary in a user-facing string — \"Exact   set\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:10 carries provenance vocabulary in a user-facing string — \"полон и пуст\" $prov_tail
+FAIL view-vocabulary: Phrases.dc.html:11 carries provenance vocabulary in a user-facing string — \"Полон   и пуст\" $prov_tail
+✗ view-vocabulary: 10 error(s), 0 warning(s)" "$x/v7" || return 1
+
+  # Near misses and exemptions that stay green: no non-letter around
+  # `carried`, `exactset`, a regex metachar where the list has a space, a
+  # `technical` key, a comment, and a bounded marker.
+  exact_fixture "$x/e1"
+  cat > "$x/e1/Quiet.dc.html" <<'FIXTURE'
+<script>
+const a = "scarred and carriedover";
+const b = "exactset and exact.set";
+const c = "точныйнабор";
+const copy = { technicalHint: "точный перенесённый набор" };
+// const d = "exact carried set";
+/* const e = "exact carried set";
+const f = "exact carried set"; */
+// dashboard-derivation: allow-provenance-begin -- fixture
+const g = "exact carried set";
+// dashboard-derivation: allow-provenance-end
+</script>
+FIXTURE
+  teeth_exact "E1 near misses and exemptions stay green" 0 "" "$x/e1" || return 1
+
+  # Sibling keys on one line: only the technical-keyed segment is exempt.
+  exact_fixture "$x/e2"
+  cat > "$x/e2/Siblings.dc.html" <<'FIXTURE'
+<script>
+const copy = { technicalA: "exact set", other: "carried", "plain" : "Exact set" };
+const after = 1; /* closed */ const late = "exact set";
+</script>
+FIXTURE
+  teeth_exact "E2 sibling keys and code after a closed block comment" 1 "FAIL view-vocabulary: Siblings.dc.html:2 carries provenance vocabulary in a user-facing string — \"carried\" $prov_tail
+FAIL view-vocabulary: Siblings.dc.html:2 carries provenance vocabulary in a user-facing string — \"Exact set\" $prov_tail
+FAIL view-vocabulary: Siblings.dc.html:3 carries provenance vocabulary in a user-facing string — \"exact set\" $prov_tail
+$(printf '%s' '✗ view-vocabulary: 3 error(s), 0 warning(s)')" "$x/e2" || return 1
+
+  # No trailing newline; sorted order; per-file marker and comment state; a
+  # space in the name.
+  exact_fixture "$x/e3"
+  printf '<script>\n/* open comment\n' > "$x/e3/A first.dc.html"
+  printf '<script>\nconst d = "exact set";' > "$x/e3/B second.dc.html"
+  printf '<script>\n// dashboard-derivation: allow-provenance-begin -- open\n' > "$x/e3/C third.dc.html"
+  printf '<script>\nconst d = "carried";\n</script>\n' > "$x/e3/D fourth.dc.html"
+  teeth_exact "E3 order, per-file state, no trailing newline, a space in the name" 1 "FAIL view-vocabulary: B second.dc.html:2 carries provenance vocabulary in a user-facing string — \"exact set\" $prov_tail
+FAIL view-vocabulary: C third.dc.html has an unclosed allow-provenance block
+FAIL view-vocabulary: D fourth.dc.html:2 carries provenance vocabulary in a user-facing string — \"carried\" $prov_tail
+✗ view-vocabulary: 3 error(s), 0 warning(s)" "$x/e3" || return 1
+
+  # V9 / V10 — AC6 and AC5, on the real defect's shape.
+  exact_fixture "$x/v9"
+  printf '<script>\nconst SUCCESS_STATES = ["closed", "verified"];\n</script>\n' > "$x/v9/Bad.dc.html"
+  teeth_exact "V9 a component's own list of states" 1 "FAIL Bad.dc.html:2 classifies by its own list of 2 state names $ac6_tail
+$E1" "$x/v9" || return 1
+  exact_fixture "$x/v10"
+  printf '<script>\nconst CANCELLED_STATES = ["cancelled", "withdrawn", "canceled"];\n</script>\n' > "$x/v10/Typo.dc.html"
+  teeth_exact "V10 a name the domain does not have, inside that list" 1 "FAIL Typo.dc.html:2 classifies by its own list of 2 state names $ac6_tail
+FAIL Typo.dc.html:2 lists \"canceled\", which is not a state the domain has — the binary's \`__catalog --vocabulary --json\` is the list, and a name outside it matches nothing the fold can ever produce
+$E2" "$x/v10" || return 1
+
+  # V11 / V12 / V13 — inline chains, on one line and over several.
+  exact_fixture "$x/v11"
+  cat > "$x/v11/Chains.dc.html" <<'FIXTURE'
+<script>
+function a(state) {
+  const result = state === "closed" || state === "verified";
+  return result;
+}
+function b(state) {
+  return state === "declined" || state === "closed";
+}
+function c(state) {
+  return (
+    state === "declined" ||
+    state === "closed"
+  );
+}
+</script>
+FIXTURE
+  teeth_exact "V11 inline chains: assigned, returned, multiline (lines 3 7 and 10)" 1 "FAIL Chains.dc.html:3 classifies operand \`state\` by an inline equality chain over 2 state names $chain_tail
+FAIL Chains.dc.html:7 classifies operand \`state\` by an inline equality chain over 2 state names $chain_tail
+FAIL Chains.dc.html:10 classifies operand \`state\` by an inline equality chain over 2 state names $chain_tail
+$(printf '%s' '✗ view-vocabulary: 3 error(s), 0 warning(s)')" "$x/v11" || return 1
+  exact_fixture "$x/v12"
+  printf '<script>\nconst r = kind === "closed" || kind === "verified" || kind === "clsoed";\n</script>\n' > "$x/v12/Unknown.dc.html"
+  teeth_exact "V12 an unknown name inside an operand's classification" 1 "FAIL Unknown.dc.html:2 classifies operand \`kind\` by an inline equality chain over 2 state names $chain_tail
+FAIL Unknown.dc.html:2 compares \`kind\` against \"clsoed\" inside a state classification, but the binary vocabulary has no such state
+$E2" "$x/v12" || return 1
+  exact_fixture "$x/v13"
+  printf '<script>\nfunction f(state) {\n  return state === "closed" || state === "clsoed";\n}\n</script>\n' > "$x/v13/UnknownState.dc.html"
+  teeth_exact "V13 an unknown name against an operand called state" 1 "FAIL UnknownState.dc.html:3 compares state operand \`state\` against \"clsoed\", but the binary vocabulary has no such state
+$E1" "$x/v13" || return 1
+
+  # V14 / V15 — the browser-local transition policy maps.
+  exact_fixture "$x/v14"
+  cat > "$x/v14/TransitionLabels.dc.html" <<'FIXTURE'
+<script>
+const TRANSITION_LABELS = Object.freeze({
+  "accept": "Accept",
+  "reject": "Reject"
+});
+</script>
+FIXTURE
+  teeth_exact "V14 browser-local transition label map" 1 "FAIL TransitionLabels.dc.html:2 defines a browser-local label map for 2 binary-known transitions — use VocabularyResolver family \`transition\` instead
+$E1" "$x/v14" || return 1
+  exact_fixture "$x/v15"
+  cat > "$x/v15/TransitionClassification.dc.html" <<'FIXTURE'
+<script>
+const TRANSITION_TONES = Object.freeze({
+  "accept": "positive",
+  "reject": "negative",
+  "block": "caution"
+});
+</script>
+FIXTURE
+  teeth_exact "V15 browser-local transition classification" 1 "FAIL TransitionClassification.dc.html:2 classifies binary-known transitions as positive/negative/caution in the browser — use VocabularyResolver family \`transition\` instead
+$E1" "$x/v15" || return 1
+
+  # V18 / V19 / V20 / V22 — the measurement refusals, whole output.
+  exact_fixture "$x/m"; printf '<p>ok</p>\n' > "$x/m/Ok.dc.html"
+  local nobin="$tmp/no-such-binary"
+  EXACT_BIN="$nobin"
+  teeth_exact "V18 vocabulary unreadable" 3 "A2A_VERIFY_BINARY is not executable: $nobin
+UNMEASURED view-vocabulary: could not read the vocabulary from the binary — failing closed rather than policing nothing
+$U1" "$x/m" || return 1
+  EXACT_BIN="$tmp/vocab-stub-nostates"
+  teeth_exact "V19 no states returned" 3 "UNMEASURED view-vocabulary: the binary returned no states — failing closed rather than policing nothing
+$U1" "$x/m" || return 1
+  EXACT_BIN="$tmp/vocab-stub-notransitions"
+  teeth_exact "V20 no transitions returned" 3 "UNMEASURED view-vocabulary: the binary returned no transitions — failing closed rather than allowing a local transition policy unchecked
+$U1" "$x/m" || return 1
+  EXACT_BIN="$tmp/vocab-stub"
+  mkdir -p "$x/empty"
+  teeth_exact "V22 no component found" 3 "UNMEASURED view-vocabulary: no authored component (*.dc.html) was found under $x/empty — every rule here would pass by having nothing to judge, and that is a green this run did not earn
+$U1" "$x/empty" || return 1
+
+  # V21 — the walk itself fails. find's own diagnostic is the platform's text,
+  # so only the gate's line is pinned here, whole.
+  local walk_out
+  walk_out="$( (unset GITHUB_ACTIONS; GATE_RED=''; GATE_NC=''; _GATE_UNMEASURED=0; export A2A_VERIFY_BINARY="$EXACT_BIN"; run_check "$x/no-such-root") 2>&1 )"
+  if [[ "$walk_out" != *"UNMEASURED view-vocabulary: the component walk under $x/no-such-root did not complete, so no rule below was evaluated over a corpus this gate can vouch for"* ]]; then
+    echo "view-vocabulary --teeth: FAILED — V21 the component walk refusal changed:" >&2
+    echo "$walk_out" >&2
+    return 1
+  fi
+  echo "view-vocabulary --teeth: V21 component walk failed — exact message held"
+
+  # V16 / V17 — scan_or_refuse's own two refusals, called directly. V16's whole
+  # line is pinned; V17 needs mktemp to fail, whose own text is the platform's.
+  _teeth_probe_cannot_run() { echo "probe scanner: cannot read the corpus" >&2; return 2; }
+  local v16_out
+  v16_out="$( (unset GITHUB_ACTIONS; GATE_RED=''; GATE_NC=''; _GATE_UNMEASURED=0; scan_or_refuse grep "a probe rule" _teeth_probe_cannot_run "$x/m") 2>&1 )"
+  if [ "$v16_out" != "UNMEASURED view-vocabulary: the scanner for a probe rule did not run over $x/m (exit 2), so this run did NOT evaluate that rule — it is unproven, not satisfied. The scanner said: probe scanner: cannot read the corpus"" " ]; then  # the scanner's newline becomes a trailing space
+    echo "view-vocabulary --teeth: FAILED — V16 the scanner-did-not-run line changed:" >&2
+    echo "$v16_out" >&2
+    return 1
+  fi
+  echo "view-vocabulary --teeth: V16 a scanner that did not run — exact line held"
+  local v17_out
+  # mktemp is shadowed by a function that fails: a bad TMPDIR is honoured by GNU
+  # mktemp and silently ignored by BSD's, so it cannot build this case.
+  v17_out="$( (unset GITHUB_ACTIONS; GATE_RED=''; GATE_NC=''; _GATE_UNMEASURED=0; mktemp() { return 1; }; scan_or_refuse grep "a probe rule" _teeth_probe_cannot_run "$x/m") 2>&1 )"
+  if [ "$v17_out" != "UNMEASURED view-vocabulary: no scratch file for the a probe rule scanner's diagnostics, so that rule was NOT evaluated this run" ]; then
+    echo "view-vocabulary --teeth: FAILED — V17 the no-scratch-file refusal changed:" >&2
+    echo "$v17_out" >&2
+    return 1
+  fi
+  echo "view-vocabulary --teeth: V17 no scratch file — exact line held"
+  # V23 — the provenance scan dying part way. awk is shadowed to exit 2 inside a
+  # subshell and the batch function is called directly.
+  local v23_out
+  v23_out="$( (unset GITHUB_ACTIONS; GATE_RED=''; GATE_NC=''; _GATE_UNMEASURED=0; awk() { return 2; }; provenance_scan_batch "$x/m/probe.dc.html") 2>&1 )"
+  if [ "$v23_out" != "UNMEASURED view-vocabulary: the provenance-vocabulary scan exited 2 part way, so the components it had not reached were NOT judged by it" ]; then
+    echo "view-vocabulary --teeth: FAILED — V23 the scan-died-part-way line changed:" >&2
+    echo "$v23_out" >&2
+    return 1
+  fi
+  echo "view-vocabulary --teeth: V23 a provenance scan that died — exact line held"
+  EXACT_BIN=""
+
   if [ -n "$teeth_skipped" ]; then
-    echo "view-vocabulary --teeth: ok — offending components red in domain words; an unreadable vocabulary, an empty corpus and an unwalkable scan root each refuse as UNMEASURED, and the two verdicts are asserted to differ; SKIPPED (fixture unbuildable here): $teeth_skipped"
+    echo "view-vocabulary --teeth: ok — offending components red in domain words; an unreadable vocabulary, an empty corpus and an unwalkable scan root each refuse as UNMEASURED, and the two verdicts are asserted to differ; per-rule exact fixtures: 23 rules (V1-V23; V3 only where a mode-000 file is unreadable) plus edges E1-E3; SKIPPED (fixture unbuildable here): $teeth_skipped"
   else
-    echo "view-vocabulary --teeth: ok — offending components red in domain words; an unreadable vocabulary, an empty corpus, an unwalkable scan root and an unreadable component each refuse as UNMEASURED, and the two verdicts are asserted to differ"
+    echo "view-vocabulary --teeth: ok — offending components red in domain words; an unreadable vocabulary, an empty corpus, an unwalkable scan root and an unreadable component each refuse as UNMEASURED, and the two verdicts are asserted to differ; per-rule exact fixtures: 23 rules (V1-V23) plus edges E1-E3"
   fi
 }
 
