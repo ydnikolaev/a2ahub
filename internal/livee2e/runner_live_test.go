@@ -107,7 +107,7 @@ func TestLiveMatrix(t *testing.T) {
 				// that step belong to this run and must be inside the
 				// window.
 				since := time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339)
-				driveFamilies(ctx, t, run, h)
+				driveFamilies(ctx, t, run, h, allFamilies(), nil)
 				// Last, deliberately: it asks what ELSE went red in the
 				// space while everything above was running, so it has to run
 				// after everything above.
@@ -162,70 +162,70 @@ func TestLiveMatrix(t *testing.T) {
 	}
 }
 
-// driveFamilies runs the thirteen scenario families and records what they return.
-//
-// SERIALLY, and that is a correctness requirement rather than a simplification:
-// the families are file-disjoint but they all drive ONE real space, and two of
-// them deliberately mutate shared state (a merge with the gate not green, a
-// raised min_binary_version). Run concurrently, one family's restore window
-// would break every write another family has in flight, and the failure would
-// surface as somebody else's bug.
+// familyDriver is one entry of the family dispatch table.
+type familyDriver struct {
+	name string
+	fn   func(context.Context, *harness) []Result
+	// sharedState is true for a family that bends space-wide state (space.yaml,
+	// branch protection, the write floor). The logic tier runs those in group B
+	// on a space of their own; every other family authors only its own artifacts
+	// and runs in group A. Audit: audits/p4-family-mutations.md.
+	sharedState bool
+}
+
+// allFamilies is driveFamilies' dispatch table, in the order the families run.
 //
 // Order is cheapest-blast-radius first: the happy paths establish that the
 // ordinary flow works before the boundary and refusal families start bending
-// protection and the write floor. A family that panics is contained here — the
-// remaining families still run, and its rows stay not-run rather than taking
-// the whole matrix down with them.
-func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
-	families := []struct {
-		name string
-		fn   func(context.Context, *harness) []Result
-	}{
+// protection and the write floor. `bytes` stays last of group A: its raw push
+// to origin/main is safe only because group A is serial.
+func allFamilies() []familyDriver {
+	return []familyDriver{
 		// P7 §6.2 owns its own ordered sequence (visibility first, then
 		// receipt/work/server/contracts). Run it before legacy families mutate
 		// repository settings or the write floor.
-		{FamilyOperationalConfidence, runOperationalConfidenceScenarios},
-		{"happy", runHappyScenarios},
+		{FamilyOperationalConfidence, runOperationalConfidenceScenarios, false},
+		{"happy", runHappyScenarios, false},
 		// contract-integrity (AC-973.1) writes only to its own contract's
 		// section, the same "no shared-state mutation" property the happy
 		// family has — placed right after it, still ahead of boundary/
 		// refusal/space, which deliberately bend protection and the write
 		// floor.
-		{"contract-integrity", runContractIntegrityScenarios},
+		{"contract-integrity", runContractIntegrityScenarios, false},
 		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
 		// kinds nothing else drives. Same "no shared-state mutation"
 		// property as happy/contract-integrity (every row authors its OWN
 		// fresh artifacts), so placed right after them, still ahead of
 		// boundary/refusal/space.
-		{"submitted-family", runSubmittedFamilyScenarios},
-		{"draft-family", runDraftFamilyScenarios},
+		{"submitted-family", runSubmittedFamilyScenarios, false},
+		{"draft-family", runDraftFamilyScenarios, false},
 		// AC-981.1 (spec 38 wave G) — Layer-2 illegal-transition rows, one
 		// per kind. Same "no shared-state mutation" property as the three
 		// families above (every row authors its OWN fresh artifacts and
 		// the refused call never reaches the funnel at all), so placed
 		// right after them, still ahead of boundary/refusal/space, which
 		// deliberately bend protection and the write floor.
-		{"illegal-transitions", runIllegalTransitionScenarios},
+		{"illegal-transitions", runIllegalTransitionScenarios, false},
 		// AC-982.1/982.2/982.3 (spec 38 wave H) — Layer-3 failure/recovery
 		// rows. Same "no shared-state mutation" property as the four
 		// families above (every row authors its OWN fresh artifacts; the
 		// fault-injection row's proxy touches only its own one write), so
 		// placed right after them, still ahead of boundary/refusal/space,
 		// which deliberately bend protection and the write floor.
-		{"failure-recovery", runFailureRecoveryScenarios},
+		{"failure-recovery", runFailureRecoveryScenarios, false},
 		// P46 (spec 46 §T3/§T4) — one row: a chain across two real logins,
 		// read back from BOTH sides. Same "no shared-state mutation"
 		// property as the families above (it authors its own fresh
 		// question and response), so it sits with them, ahead of the
 		// families that bend protection and the write floor.
-		{"thread-chain", runThreadChainScenarios},
+		{"thread-chain", runThreadChainScenarios, false},
 		// Spec 05a — the contract data exchange loop. Same "no
 		// shared-state mutation" property as the families above (its one
 		// row authors its own fresh contract, work_request and data
 		// packages), so placed right after them, still ahead of
 		// boundary/refusal/space, which deliberately bend protection and
 		// the write floor.
-		{"data-loop", runDataLoopScenarios},
+		{"data-loop", runDataLoopScenarios, false},
 		// P11 (agent-exchange-2026-08, spec 11) AC5 — the two-agent
 		// byte/document round trip plus its corruption twin. Same "no
 		// shared-state mutation" property as every family above (both
@@ -243,14 +243,49 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		// anything another family's own artifacts touch, and it never
 		// advances space-wide state (space.yaml, branch protection, the
 		// write floor) the way space/boundary/refusal deliberately do.
-		{"bytes", runBytesScenarios},
-		{"boundary", runBoundaryScenarios},
-		{"refusal", runRefusalScenarios},
-		{"space", runSpaceScenarios},
+		{"bytes", runBytesScenarios, false},
+		{"boundary", runBoundaryScenarios, true},
+		{"refusal", runRefusalScenarios, true},
+		{"space", runSpaceScenarios, true},
 	}
+}
 
-	declared := make([]string, 0, len(families))
-	for _, f := range families {
+// logicFamilyGroups splits allFamilies for the logic tier: group A (authors
+// only its own artifacts) and group B (bends space-wide state), each in
+// allFamilies' relative order.
+func logicFamilyGroups() (groupA, groupB []familyDriver) {
+	for _, f := range allFamilies() {
+		if f.sharedState {
+			groupB = append(groupB, f)
+		} else {
+			groupA = append(groupA, f)
+		}
+	}
+	return groupA, groupB
+}
+
+// driveFamilies runs families (a slice of allFamilies()) and records what they return.
+//
+// SERIALLY within one call, and that is a correctness requirement rather than
+// a simplification: the families are file-disjoint but they all drive the ONE
+// real space h, and some deliberately mutate shared state (a merge with the
+// gate not green, a raised min_binary_version). Run concurrently on one
+// space, one family's restore window would break every write another family
+// has in flight, and the failure would surface as somebody else's bug. The
+// logic tier calls this twice at once, once per group, each on its own space;
+// the live tier calls it once with the full list.
+//
+// A family that panics is contained here — the remaining families still run,
+// and its rows stay not-run rather than taking the whole matrix down with them.
+// stages is nil on the live tier, which makes every Mark a no-op.
+func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness, families []familyDriver, stages *stageRecorder) {
+	// The pre-flight and the EnvFamilies selection both judge the WHOLE
+	// dispatch table, never this call's slice: a group that omits a declared
+	// family must not read as that family missing from the catalogue, and the
+	// slice a caller passes is a scheduling choice, not the declared set.
+	all := allFamilies()
+	declared := make([]string, 0, len(all))
+	for _, f := range all {
 		declared = append(declared, f.name)
 	}
 
@@ -310,7 +345,7 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 		t.Logf("=== %s NARROWS this run to exact cells: %s — every other cell stays not-run, so this run CANNOT exit 0 and is not a release verdict ===",
 			EnvCells, strings.Join(sortedCellKeys(cells), ", "))
 	}
-	if len(selected) != len(families) {
+	if len(selected) != len(all) {
 		t.Logf("=== %s NARROWS this run to: %s — every other family's rows stay not-run, so this run CANNOT exit 0 and is not a release verdict ===",
 			EnvFamilies, strings.Join(sortedKeys(selected), ", "))
 	}
@@ -361,9 +396,9 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 			continue
 		}
 		t.Logf("=== family %s ===", family.name)
-		run.stages.Mark("family:"+family.name, "start")
+		stages.Mark("family:"+family.name, "start")
 		familyResults := runFamily(ctx, t, family.name, family.fn, h)
-		run.stages.Mark("family:"+family.name, "end")
+		stages.Mark("family:"+family.name, "end")
 		for _, res := range familyResults {
 			if run.Tier == TierLogic {
 				if tier, ok := rowTiers[scenarioRowID{scenario: res.Scenario, branch: res.Branch}]; ok && tier == TierProvider {
@@ -492,7 +527,7 @@ func runFamily(ctx context.Context, t *testing.T, name string, fn func(context.C
 
 // diffFamilyNames reports the SET difference between CanonicalFamilies()
 // (untagged data, catalogue.go/familyset.go) and driveFamilies' own dispatch
-// table (`declared`, built from the `families` slice a few lines above its
+// table (`declared`, built from allFamilies() a few lines above its
 // call site). Written directly against the two plain []string slices rather
 // than reusing missingCoveredFamilies/unknownDeclaredFamilies (familyset.go):
 // those compare a Scenario's Family field against the canonical list, a

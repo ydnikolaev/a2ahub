@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -166,13 +167,12 @@ type Run struct {
 	// the retained candidate check log.
 	EvidencePath string
 
+	// mu guards results, order and aborted: the logic tier runs two family
+	// groups beside each other, and both Record into the one Run.
+	mu      sync.Mutex
 	order   []cellKey
 	results map[cellKey]*Result
 	aborted string
-
-	// stages stamps the logic tier's per-family timeline. Nil (the live tier's
-	// value) makes every Mark a no-op.
-	stages *stageRecorder //nolint:unused // reason: written and read only by livee2e-tagged files (runFamilyMatrix, driveFamilies), which the default build the linter judges does not compile; P4 moves it to a driveFamilies parameter and deletes this field
 }
 
 // NewRun declares the matrix as the cross product of scenarios × systems ×
@@ -231,6 +231,8 @@ func NewRunFor(org, repo string, scenarios []Scenario) *Run {
 //     dodging judgement in the logic tier is the same lie pointing the
 //     other way, and it is incoherent regardless of which tier recorded it.
 func (r *Run) Record(res Result) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	key := cellKey{scenario: res.Scenario, branch: res.Branch, system: res.System, surface: res.Surface}
 	cell, ok := r.results[key]
 	if !ok {
@@ -271,6 +273,8 @@ func operationalOptionalBranch(id, branch string) bool {
 //
 // The FIRST reason wins: it is the one that caused everything after it.
 func (r *Run) Abort(reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.aborted == "" {
 		r.aborted = reason
 	}
@@ -278,6 +282,8 @@ func (r *Run) Abort(reason string) {
 
 // Report freezes the run for rendering.
 func (r *Run) Report() Report {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	out := Report{
 		Org:                   r.Org,
 		Repo:                  r.Repo,
@@ -496,6 +502,8 @@ func (r *Run) WriteEvidenceBundle(evidencePath string) (EvidenceManifest, error)
 	if r == nil || evidencePath == "" {
 		return EvidenceManifest{}, errors.New("livee2e: evidence path is required")
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if err := validateCandidateAttestationPair(r.VerificationCandidate, r.ExecutionCandidate); err != nil {
 		return EvidenceManifest{}, err
 	}

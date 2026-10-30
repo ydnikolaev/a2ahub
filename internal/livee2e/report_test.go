@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -122,6 +123,51 @@ func TestUnreachedCellsStayNotRun(t *testing.T) {
 	// One pass out of eight is not a green run.
 	if code := report.ExitCode(); code != 1 {
 		t.Errorf("ExitCode = %d, want 1", code)
+	}
+}
+
+// The logic tier runs two family groups beside each other, and both Record
+// into one Run. Writers hit the SAME cells and a reader snapshots meanwhile, so
+// the race detector (make test is raced) fails this the moment the lock goes.
+func TestRunRecordConcurrent(t *testing.T) {
+	t.Parallel()
+	run := newDemoRun()
+	scenarios, systems, surfaces := demoScenarios()
+
+	const rounds = 200
+	var wg sync.WaitGroup
+	for writer := 0; writer < 2; writer++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < rounds; i++ {
+				for _, sc := range scenarios {
+					for _, sys := range systems {
+						for _, surf := range surfaces {
+							if err := run.Record(Result{Scenario: sc, System: sys, Surface: surf, Verdict: VerdictPass}); err != nil {
+								t.Errorf("record %s/%s/%s: %v", sc, sys, surf, err)
+								return
+							}
+						}
+					}
+				}
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < rounds; i++ {
+			_ = run.Report()
+			run.Abort("concurrent abort")
+		}
+	}()
+	wg.Wait()
+
+	for _, res := range run.Report().Results {
+		if res.Verdict != VerdictPass {
+			t.Errorf("cell %s/%s/%s ended at %v, want pass", res.Scenario, res.System, res.Surface, res.Verdict)
+		}
 	}
 }
 

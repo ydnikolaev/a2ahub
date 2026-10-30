@@ -249,24 +249,48 @@ func TestLogicMatrix(t *testing.T) {
 		}
 	})
 
-	// The family matrix runs on its own space `h`, so it shares no state with
-	// the path groups and runs beside them. Until 2026-10-30 it ran serially in
-	// this body, and every parallel group waited for it: ~500 s idle, ~14 min
-	// under load, which put the tier past its 20-minute hang ceiling twice in a
-	// row. Registered FIRST so it takes one of `go test -parallel`'s slots as
-	// soon as the parallel phase opens, rather than queueing behind a group.
-	// A2A_LOGIC_PATH_SPACES=1 keeps the whole tier serial (spec 10 §5), so
-	// there it runs to completion before any group starts.
+	// The families run in two serial groups, each on a space of its own, beside
+	// the path groups. Group A authors only its own artifacts; group B bends
+	// space-wide state (space.yaml, branch protection, the write floor), which
+	// is why it cannot share a space with A (audits/p4-family-mutations.md).
+	// Until 2026-10-30 they ran as ONE serial subtest, and every parallel group
+	// waited for it: ~500 s idle, ~14 min under load, which put the tier past
+	// its 20-minute hang ceiling twice in a row. Registered FIRST so each takes
+	// one of `go test -parallel`'s slots as soon as the parallel phase opens,
+	// rather than queueing behind a group. One Run collects both: the report
+	// and the D-7 marker are emitted once, from the cleanup registered at the
+	// end of this function, after every subtest has finished.
+	// A2A_LOGIC_PATH_SPACES=1 keeps the whole tier serial (spec 10 §5): one
+	// group, every family, on the one family space, inline and first.
 	familiesQueued := time.Since(start)
 	stages.Mark("setup", "end")
-	t.Run("family-matrix", func(t *testing.T) {
-		if pathSpaces > 1 {
-			t.Parallel()
+	familyRun := NewRunFor(logicOrg, logicRepo, Catalogue())
+	familyRun.Tier = TierLogic
+	familyRun.Preflight = h.Pre
+	if pathSpaces > 1 {
+		groupA, groupB := logicFamilyGroups()
+		groupBHarness, groupBCleanup, groupBErr := newLogicHarness(ctx, t)
+		t.Cleanup(func() {
+			if cleanupErr := groupBCleanup(); cleanupErr != nil {
+				t.Errorf("logic harness (family group B) cleanup failed: %v", cleanupErr)
+			}
+		})
+		if groupBErr != nil {
+			t.Fatalf("newLogicHarness (family group B): %v", groupBErr)
 		}
-		stages.Mark("family-matrix", "start")
-		defer stages.Mark("family-matrix", "end")
-		runFamilyMatrix(ctx, t, h, start, familiesQueued, stages)
-	})
+		t.Run("family-A", func(t *testing.T) {
+			t.Parallel()
+			runFamilyGroup(ctx, t, "family-A", h, familyRun, groupA, stages, start, familiesQueued)
+		})
+		t.Run("family-B", func(t *testing.T) {
+			t.Parallel()
+			runFamilyGroup(ctx, t, "family-B", groupBHarness, familyRun, groupB, stages, start, familiesQueued)
+		})
+	} else {
+		t.Run("family-matrix", func(t *testing.T) {
+			runFamilyGroup(ctx, t, "family-matrix", h, familyRun, allFamilies(), stages, start, familiesQueued)
+		})
+	}
 
 	sem := make(chan struct{}, pathSpaces)
 	runConformancePaths(ctx, t, HostKindGitHub, pathHarnesses, sem, folds, stages)
@@ -391,36 +415,41 @@ func TestLogicMatrix(t *testing.T) {
 	// span from here to the first-registered cleanup above is the harnesses'
 	// teardown, with cleanup:folds nested inside it.
 	t.Cleanup(func() { stages.Mark("cleanup:harnesses", "start") })
+	// Registered AFTER the cleanup:harnesses start mark so it runs BEFORE it
+	// (LIFO): the report is not timed as teardown. It runs once every subtest,
+	// parallel ones included, has finished — both family groups have recorded.
+	t.Cleanup(func() { reportFamilyMatrix(t, familyRun, start) })
 }
 
-// runFamilyMatrix drives the scenario families on h and, only when a cell
-// executed, renders the report, judges its exit code and prints the D-7
-// marker. It runs inside the family-matrix subtest, so a `-run` filter that
-// prunes the subtest emits no marker at all.
-func runFamilyMatrix(ctx context.Context, t *testing.T, h *harness, start time.Time, queued time.Duration, stages *stageRecorder) {
-	run := NewRunFor(logicOrg, logicRepo, Catalogue())
-	run.Tier = TierLogic
-	run.stages = stages
-	run.Preflight = h.Pre
+// runFamilyGroup drives one serial group of families on h, recording into the
+// shared run. The report and the D-7 marker are NOT emitted here: two groups
+// run beside each other, so reportFamilyMatrix emits them once, after both.
+// Its stage Mark names the group; the `family:<name>` rows come from
+// driveFamilies.
+func runFamilyGroup(ctx context.Context, t *testing.T, group string, h *harness, run *Run, families []familyDriver, stages *stageRecorder, start time.Time, queued time.Duration) {
+	stages.Mark(group, "start")
+	defer stages.Mark(group, "end")
+	t.Logf("%s: started %s into the tier (queued at %s)", group,
+		time.Since(start).Round(time.Second), queued.Round(time.Second))
+	driveFamilies(ctx, t, run, h, families, stages)
+}
 
-	// The family matrix is its own subtest (see the call site) so
-	// `-run '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'` prunes it too.
-	// Without this the filter pruned only the path subtests and a "single path" run still paid the whole
-	// matrix's wall clock — which fails the operator's own requirement that
-	// every path be checkable independently.
+// reportFamilyMatrix renders the report and, only when a cell executed, judges
+// its exit code and prints the D-7 marker. It runs once, from the parent's
+// t.Cleanup, so a `-run` filter that prunes every family subtest emits no
+// marker at all.
+func reportFamilyMatrix(t *testing.T, run *Run, start time.Time) {
+	t.Helper()
+	// A `-run` filter that prunes the family subtests must emit NOTHING rather
+	// than something reassuring.
 	//
-	// The naive wrap is unsafe, and that is why the escape below exists: with
+	// The naive report is unsafe, and that is why the escape below exists: with
 	// every family filtered out, `run` collects no results, and the report plus
 	// the D-7 marker would then be computed from a run that never happened —
 	// a digest claiming complete coverage on the strength of zero executed
 	// cells. That is precisely the defect the marker was built to catch (spec
 	// 46's postmortem, a 59-minute live run spent discovering a row that never
-	// ran), so a filtered run must emit NOTHING rather than something
-	// reassuring.
-	t.Logf("family matrix: started %s into the tier (queued at %s)",
-		time.Since(start).Round(time.Second), queued.Round(time.Second))
-	driveFamilies(ctx, t, run, h)
-
+	// ran).
 	report := run.Report()
 	// "Nothing executed" is EVERY cell still at VerdictNotRun, never an empty
 	// slice: NewRunFor pre-seeds one not-run cell per declared row, which is
@@ -435,7 +464,7 @@ func runFamilyMatrix(ctx context.Context, t *testing.T, h *harness, start time.T
 		}
 	}
 	if !executed {
-		t.Log("logic-e2e: the family matrix was not selected by -run, so no cell " +
+		t.Log("logic-e2e: no family group was selected by -run, so no cell " +
 			"executed — deliberately emitting no report and no D-7 marker rather " +
 			"than a digest computed from an empty run. The conformance paths above " +
 			"stand on their own assertions.")
