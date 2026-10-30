@@ -2884,7 +2884,7 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 //
 // h is the SAME harness TestLogicMatrix already built via newLogicHarness —
 // no second rig (D1).
-func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harnesses []*harness, sem chan struct{}, folds *hostFoldLog) {
+func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harnesses []*harness, sem chan struct{}, folds *hostFoldLog, stages *stageRecorder) {
 	t.Helper()
 	if len(harnesses) == 0 {
 		t.Fatal("runConformancePaths: no harness supplied — nothing could be driven, and a green result would mean nothing")
@@ -2965,12 +2965,15 @@ func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harne
 			continue
 		}
 		h := harnesses[i]
-		t.Run(fmt.Sprintf("%s-%d", prefix, i+1), func(t *testing.T) {
+		groupName := fmt.Sprintf("%s-%d", prefix, i+1)
+		t.Run(groupName, func(t *testing.T) {
 			t.Parallel()
 			if sem != nil {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 			}
+			stages.Mark(groupName, "start")
+			defer stages.Mark(groupName, "end")
 			runPathGroup(ctx, t, kind, h, ids, folds)
 		})
 	}

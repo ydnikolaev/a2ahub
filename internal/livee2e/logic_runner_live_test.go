@@ -47,6 +47,19 @@ func TestLogicMatrix(t *testing.T) {
 	start := time.Now()
 	ctx := t.Context()
 
+	// Stage timeline and spawn counts (release-speed P1). stdout is the D-7
+	// marker's channel, which -v keeps. Registered FIRST so it runs LAST
+	// (cleanups are LIFO): after every harness and the fold comparison.
+	stages := newStageRecorder(start, time.Now, os.Stdout)
+	stages.Mark("setup", "start")
+	spawns.Reset()
+	t.Cleanup(func() {
+		stages.Mark("cleanup:harnesses", "end")
+		for _, line := range spawns.Lines() {
+			fmt.Println(line)
+		}
+	})
+
 	h, cleanup, err := newLogicHarness(ctx, t)
 	// t.Cleanup, not defer: the family matrix below is a parallel subtest, and
 	// a deferred cleanup would delete its workspace before it starts (the same
@@ -225,6 +238,8 @@ func TestLogicMatrix(t *testing.T) {
 	// projections, and a deferred call here would run before they exist.
 	folds := newHostFoldLog()
 	t.Cleanup(func() {
+		stages.Mark("cleanup:folds", "start")
+		defer stages.Mark("cleanup:folds", "end")
 		divergences, oneHostOnly := folds.compare()
 		for _, id := range oneHostOnly {
 			t.Logf("host fold comparison: path %q ran on one host only, so it was not compared", id)
@@ -243,16 +258,19 @@ func TestLogicMatrix(t *testing.T) {
 	// A2A_LOGIC_PATH_SPACES=1 keeps the whole tier serial (spec 10 §5), so
 	// there it runs to completion before any group starts.
 	familiesQueued := time.Since(start)
+	stages.Mark("setup", "end")
 	t.Run("family-matrix", func(t *testing.T) {
 		if pathSpaces > 1 {
 			t.Parallel()
 		}
-		runFamilyMatrix(ctx, t, h, start, familiesQueued)
+		stages.Mark("family-matrix", "start")
+		defer stages.Mark("family-matrix", "end")
+		runFamilyMatrix(ctx, t, h, start, familiesQueued, stages)
 	})
 
 	sem := make(chan struct{}, pathSpaces)
-	runConformancePaths(ctx, t, HostKindGitHub, pathHarnesses, sem, folds)
-	runConformancePaths(ctx, t, HostKindBareRepo, localHarnesses, sem, folds)
+	runConformancePaths(ctx, t, HostKindGitHub, pathHarnesses, sem, folds, stages)
+	runConformancePaths(ctx, t, HostKindBareRepo, localHarnesses, sem, folds, stages)
 
 	// The confirm-gates family (pathcatalogue_paths.go, Family 16) needs a
 	// local space whose gate policy is `confirm`; every pool space above is
@@ -268,6 +286,8 @@ func TestLogicMatrix(t *testing.T) {
 	}
 	t.Run("local-confirm", func(t *testing.T) {
 		t.Parallel()
+		stages.Mark("local-confirm", "start")
+		defer stages.Mark("local-confirm", "end")
 		runPathGroup(ctx, t, HostKindBareRepo, confirmHarness, confirmSpaceLocalPathIDs(), nil)
 	})
 
@@ -316,6 +336,8 @@ func TestLogicMatrix(t *testing.T) {
 	}
 	t.Run("departed-counterparty", func(t *testing.T) {
 		t.Parallel()
+		stages.Mark("departed-counterparty", "start")
+		defer stages.Mark("departed-counterparty", "end")
 		runDepartedCounterpartyPaths(ctx, t, departedHarness)
 	})
 
@@ -361,17 +383,24 @@ func TestLogicMatrix(t *testing.T) {
 	}
 	t.Run("restricted-classification", func(t *testing.T) {
 		t.Parallel()
+		stages.Mark("restricted-classification", "start")
+		defer stages.Mark("restricted-classification", "end")
 		runClassificationBilateralPaths(ctx, t, classificationHarness)
 	})
+	// Registered LAST, so it runs FIRST once every subtest has finished: the
+	// span from here to the first-registered cleanup above is the harnesses'
+	// teardown, with cleanup:folds nested inside it.
+	t.Cleanup(func() { stages.Mark("cleanup:harnesses", "start") })
 }
 
 // runFamilyMatrix drives the scenario families on h and, only when a cell
 // executed, renders the report, judges its exit code and prints the D-7
 // marker. It runs inside the family-matrix subtest, so a `-run` filter that
 // prunes the subtest emits no marker at all.
-func runFamilyMatrix(ctx context.Context, t *testing.T, h *harness, start time.Time, queued time.Duration) {
+func runFamilyMatrix(ctx context.Context, t *testing.T, h *harness, start time.Time, queued time.Duration, stages *stageRecorder) {
 	run := NewRunFor(logicOrg, logicRepo, Catalogue())
 	run.Tier = TierLogic
+	run.stages = stages
 	run.Preflight = h.Pre
 
 	// The family matrix is its own subtest (see the call site) so

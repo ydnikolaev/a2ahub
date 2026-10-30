@@ -197,11 +197,17 @@ configure_go_cache() {
 # them. `""` when the identity could not be computed, which is honest and is
 # never equal to a real one, so the guard below cannot fire on it.
 append_telemetry() {
-  local gate="$1" verdict="$2" duration_ms="$3" at
+  local gate="$1" verdict="$2" duration_ms="$3" sink="${4:-$VERIFY_ROOT/telemetry.jsonl}" at
   at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   printf '{"gate":"%s","verdict":"%s","duration_ms":%s,"mode":"%s","at":"%s","tree":"%s"}\n' \
-    "$gate" "$verdict" "$duration_ms" "$MODE" "$at" "${RUN_TREE:-}" >>"$VERIFY_ROOT/telemetry.jsonl"
+    "$gate" "$verdict" "$duration_ms" "$MODE" "$at" "${RUN_TREE:-}" >>"$sink"
 }
+
+# The optional fourth argument above is the SECOND SINK (release-speed P1 T1):
+# stage and spawn rows go to stages.jsonl, never to telemetry.jsonl, because
+# ci-parity's telemetry_report counts every "gate" row in telemetry.jsonl as a
+# verify.sh phase (the receipt's verify_phases). Same row shape, other file.
+stages_sink() { printf '%s\n' "$VERIFY_ROOT/stages.jsonl"; }
 
 # working_tree_delta prints every path this working tree has changed against
 # HEAD — staged, unstaged and untracked — one per line.
@@ -329,13 +335,16 @@ run_phase() {
 }
 
 trim_telemetry() {
-  local telemetry="$VERIFY_ROOT/telemetry.jsonl" tmp lines
-  [ -f "$telemetry" ] || return 0
-  lines="$(wc -l <"$telemetry" | tr -d ' ')"
-  [ "$lines" -le "$TELEMETRY_LIMIT" ] && return 0
-  tmp="$VERIFY_ROOT/.telemetry.trim.$$"
-  tail -n "$TELEMETRY_LIMIT" "$telemetry" >"$tmp"
-  mv "$tmp" "$telemetry"
+  local telemetry tmp lines
+  for telemetry in "$VERIFY_ROOT/telemetry.jsonl" "$VERIFY_ROOT/stages.jsonl"; do
+    [ -f "$telemetry" ] || continue
+    lines="$(wc -l <"$telemetry" | tr -d ' ')"
+    [ "$lines" -le "$TELEMETRY_LIMIT" ] && continue
+    tmp="$VERIFY_ROOT/.telemetry.trim.$$"
+    tail -n "$TELEMETRY_LIMIT" "$telemetry" >"$tmp"
+    mv "$tmp" "$telemetry"
+  done
+  return 0
 }
 
 bound_accelerators() {
@@ -650,12 +659,27 @@ run_go_tests() {
   go test ./... -race -covermode=atomic -coverprofile=coverage.out -count=1
 }
 
-run_scoped_tests() {
-  local args=(-race "-count=$SCOPED_TEST_COUNT")
+# scoped_test_args fills SCOPED_ARGS with the flags run_scoped_tests passes.
+# Unset knobs leave the argv byte-identical to what it was before they existed.
+scoped_test_args() {
+  SCOPED_ARGS=(-race "-count=$SCOPED_TEST_COUNT")
   if [ -n "${A2A_VERIFY_TEST_RUN:-}" ]; then
-    args+=(-run "$A2A_VERIFY_TEST_RUN")
+    SCOPED_ARGS+=(-run "$A2A_VERIFY_TEST_RUN")
   fi
-  go test "${SCOPED_PACKAGES[@]}" "${args[@]}"
+  # release-speed P1 T0: let a coder see `--- PASS:` and build the livee2e tag
+  # through the owned environment instead of a bare `go test`.
+  if [ "${A2A_VERIFY_TEST_VERBOSE:-}" = 1 ]; then
+    SCOPED_ARGS+=(-v)
+  fi
+  if [ -n "${A2A_VERIFY_TEST_TAGS:-}" ]; then
+    SCOPED_ARGS+=("-tags=$A2A_VERIFY_TEST_TAGS")
+  fi
+}
+
+run_scoped_tests() {
+  local SCOPED_ARGS
+  scoped_test_args
+  go test "${SCOPED_PACKAGES[@]}" "${SCOPED_ARGS[@]}"
 }
 
 validate_scoped_packages() {
@@ -663,6 +687,13 @@ validate_scoped_packages() {
   case "$SCOPED_TEST_COUNT" in
     ''|*[!0-9]*|0)
       fail "A2A_VERIFY_TEST_COUNT must be a positive integer (got $SCOPED_TEST_COUNT)"
+      return 1
+      ;;
+  esac
+  case "${A2A_VERIFY_TEST_TAGS:-}" in
+    ''|livee2e) ;;
+    *)
+      fail "A2A_VERIFY_TEST_TAGS accepts only livee2e (got $A2A_VERIFY_TEST_TAGS)"
       return 1
       ;;
   esac
@@ -754,7 +785,63 @@ run_logic_tests() {
   # credentials, and it calls run.Abort rather than t.Skip when they are absent,
   # so it cannot be trusted to exclude itself. Everything else in the tag is by
   # definition offline-capable or it would not have passed this measurement.
-  go test ./internal/livee2e/... -tags=livee2e -race -v -skip '^TestLiveMatrix$' -count=1 -timeout 20m
+  #
+  # The transcript is kept (release-speed P1 T2) so logic_stage_rows can turn
+  # its `logic-stage:` and `logic-spawns:` lines into stages.jsonl rows. stdout
+  # only, through tee, so the D-7 marker still reaches the caller's stdout.
+  # pipefail is on, so the pipeline's status is go test's, not tee's; run_phase
+  # calls this inside `if`, so `set -e` does not abort before the rows are
+  # written on a red run.
+  local log rc=0
+  log="$VERIFY_ROOT/.logic-e2e.$$.log"
+  go test ./internal/livee2e/... -tags=livee2e -race -v -skip '^TestLiveMatrix$' -count=1 -timeout 20m | tee "$log" || rc=$?
+  logic_stage_rows "$log"
+  rm -f "$log"
+  return "$rc"
+}
+
+# logic_stage_rows <path> reads a logic-tier transcript and appends to the
+# stages sink (never telemetry.jsonl):
+#   - one row per `logic-stage: <stage> <start|end> +<s>` stage:
+#     gate "logic-e2e:<stage>", duration_ms = end - start, verdict pass when
+#     both edges exist, unmeasured when only start does;
+#   - per `logic-spawns: <verb> n=<c> total=<s> mean=<ms>` line two rows:
+#     gate "logic-spawns:<verb>" (duration_ms = total) and
+#     gate "logic-spawns-n:<verb>" whose duration_ms carries the COUNT.
+# No such line, no row. The sink is read by people and by P3/P4, never by
+# `make lane`'s medians.
+logic_stage_rows() {
+  local log="$1" gate verdict ms sink
+  [ -f "$log" ] || return 0
+  sink="$(stages_sink)"
+  while read -r gate verdict ms; do
+    [ -n "$gate" ] || continue
+    append_telemetry "$gate" "$verdict" "$ms" "$sink"
+  done < <(awk '
+    function clean(v) { gsub(/[^A-Za-z0-9_.:<>-]/, "", v); return v }
+    /^logic-stage: / {
+      st = clean($2); edge = $3; off = $4; sub(/^\+/, "", off)
+      if (st == "" || (edge != "start" && edge != "end") || off !~ /^[0-9]+(\.[0-9]+)?$/) next
+      if (!(st in seen)) { seen[st] = 1; order[++ns] = st }
+      if (edge == "start" && !(st in s)) s[st] = off + 0
+      if (edge == "end") e[st] = off + 0
+      next
+    }
+    /^logic-spawns: / {
+      verb = clean($2); n = $3; tot = $4
+      sub(/^n=/, "", n); sub(/^total=/, "", tot)
+      if (verb == "" || n !~ /^[0-9]+$/ || tot !~ /^[0-9]+(\.[0-9]+)?$/) next
+      printf "logic-spawns:%s pass %d\n", verb, tot * 1000 + 0.5
+      printf "logic-spawns-n:%s pass %d\n", verb, n
+    }
+    END {
+      for (i = 1; i <= ns; i++) {
+        st = order[i]
+        if (!(st in s)) continue
+        if (st in e) printf "logic-e2e:%s pass %d\n", st, (e[st] - s[st]) * 1000 + 0.5
+        else printf "logic-e2e:%s unmeasured 0\n", st
+      }
+    }' "$log")
 }
 
 # phase_is_dispatchable — can run_derived_phase actually execute this name?
@@ -1363,6 +1450,109 @@ run_teeth() {
   ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"
   rm -rf "$rg"
   echo "verify --teeth: the repetition guard refuses a byte-identical tree that already passed, clears when a file already in the delta is EDITED (not renamed), announces its own bypass, never blocks a re-run after a red, never meets a runner, can only refuse or dispatch, and does not record its own refusal as a run — so a straight retry does not slip through every other time."
+
+  # release-speed P1: scoped knobs, the second sink, and the capture.
+  local sa_def sa_v sa_t sa_bad
+  sa_def="$( (unset A2A_VERIFY_TEST_VERBOSE A2A_VERIFY_TEST_TAGS A2A_VERIFY_TEST_RUN; SCOPED_TEST_COUNT=1; scoped_test_args; echo "${SCOPED_ARGS[*]}") )"
+  sa_v="$( (unset A2A_VERIFY_TEST_TAGS A2A_VERIFY_TEST_RUN; A2A_VERIFY_TEST_VERBOSE=1 SCOPED_TEST_COUNT=1; scoped_test_args; echo "${SCOPED_ARGS[*]}") )"
+  sa_t="$( (unset A2A_VERIFY_TEST_VERBOSE A2A_VERIFY_TEST_RUN; A2A_VERIFY_TEST_TAGS=livee2e SCOPED_TEST_COUNT=1; scoped_test_args; echo "${SCOPED_ARGS[*]}") )"
+  if [ "$sa_def" != "-race -count=1" ] || [ "$sa_v" != "-race -count=1 -v" ] || [ "$sa_t" != "-race -count=1 -tags=livee2e" ]; then
+    echo "verify --teeth: FAIL — scoped knobs: default [$sa_def] (want '-race -count=1'), VERBOSE [$sa_v], TAGS [$sa_t]." >&2
+    return 1
+  fi
+  SCOPED_PACKAGES=(./internal/cache/...)
+  set +e
+  sa_bad="$(A2A_VERIFY_TEST_TAGS=other validate_scoped_packages 2>&1)"
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ] || ! grep -q 'A2A_VERIFY_TEST_TAGS accepts only livee2e' <<<"$sa_bad"; then
+    echo "verify --teeth: FAIL — A2A_VERIFY_TEST_TAGS=other must be refused with a named message (rc=$rc): $sa_bad" >&2
+    return 1
+  fi
+
+  local sk="$tmp/sink" fxlog
+  mkdir -p "$sk"
+  fxlog="$sk/fixture.log"
+  printf '%s\n' \
+    'noise line' \
+    'logic-stage: setup start +0.0' \
+    'logic-stage: setup end +2.5' \
+    'logic-stage: family:alpha start +3.0' \
+    'logic-stage: family:alpha end +7.5' \
+    'logic-stage: group-9 start +8.0' \
+    'logic-spawns: propose n=4 total=1.5 mean=375' \
+    'logic-spawns: <none> n=2 total=0.2 mean=100' >"$fxlog"
+  ( VERIFY_ROOT="$sk" MODE=teeth RUN_TREE=""
+    logic_stage_rows "$fxlog" )
+  if [ -e "$sk/telemetry.jsonl" ]; then
+    echo "verify --teeth: FAIL — logic_stage_rows wrote to telemetry.jsonl, which ci-parity counts as phases." >&2
+    return 1
+  fi
+  if ! grep -q '"gate":"logic-e2e:setup","verdict":"pass","duration_ms":2500,' "$sk/stages.jsonl" \
+    || ! grep -q '"gate":"logic-e2e:family:alpha","verdict":"pass","duration_ms":4500,' "$sk/stages.jsonl" \
+    || ! grep -q '"gate":"logic-e2e:group-9","verdict":"unmeasured",' "$sk/stages.jsonl" \
+    || ! grep -q '"gate":"logic-spawns:propose","verdict":"pass","duration_ms":1500,' "$sk/stages.jsonl" \
+    || ! grep -q '"gate":"logic-spawns-n:propose","verdict":"pass","duration_ms":4,' "$sk/stages.jsonl" \
+    || ! grep -q '"gate":"logic-spawns-n:<none>","verdict":"pass","duration_ms":2,' "$sk/stages.jsonl"; then
+    echo "verify --teeth: FAIL — logic_stage_rows rows are wrong:" >&2
+    cat "$sk/stages.jsonl" >&2
+    return 1
+  fi
+  printf 'no stage lines here\n' >"$sk/empty.log"
+  rm -f "$sk/stages.jsonl"
+  ( VERIFY_ROOT="$sk" MODE=teeth RUN_TREE=""
+    logic_stage_rows "$sk/empty.log" )
+  if [ -s "$sk/stages.jsonl" ]; then
+    echo "verify --teeth: FAIL — a transcript with no stage line produced rows." >&2
+    return 1
+  fi
+
+  # Both sinks are trimmed to TELEMETRY_LIMIT.
+  local limit_save="$TELEMETRY_LIMIT" vsave="$VERIFY_ROOT"
+  TELEMETRY_LIMIT=3
+  VERIFY_ROOT="$sk"
+  rm -f "$sk/telemetry.jsonl" "$sk/stages.jsonl"
+  for i in 1 2 3 4 5; do
+    printf 'row%s\n' "$i" >>"$sk/telemetry.jsonl"
+    printf 'row%s\n' "$i" >>"$sk/stages.jsonl"
+  done
+  trim_telemetry
+  TELEMETRY_LIMIT="$limit_save"
+  VERIFY_ROOT="$vsave"
+  if [ "$(wc -l <"$sk/telemetry.jsonl" | tr -d ' ')" -ne 3 ] || [ "$(wc -l <"$sk/stages.jsonl" | tr -d ' ')" -ne 3 ] \
+    || [ "$(head -n1 "$sk/stages.jsonl")" != row3 ]; then
+    echo "verify --teeth: FAIL — trim_telemetry must trim BOTH sinks to the limit, keeping the newest rows." >&2
+    return 1
+  fi
+
+  # Capture: a red go test stays red through tee, the stage lines still reach
+  # stdout and the rows are still written.
+  local cap="$tmp/capture" cap_out cap_rc
+  mkdir -p "$cap/bin" "$cap/work" "$cap/vroot"
+  printf '#!/bin/sh\nprintf "logic-stage: setup start +0.0\\nlogic-stage: setup end +1.5\\n"\nexit 1\n' >"$cap/bin/go"
+  chmod +x "$cap/bin/go"
+  : >"$cap/work/go.mod"
+  set +e
+  cap_out="$( cd "$cap/work" && PATH="$cap/bin:$PATH" VERIFY_ROOT="$cap/vroot" MODE=teeth RUN_TREE="" run_logic_tests )"
+  cap_rc=$?
+  set -e
+  if [ "$cap_rc" -ne 1 ]; then
+    echo "verify --teeth: FAIL — run_logic_tests swallowed go test's exit code through tee (got $cap_rc, want 1)." >&2
+    return 1
+  fi
+  if ! grep -q 'logic-stage: setup end' <<<"$cap_out"; then
+    echo "verify --teeth: FAIL — the transcript no longer reaches stdout through tee: $cap_out" >&2
+    return 1
+  fi
+  if ! grep -q '"gate":"logic-e2e:setup","verdict":"pass","duration_ms":1500,' "$cap/vroot/stages.jsonl" 2>/dev/null; then
+    echo "verify --teeth: FAIL — no stage row was written on a red logic run." >&2
+    return 1
+  fi
+  if ls "$cap/vroot"/.logic-e2e.*.log >/dev/null 2>&1; then
+    echo "verify --teeth: FAIL — the logic transcript was left behind." >&2
+    return 1
+  fi
+  echo "verify --teeth: scoped knobs leave the default argv unchanged and refuse an unknown tag; stage and spawn rows land in stages.jsonl and never telemetry.jsonl; both sinks are trimmed; the logic tier's exit code survives its capture."
 
   echo "verify --teeth: owned root accepted by construction; symlink and foreign residue refused; scoped tests reject stale binaries; target preserved; red status recorded and returned; lane strict mode refuses an empty or misspelled input and stays out of the way of a clean-tree default; a derived phase the runner cannot execute is refused by name rather than dropped, every repo gate is dispatchable so that refusal cannot fire on a working one, and the ship tier is both derived and deferred."
 }

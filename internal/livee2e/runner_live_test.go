@@ -361,7 +361,10 @@ func driveFamilies(ctx context.Context, t *testing.T, run *Run, h *harness) {
 			continue
 		}
 		t.Logf("=== family %s ===", family.name)
-		for _, res := range runFamily(ctx, t, family.name, family.fn, h) {
+		run.stages.Mark("family:"+family.name, "start")
+		familyResults := runFamily(ctx, t, family.name, family.fn, h)
+		run.stages.Mark("family:"+family.name, "end")
+		for _, res := range familyResults {
 			if run.Tier == TierLogic {
 				if tier, ok := rowTiers[scenarioRowID{scenario: res.Scenario, branch: res.Branch}]; ok && tier == TierProvider {
 					res = skippedProviderResult(res,

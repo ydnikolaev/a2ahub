@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
@@ -227,6 +228,11 @@ func (c *checkout) env() []string {
 	return checkoutEnv(c.Token, c.SpaceSlug, c.APIRoot, c.Home)
 }
 
+// spawns counts every short-lived `a2a` spawn Run, RunIn and RunWithAPIRoot
+// make, per verb. TestLogicMatrix resets and prints it; `a2a mcp` and
+// `a2a serve` are long-lived and not counted.
+var spawns spawnCounter
+
 // Run execs the a2a binary in this checkout's directory with args, returning
 // its captured stdout/stderr. err is exec's own error (non-zero exit, exec
 // failure) — callers that need the process's stderr for a message read it
@@ -251,7 +257,9 @@ func (c *checkout) RunIn(ctx context.Context, dir string, args ...string) (stdou
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
+	began := time.Now()
 	runErr := cmd.Run()
+	spawns.Add(args, time.Since(began))
 	return out.String(), errBuf.String(), runErr
 }
 
@@ -286,7 +294,9 @@ func (c *checkout) RunWithAPIRoot(ctx context.Context, apiRoot string, args ...s
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
+	began := time.Now()
 	runErr := cmd.Run()
+	spawns.Add(args, time.Since(began))
 	return out.String(), errBuf.String(), runErr
 }
 

@@ -169,6 +169,10 @@ type Run struct {
 	order   []cellKey
 	results map[cellKey]*Result
 	aborted string
+
+	// stages stamps the logic tier's per-family timeline. Nil (the live tier's
+	// value) makes every Mark a no-op.
+	stages *stageRecorder
 }
 
 // NewRun declares the matrix as the cross product of scenarios × systems ×
