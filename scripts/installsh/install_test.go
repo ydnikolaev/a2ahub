@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -80,11 +81,25 @@ func newSandbox(t *testing.T) sandbox {
 	t.Helper()
 	home := t.TempDir()
 	installDir := t.TempDir()
-	stubPath := filepath.Join(installDir, "a2a")
-	if err := os.WriteFile(stubPath, []byte(a2aStub), 0o755); err != nil {
-		t.Fatalf("write a2a stub: %v", err)
-	}
+	writeStub(t, filepath.Join(installDir, "a2a"), a2aStub)
 	return sandbox{home: home, installDir: installDir}
+}
+
+// writeStub writes an executable that a later exec can always start. A plain
+// os.WriteFile leaves a window: a parallel test forking while the write fd is
+// open hands that fd to its child until the child's own exec closes it, and
+// executing a file some process holds open for write fails with ETXTBSY
+// (golang/go#22315). install.sh runs the stub best-effort and discards stderr,
+// so the race read as a shell setup that silently did nothing, in one run of
+// three under -count=400 -parallel 32. Forks take ForkLock for writing, so
+// holding it for reading across open-write-close leaves no fork in the window.
+func writeStub(t *testing.T, path, body string) {
+	t.Helper()
+	syscall.ForkLock.RLock()
+	defer syscall.ForkLock.RUnlock()
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatalf("write stub %s: %v", path, err)
+	}
 }
 
 // runResult captures one setup_shell invocation.
@@ -378,9 +393,7 @@ func TestInstallLibMode_NoNetworkNoInstall(t *testing.T) {
 	tripwire := filepath.Join(tripwireDir, "curl-was-called")
 
 	curlStub := "#!/bin/sh\ntouch '" + tripwire + "'\nexit 1\n"
-	if err := os.WriteFile(filepath.Join(stubDir, "curl"), []byte(curlStub), 0o755); err != nil {
-		t.Fatalf("write curl stub: %v", err)
-	}
+	writeStub(t, filepath.Join(stubDir, "curl"), curlStub)
 
 	env := map[string]string{
 		"PATH": stubDir + ":/usr/bin:/bin",

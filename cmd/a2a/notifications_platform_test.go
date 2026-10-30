@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/notification"
@@ -143,7 +144,12 @@ func TestVSCodeInstallFailureRestoresExactOwnedPreviousVSIX(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
 	codePath := filepath.Join(t.TempDir(), "code")
-	if err := os.WriteFile(codePath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+	// reason: a sibling's fork while the write fd is open makes this stub's exec
+	// fail with ETXTBSY (golang/go#22315); forks hold ForkLock for writing.
+	syscall.ForkLock.RLock()
+	err := os.WriteFile(codePath, []byte("#!/bin/sh\nexit 0\n"), 0o700)
+	syscall.ForkLock.RUnlock()
+	if err != nil {
 		t.Fatal(err)
 	}
 	config := filepath.Join(home, "config.yaml")

@@ -78,6 +78,13 @@ EOF
     printf '%s
 ' "$out" >&2; fail=1
   fi
+  # (a2) and it must carry the test's own message: a flake is the one failure
+  # nobody can reproduce on demand, so the text is gone if this run drops it.
+  if ! grep -q "second run fails" <<<"$out"; then
+    echo "check-flaky-tests --teeth: FAIL — an unlisted flake must print the failing test's own output" >&2
+    printf '%s
+' "$out" >&2; fail=1
+  fi
 
   # (b) a LISTED entry that no longer flakes must ALSO red, or the list never drains.
   local tmplist="$d/list.txt"
@@ -115,7 +122,7 @@ flakyprobe/NeverFlakes
 
   rm -rf "$d"; rm -f "${TMPDIR:-/tmp}/flakyprobe.marker"
   if [ "$fail" -ne 0 ]; then echo "check-flaky-tests --teeth: FAIL" >&2; exit 1; fi
-  echo "check-flaky-tests --teeth: an unlisted flake reds by name; an absent list is UNMEASURED; a listed entry that stopped flaking reds so the list drains."
+  echo "check-flaky-tests --teeth: an unlisted flake reds by name with its own output; an absent list is UNMEASURED; a listed entry that stopped flaking reds so the list drains."
 }
 
 if [ "${1:-}" = "--teeth" ]; then run_teeth; exit 0; fi
@@ -166,6 +173,10 @@ while IFS= read -r name; do
 done <<<"$failed"
 
 if [ -n "$unlisted" ]; then
+  # The run's output file dies with this script and a flake rarely repeats on
+  # demand, so the failing blocks are printed here or lost. Capped: a package
+  # that fails wholesale must not bury the verdict below.
+  awk '/^--- FAIL: /{on=1; print; next} on && /^[[:space:]]/{print; next} {on=0}' "$out" | awk 'NR<=200'
   gate_fail "these tests did not agree with themselves across $COUNT runs and are NOT in scripts/lib/flaky-tests.txt:$unlisted"
   echo "fix the test, or add it to the list WITH a dated reason. A single run would have shown a green here — that is the whole reason this scan exists."
   gate_summary flaky-tests; exit $?
