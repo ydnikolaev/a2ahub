@@ -72,7 +72,7 @@ export GOTOOLCHAIN := go$(A2A_GO_VERSION)
 endif
 endif
 
-.PHONY: site-check site-check-teeth publish-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates pipefail-early-exit loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry release-carry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+.PHONY: site-check site-check-teeth publish-teeth flaky-scan check check-docker lane-run-docker test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates pipefail-early-exit loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry release-carry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -752,6 +752,16 @@ ci-parity-audit: ## Refuse when a CI command is executed by no local step and ca
 
 ci-parity-docker: ## The same suite under ubuntu + GNU userland, where every non-notifier CI job actually runs.
 	@bash scripts/ci-parity-docker.sh
+
+# lane-inputs: NEVER
+# lane-reason: it runs the lane itself in another place, so no diff may select it
+lane-run-docker: ## The commit lane in the parity container: same phases, 356 s against 1006 s for one Go edit (release-speed Q6). Main checkout only; `make deliver` accepts its verdict.
+	@bash scripts/ci-parity-docker.sh make lane-run
+
+# lane-inputs: NEVER
+# lane-reason: it runs the ceiling itself in another place, so no diff may select it
+check-docker: ## `make check` in the parity container (release-speed Q6). Main checkout only; `make deliver` accepts its verdict.
+	@bash scripts/ci-parity-docker.sh make check
 
 # lane-inputs: NEVER
 # lane-reason: it fetches `public/main` to define the overlay it judges, so it

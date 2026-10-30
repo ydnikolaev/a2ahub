@@ -24,6 +24,10 @@
 #
 # Telemetry is read from the MAIN checkout only (spec 01 §11): a worktree is
 # refused outright, so its records never matter and a rebase cannot fake them.
+# Both of its sinks count: the host's, and the parity container's, which a
+# `make lane-run-docker` or `make check-docker` writes. The identity is a hash
+# of git objects, so it names the same bytes on either side, and a container
+# pass is what a release receipt already rests on (R-1).
 #
 # The identity formula is NOT defined here: scripts/lib/tree-identity.sh is
 # sourced, the same file verify.sh sources, so the two cannot drift.
@@ -37,6 +41,7 @@ ROOT="$(cd "${A2A_DELIVER_ROOT:-$REPO}" && pwd -P)"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/tree-identity.sh"
 
 TELEMETRY="$ROOT/.a2a/cache/verify/telemetry.jsonl"
+CONTAINER_TELEMETRY="$ROOT/.a2a/cache/parity-container/telemetry.jsonl"
 RECEIPTS="$ROOT/.a2a/release-gate"
 WORK="$(mktemp -d)"
 STAGED=""
@@ -285,9 +290,11 @@ id_of() {
 # Pass records, one file per mode. A pass is `"gate":"run:<mode>","verdict":"pass"`.
 for m in full lane-run; do
   : >"$WORK/pass.$m"
-  if [ -f "$TELEMETRY" ]; then
-    grep -F "\"gate\":\"run:$m\",\"verdict\":\"pass\"" "$TELEMETRY" >"$WORK/pass.$m" || true
-  fi
+  for sink in "$TELEMETRY" "$CONTAINER_TELEMETRY"; do
+    if [ -f "$sink" ]; then
+      grep -F "\"gate\":\"run:$m\",\"verdict\":\"pass\"" "$sink" >>"$WORK/pass.$m" || true
+    fi
+  done
 done
 # <mode> <identity>. An empty identity (git could not compute one) proves nothing,
 # and must not match a record that also lacks one.

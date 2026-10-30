@@ -237,6 +237,7 @@ exec docker run --rm -i \
   --label dev.a2ahub.owner=a2ahub \
   --label dev.a2ahub.stack=test \
   ${HEAVY_RUN_CORES:+--cpus "$HEAVY_RUN_CORES" -e "GOMAXPROCS=$HEAVY_RUN_CORES"} \
+  ${LANE_FILES:+-e LANE_FILES} \
   ${PARITY_TTY:+-t} \
   -v "$ROOT:/src:ro" \
   -v "$WORK_VOLUME":/work \
