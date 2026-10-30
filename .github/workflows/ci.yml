@@ -13,7 +13,7 @@
 name: CI
 
 # A bare `push:` fires on EVERY branch and EVERY tag. Cutting a release pushes
-# the candidate branch, then main, then the tag — three pushes of ONE commit —
+# a candidate branch, then main, then the tag — three pushes of ONE commit —
 # so the full ceiling ran three times on the same SHA, twice for nothing. On
 # 2026-08-12 that was seven concurrent runs against one commit across the two
 # repos, and the compute is not free.
@@ -23,10 +23,11 @@ name: CI
 # PREMISE NO LONGER HOLDS and the tags are back; see "TAGS ARE BACK" below,
 # which is the same fact read after K4 moved the ceiling off push.
 #
-# The candidate branches stay IN, deliberately. That run happens BEFORE
-# promotion, which is the only moment its verdict can still stop a release —
-# and it earned its keep the same day, catching a stamp defect that every local
-# gate had passed.
+# A candidate branch runs NO CI (R-1 / D-041, release-speed P6). The local
+# `make release-check` is the one judge and runs before anything is pushed,
+# including the public projection; promotion reads no CI verdict. Public CI
+# runs after the push, as information: the lane on the `main` push and the
+# ceiling on the tag. A red there is a fix release, never a block.
 #
 # The weekly `schedule` is the SAFETY NET for the path gate below, and it is
 # deliberately singular. A filter that silently never fires looks exactly like
@@ -45,7 +46,6 @@ on:
   push:
     branches:
       - main
-      - 'a2a-candidate/**'
     tags:
       - 'v*.*.*'
   pull_request:
@@ -86,7 +86,7 @@ on:
 #
 # The group is scoped by `github.workflow`, which is what keeps `Release` out
 # of it: cancelling a half-finished goreleaser or Sigstore run is worse than
-# paying for it. A tag or candidate ref is unique, so nothing cancels there
+# paying for it. A tag ref is unique, so nothing cancels there
 # either.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -112,13 +112,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      # AC11's lookup reads this repository's own run list to ask whether the
-      # pushed SHA already has a successful CI run on an `a2a-candidate/**`
-      # ref. Spec 13 AC11 names this grant as part of the change; the
-      # workflow-level `permissions:` above is `contents: read` alone, and an
-      # unreadable run list would answer `false` and buy everything — safe,
-      # but it would buy everything forever and look like the gate working.
-      actions: read
     outputs:
       macos: ${{ steps.resolve.outputs.macos }}
       web: ${{ steps.resolve.outputs.web }}
@@ -126,10 +119,6 @@ jobs:
       resolved: ${{ steps.resolve.outputs.resolved }}
       files: ${{ steps.resolve.outputs.files }}
       tier: ${{ steps.resolve.outputs.tier }}
-      # Reported for the run list to be readable, not gated on: the three
-      # `if:` conditions below stay single comparisons against `tier`/`macos`
-      # (AC16), because `resolve_tier` has already folded this answer in.
-      proven: ${{ steps.resolve.outputs.proven }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -191,18 +180,11 @@ jobs:
   # spelled out in `${{ }}` (AC16). What it resolves to, and why, is
   # documented beside the code that decides it.
   #
-  # The old condition this replaces skipped `check` on a push to public main
-  # because a promotion re-ran the ceiling on a SHA the candidate had already
-  # proven. That case is subsumed: a push to main now buys the lane in EITHER
-  # repository, and the candidate ref still buys the ceiling.
-  #
-  # AC11 then subsumes the SUBSUMPTION, per-SHA instead of per-branch: when the
-  # pushed SHA already carries a successful candidate run, `tier` resolves to
-  # `none` and this condition is false without needing a second clause. A push
-  # to main that has NO such run — a feedback squash-merge, a direct admin
-  # push, eight of 23 head SHAs in the measured window — is untouched and still
-  # buys its lane. `changes` itself still bills, which is the irreducible price
-  # of asking the question.
+  # A push to main buys the lane in EITHER repository, and the tag buys the
+  # ceiling. No candidate ref runs CI (R-1 / D-041) and no proof lookup turns a
+  # run into `none`: the local release-check judged the tree before the push,
+  # and this run is information after it. `changes` itself still bills, which
+  # is the irreducible price of asking the question.
   check:
     # timeout-minutes: measured basis in scripts/lib/job-timeouts.tsv (P13 AC3).
     #
@@ -326,10 +308,11 @@ jobs:
       #
       # That is exactly what happened at f2a0b54e (run 31682736134): the
       # candidate ref was GREEN on the identical tree and `main` was RED. This
-      # job is the right place to close it because a CANDIDATE REF CARRIES THE
-      # PUBLIC TREE — it is the last moment a public-projection defect can be
-      # caught before it is the published repository's problem, and the same
-      # moment the strip defect at v0.19.9 was caught.
+      # job is the right place to close it on the public side because a
+      # PUBLIC CHECKOUT CARRIES THE PUBLIC TREE. Since R-1 / D-041 the
+      # pre-push judgement of that tree is `make projection`, a member of the
+      # local `make release-check`; this job is the after-the-push
+      # information, and a red here is a fix release.
       #
       # COST: ~136 s, ceiling runs only — `make lane`'s own measured median for
       # the `harness-teeth` phase, which is this exact recipe (`verify.sh:621`

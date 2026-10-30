@@ -252,11 +252,10 @@ excused_reason() { # $1 = command
     #     — which is `go test <pkg>`, a strict subset of go-test's `./...`.
     #   * Two of the others are EXECUTES members in their own right:
     #     `make harness-check` (harness-teeth) and `npm run check:quality`
-    #     (web-quality's own first half). The third, projection, is no longer a
-    #     member of this suite (fast-loop P4): its commands are run by the
-    #     PUBLIC candidate's own CI before promotion, which
-    #     `publish-to-public.sh --promote-candidate` requires; the suite keeps
-    #     only `check-projection --template-only`, its sub-second first half.
+    #     (web-quality's own first half). The third, projection, is a member
+    #     of this suite again (R-1 / D-041, release-speed P6): `make projection`
+    #     runs the template rehearsal and then CI's own `check` inside a public
+    #     projection, so the one local judge covers it.
     #   * What the lane adds beyond the phases is the DERIVATION REFUSAL — a
     #     changed path no gate claims. `make lane` is exactly that, derive-only,
     #     and it is an EXECUTES member below.
@@ -275,7 +274,7 @@ excused_reason() { # $1 = command
     # it can prove is that no phase goes unrun, which is what the list above
     # does.
     "make lane-run-strict")
-      echo "every phase it can derive is run by the suite around it — MODE=full covers all of them except harness-teeth and web-quality, each an EXECUTES member of its own ('make harness-check', 'npm run check:quality'), and projection, whose commands the public candidate's own CI runs and --promote-candidate requires (release runbook steps 11-13; the suite keeps 'check-projection --template-only'), and the derivation refusal it adds is 'make lane', also below. Re-running it re-paid a whole ceiling per userland." ;;
+      echo "every phase it can derive is run by the suite around it — MODE=full covers all of them except harness-teeth and web-quality, each an EXECUTES member of its own ('make harness-check', 'npm run check:quality'), and projection, an EXECUTES member of its own ('make projection', R-1 / D-041), and the derivation refusal it adds is 'make lane', also below. Re-running it re-paid a whole ceiling per userland." ;;
 
     # Group 7 — shell scaffolding (set/exit lines with no check of their own).
     "set -e" | "set +e" | "set -euo pipefail" | "set -o pipefail" \
@@ -897,14 +896,13 @@ a2a_validate_dogfood_step() (
 #     argue. That is the same class as the marker bug this file's extractor
 #     header records, one level up.)
 #  2. `make lane` JOINED, because it is what the lane was silently
-#     contributing (the derivation refusal). The projection ceiling that this
-#     item used to add beside it left the suite in fast-loop P4: that gate
-#     exists to catch the `_harness-check` Error 127 class, and it is now run
-#     where that class actually bites, by the PUBLIC candidate's own CI, which
-#     `publish-to-public.sh --promote-candidate` requires green and whose tree
-#     the same script proves identical to the judged commit's projection. What
-#     stays here is the part that is cheap and needs no candidate: the template
-#     rehearsal, `check-projection --template-only`.
+#     contributing (the derivation refusal). `make projection` is a member
+#     again (R-1 / D-041, release-speed P6; it left in fast-loop P4 when the
+#     public candidate's CI was the judge): that gate catches the
+#     `_harness-check` Error 127 class, and under R-1 the local release-check
+#     is the ONE judge, so it must run before the push. `make projection` runs
+#     the template rehearsal first, fail-fast, so a separate
+#     `check-projection --template-only` member would run it twice.
 #  3. `npm run check` became `npm run check:quality`, its own superset
 #     (`check && check:a11y && check:lighthouse`). Accessibility and Lighthouse
 #     were in the ship gate BY ACCIDENT until today: no workflow runs
@@ -932,10 +930,11 @@ suite_members() {
   # it. The 2>/dev/null went with it — a swallowed git error is how the empty
   # set arrives unannounced.
   run_step "make lane"                                 env A2A_VERIFY_REQUIRE_NONEMPTY=true LANE_FILES="${LANE_FILES:-$(git diff --name-only HEAD~1 | tr '\n' ' ')}" make lane
-  # The projection ceiling is NOT a member any more (fast-loop P4): the public
-  # candidate's CI runs those commands and promotion requires it. What remains
-  # is the publisher's template pin/floor rehearsal, sub-second and offline.
-  run_step "check-projection --template-only"          bash scripts/check-projection.sh --template-only
+  # The projection is a member again (R-1 / D-041, release-speed P6): the local
+  # release-check is the one judge and promotion reads no CI verdict. `make
+  # projection` runs the template pin/floor rehearsal first, fail-fast, then CI's
+  # own `check` inside a public projection, so no separate rehearsal member.
+  run_step "make projection"                           make projection
   run_step "make vulncheck"                            make vulncheck
   # THE ONLY MEMBER HERE THAT CI DOES NOT RUN, and it is deliberate.
   #
@@ -2558,36 +2557,46 @@ EOF
   else
     printf 'ci-parity --teeth: T25 — dirty-tree refusal, then the fast pass, then the container: the pass judges the tree the receipt will name, and its refusal returns rather than falling through\n'
   fi
-  # T26 — THE PROJECTION CEILING LEFT THE SUITE, AND THE REHEARSAL STAYED
-  # (fast-loop P4). The public candidate's own CI runs projection's commands and
-  # `publish-to-public.sh --promote-candidate` requires it; the suite keeps only
-  # the publisher's sub-second template rehearsal. Two halves, because each
-  # alone misses a defect: the member list must carry the rehearsal (else the
-  # template pin/floor projection is unjudged before the publisher runs), and a
-  # runbook step that still names `make projection` as run by this gate must red
-  # (else a step could claim a run that never happens).
+  # T26 — THE PROJECTION IS A MEMBER AGAIN (R-1 / D-041, release-speed P6).
+  # The local release-check is the one judge; promotion reads no CI verdict. Two
+  # halves, because each alone misses a defect: the member list must carry
+  # `make projection` exactly once and no separate `check-projection
+  # --template-only` (#once-per-gate: `make projection` runs the rehearsal
+  # first), and the runbook audit must accept a step naming `make projection`
+  # while still refusing an unknown release step (the guard against a loosened
+  # audit).
   local members26 out26 rc26=0 d26
   members26="$(list_members)"
-  if ! printf '%s\n' "$members26" | grep -qF 'check-projection --template-only'; then
-    printf 'ci-parity --teeth: FAIL — T26: the suite must run check-projection --template-only; members were:\n%s\n' "$members26" >&2
+  if ! printf '%s\n' "$members26" | grep -qE '(^|[[:space:]])make projection$'; then
+    printf 'ci-parity --teeth: FAIL — T26: the suite must run make projection (R-1 / D-041: the local release-check is the one judge); members were:\n%s\n' "$members26" >&2
     teeth_fail=1
-  elif printf '%s\n' "$members26" | grep -qE '(^|[[:space:]])make projection$'; then
-    printf 'ci-parity --teeth: FAIL — T26: make projection is back in the suite; the public candidate'"'"'s CI is where it runs now\n' >&2
+  elif printf '%s\n' "$members26" | grep -qF 'check-projection --template-only'; then
+    printf 'ci-parity --teeth: FAIL — T26: a separate check-projection --template-only member runs the rehearsal twice (R-1 / D-041; make projection runs it first)\n' >&2
     teeth_fail=1
   else
     d26="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
     cat > "$d26/projection.md" <<'T26EOF'
 ### Phase 1 — prepare
 
-1. **`make projection`** — a step claiming a ceiling the gate no longer runs.
+1. **`make projection`** — a step the composed gate executes.
+T26EOF
+    cat > "$d26/unknown.md" <<'T26EOF'
+### Phase 1 — prepare
+
+1. **`make no-such-release-gate`** — a step no member covers.
 T26EOF
     out26="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d26/projection.md" 2>&1)" || rc26=$?
+    local outu26 rcu26=0
+    outu26="$(bash "$ROOT/scripts/ci-parity.sh" --audit-runbook "$d26/unknown.md" 2>&1)" || rcu26=$?
     rm -rf "$d26"
-    if [ "$rc26" -eq 0 ] || ! printf '%s\n' "$out26" | grep -qF 'the composed release gate runs nothing that covers it'; then
-      printf 'ci-parity --teeth: FAIL — T26: a runbook step naming make projection must red, the suite no longer runs it. Got rc=%s\n%s\n' "$rc26" "$out26" >&2
+    if [ "$rc26" -ne 0 ] || ! printf '%s\n' "$out26" | grep -qF 'an EXECUTES member of the composed suite'; then
+      printf 'ci-parity --teeth: FAIL — T26: a runbook step naming make projection must pass as an EXECUTES member (R-1 / D-041). Got rc=%s\n%s\n' "$rc26" "$out26" >&2
+      teeth_fail=1
+    elif [ "$rcu26" -eq 0 ] || ! printf '%s\n' "$outu26" | grep -qF 'the composed release gate runs nothing that covers it'; then
+      printf 'ci-parity --teeth: FAIL — T26: a step naming make no-such-release-gate must still red; the audit was loosened. Got rc=%s\n%s\n' "$rcu26" "$outu26" >&2
       teeth_fail=1
     else
-      printf 'ci-parity --teeth: T26 — the suite carries the template rehearsal, not the projection ceiling, and a step claiming the ceiling is refused by name\n'
+      printf 'ci-parity --teeth: T26 — the suite carries make projection once (R-1 / D-041), a step naming it passes as an EXECUTES member, and an unknown step is still refused by name\n'
     fi
   fi
 
