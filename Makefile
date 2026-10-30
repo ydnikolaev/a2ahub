@@ -72,7 +72,7 @@ export GOTOOLCHAIN := go$(A2A_GO_VERSION)
 endif
 endif
 
-.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+.PHONY: site-check site-check-teeth publish-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -761,6 +761,19 @@ site-check: ## THE SITE GATE — the derived lane over the overlay diff, gitleak
 	  bash scripts/site-check.sh; \
 	else \
 	  echo "site-check: skip — scripts/site-check.sh absent (public checkout)."; \
+	fi
+
+# The publisher's own self-tests, as a target of their own. Typing the script
+# directly matches the operator's permission rule on it, which guards a real
+# publish and cannot tell a self-test from one: on 2026-10-30 an unattended
+# coder waited 6 h 05 min on that prompt. This recipe passes --teeth and nothing
+# else, so the rule keeps guarding every real publish. Presence-gated: the
+# publisher is private and stripped from a public checkout.
+publish-teeth: ## The publisher's own self-tests (fixture repositories, no publish). Private harness gate, presence-gated.
+	@if [ -f docs/runbooks/publish-to-public.sh ]; then \
+	  bash docs/runbooks/publish-to-public.sh --teeth; \
+	else \
+	  echo "publish-teeth: skip — docs/runbooks/publish-to-public.sh absent (public checkout)."; \
 	fi
 
 site-check-teeth: ## site-check's own self-tests. Private harness gate, presence-gated.
