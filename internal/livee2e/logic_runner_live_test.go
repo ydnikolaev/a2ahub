@@ -152,15 +152,16 @@ func TestLogicMatrix(t *testing.T) {
 	// the serial behaviour exactly, which is the property that makes a
 	// concurrency regression reversible by one constant instead of a revert.
 	//
-	// Capped at 4 rather than NumCPU outright: every path spawns real `a2a`
-	// subprocesses doing real git, so the ceiling is IO and process churn well
-	// before it is cores, and the spec's own §3 warns that the win is "four to
-	// six fold, and the number is to be measured, not claimed".
-	pathSpaces := runtime.NumCPU() / 2
-	if pathSpaces > 4 {
-		pathSpaces = 4
-	}
-	if pathSpaces < 1 {
+	// Eight per host, whatever the core count: this is how finely the catalogue
+	// is cut, not how much runs at once. `go test -parallel` is the only cap (the
+	// groups live under the `paths` wrapper with no semaphore), and it releases
+	// waiting subtests in no order we control, so a long group can start last.
+	// Smaller groups shrink what that costs: replaying the measured per-path
+	// durations of a 6-slot run, the mean makespan is 823 s at four groups per
+	// host and 739 s at eight, for about 1.5 s of setup per extra harness
+	// (release-speed-2026-11 spec 03 section 11).
+	pathSpaces := 8
+	if runtime.NumCPU() < 2 {
 		pathSpaces = 1
 	}
 	if raw := os.Getenv("A2A_LOGIC_PATH_SPACES"); raw != "" {
