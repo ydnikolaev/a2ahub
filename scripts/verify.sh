@@ -478,10 +478,16 @@ repeat_guard() {
   # trade this guard is allowed to make. `ci-parity.sh` exports VERIFY_AGAIN=1
   # for the same reason, one layer up, so every composition is covered whether
   # or not it happens to run under Actions.
+  #
+  # THE IDENTITY IS COMPUTED FIRST, because only the REFUSAL is the runner's to
+  # skip. Returning before it left RUN_TREE empty, and finish() writes no
+  # `run:<mode>` row without one, so nothing in the container ever recorded a
+  # pass and `make deliver` could not accept `make lane-run-docker`: 0 such rows
+  # in 2000, read on 2026-10-30 while a stub-fed test said the seam worked.
+  RUN_TREE="$(run_tree_identity 2>/dev/null || true)"
   if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
     return 0
   fi
-  RUN_TREE="$(run_tree_identity 2>/dev/null || true)"
   [ -n "$RUN_TREE" ] || return 0
 
   local bill last verdict tree when
@@ -1469,6 +1475,14 @@ run_teeth() {
   rgrc=0; rgout="$( set +e; VERIFY_AGAIN="" GITHUB_ACTIONS=true repeat_guard 2>&1 )" || rgrc=$?
   if [ "$rgrc" -ne 0 ] || grep -q 'REFUSING' <<<"$rgout"; then
     echo "verify --teeth: FAIL — P2f: GITHUB_ACTIONS=true must never meet this guard: $rgout" >&2
+    ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
+  fi
+  # A runner skips the refusal and still names its tree, or a pass in the
+  # container leaves no `run:` row for `make deliver` to read.
+  RUN_TREE=""
+  VERIFY_AGAIN="" GITHUB_ACTIONS=true repeat_guard >/dev/null 2>&1 || true
+  if [ -z "$RUN_TREE" ]; then
+    echo "verify --teeth: FAIL — P2f: GITHUB_ACTIONS=true must still compute the run identity" >&2
     ROOT="$save_root"; VERIFY_ROOT="$save_vroot"; MODE="$save_mode"; RUN_TREE="$save_tree"; rm -rf "$rg"; return 1
   fi
 
