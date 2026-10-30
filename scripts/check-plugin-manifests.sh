@@ -198,7 +198,10 @@ canonical_catalog_text() {
 canonical_launch_line() {
   local catalog names
   catalog="$(canonical_catalog_text)"
-  if [ -z "$catalog" ] || ! printf '%s' "$catalog" | grep -q '^## Commands'; then
+  # Here-strings, not `printf | grep -q`: under pipefail grep -q's early exit
+  # SIGPIPEs the producer and reads as "absent" on a loaded host (seen in a
+  # release-speed lane, 2026-10-30; the class spec 09 drains).
+  if [ -z "$catalog" ] || ! grep -q '^## Commands' <<<"$catalog"; then
     return 1
   fi
   names="$(printf '%s\n' "$catalog" | awk '
@@ -211,7 +214,7 @@ canonical_launch_line() {
       print line
     }
   ')"
-  if ! printf '%s\n' "$names" | grep -qxF "mcp"; then
+  if ! grep -qxF "mcp" <<<"$names"; then
     return 1
   fi
   printf '%s\n' "a2a mcp"
