@@ -1,0 +1,20 @@
+
+feedback: v1
+id: fb-20261030-ed79b2
+kind: friction
+severity: minor
+title: a2a wait spends an agent turn on every timeout
+summary: "loops/watch.md step 4 says to re-arm on exit 124. In Claude Code the background Bash re-invokes the session on every exit, so at the 30m default each waiting project spends 48 full-context agent turns a day doing nothing but restarting the wait. A longer --timeout cuts those turns but delays exit 3 by the same amount: per internal/cli/cmd_wait.go exit 3 is decided only after the wait returns, at the deadline, and only if a space's latest observation failed (a space that breaks and recovers inside the window gives 124). So today an agent trades idle turns against how late it learns a space went unread. A shell loop that re-arms on 124 removes the idle turns and works now, but every consumer has to invent it. Follow-up to fb-20261029-3e41f0, which asked for the wait itself."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a wait --timeout 30m
+proposal: "Three asks; 2 and 3 depend on each other. (1) Recipe: give watch.md the harness form that re-arms in the shell, e.g. `while :; do a2a wait --timeout 30m; rc=$?; [ \"$rc\" -eq 124 ] || break; done; echo \"a2a-wait exit $rc\"`, so the agent wakes only on 0 or 1/2/3. (2) Binary: a mode that re-arms internally and exits only on an event or a failure (e.g. --until-event, or a no-deadline value), with the per-poll deadline kept inside. (3) Exit 3 as soon as a space becomes unobservable instead of at the deadline. An early exit 3 is what makes (2) safe: without it a no-deadline wait could sit on a broken space forever."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
