@@ -17,4 +17,11 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: >-
+    Accepted for the backlog. loops/watch.md steps 2 and 4 do tell an agent to
+    re-arm on exit 124 from a fresh background command, so each quiet deadline
+    costs a turn, and the recipe that re-arms in the shell is not written down.
+    Ask 1 (the recipe) is prose and independent of asks 2 and 3. Ask 2 (a wait
+    with no outer deadline) depends on ask 3 (exit 3 as soon as a space goes
+    unobservable), in the order the report gives. Not built in this triage.
+status: accepted

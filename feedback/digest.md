@@ -109,3 +109,7 @@ rows below are the release flip, not a re-triage.
 
 - fb-20261029-3e41f0 (feature -> shipped in v0.27.1): A blocking wait so an agent session hears a counterparty move without polling
 - fb-20261029-52753d (bug -> shipped in v0.27.1): contract check --suite rejects a root $id that is a URN
+
+## 2026-10-30 Triage
+
+- fb-20261030-ed79b2 (friction -> accepted): a2a wait spends an agent turn on every timeout

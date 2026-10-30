@@ -19,3 +19,13 @@ items:
       refs:
         - internal/space/contract_candidate.go
       date: "2026-08-29"
+    - id: fb-20261030-ed79b2
+      kind: friction
+      severity: minor
+      title: a2a wait spends an agent turn on every timeout
+      verdict: accepted
+      route: backlog
+      refs:
+        - skill/a2ahub/loops/watch.md
+        - internal/cli/cmd_wait.go
+      date: "2026-10-30"
