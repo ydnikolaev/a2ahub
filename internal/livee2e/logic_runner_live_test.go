@@ -3,6 +3,7 @@
 package livee2e
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,11 +48,14 @@ func TestLogicMatrix(t *testing.T) {
 	ctx := t.Context()
 
 	h, cleanup, err := newLogicHarness(ctx, t)
-	defer func() {
+	// t.Cleanup, not defer: the family matrix below is a parallel subtest, and
+	// a deferred cleanup would delete its workspace before it starts (the same
+	// red the path harnesses record further down).
+	t.Cleanup(func() {
 		if cleanupErr := cleanup(); cleanupErr != nil {
 			t.Errorf("logic harness cleanup failed: %v", cleanupErr)
 		}
-	}()
+	})
 	if err != nil {
 		t.Fatalf("newLogicHarness: %v", err)
 	}
@@ -230,6 +234,22 @@ func TestLogicMatrix(t *testing.T) {
 		}
 	})
 
+	// The family matrix runs on its own space `h`, so it shares no state with
+	// the path groups and runs beside them. Until 2026-10-30 it ran serially in
+	// this body, and every parallel group waited for it: ~500 s idle, ~14 min
+	// under load, which put the tier past its 20-minute hang ceiling twice in a
+	// row. Registered FIRST so it takes one of `go test -parallel`'s slots as
+	// soon as the parallel phase opens, rather than queueing behind a group.
+	// A2A_LOGIC_PATH_SPACES=1 keeps the whole tier serial (spec 10 §5), so
+	// there it runs to completion before any group starts.
+	familiesQueued := time.Since(start)
+	t.Run("family-matrix", func(t *testing.T) {
+		if pathSpaces > 1 {
+			t.Parallel()
+		}
+		runFamilyMatrix(ctx, t, h, start, familiesQueued)
+	})
+
 	sem := make(chan struct{}, pathSpaces)
 	runConformancePaths(ctx, t, HostKindGitHub, pathHarnesses, sem, folds)
 	runConformancePaths(ctx, t, HostKindBareRepo, localHarnesses, sem, folds)
@@ -343,29 +363,34 @@ func TestLogicMatrix(t *testing.T) {
 		t.Parallel()
 		runClassificationBilateralPaths(ctx, t, classificationHarness)
 	})
+}
 
+// runFamilyMatrix drives the scenario families on h and, only when a cell
+// executed, renders the report, judges its exit code and prints the D-7
+// marker. It runs inside the family-matrix subtest, so a `-run` filter that
+// prunes the subtest emits no marker at all.
+func runFamilyMatrix(ctx context.Context, t *testing.T, h *harness, start time.Time, queued time.Duration) {
 	run := NewRunFor(logicOrg, logicRepo, Catalogue())
 	run.Tier = TierLogic
 	run.Preflight = h.Pre
 
-	// Wrapped in its own subtest so
-	// `-run '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'` prunes the
-	// family matrix too. Without this the filter pruned
-	// only the path subtests and a "single path" run still paid the whole
+	// The family matrix is its own subtest (see the call site) so
+	// `-run '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'` prunes it too.
+	// Without this the filter pruned only the path subtests and a "single path" run still paid the whole
 	// matrix's wall clock — which fails the operator's own requirement that
 	// every path be checkable independently.
 	//
 	// The naive wrap is unsafe, and that is why the escape below exists: with
-	// the matrix filtered out, `run` collects no results, and the report plus
+	// every family filtered out, `run` collects no results, and the report plus
 	// the D-7 marker would then be computed from a run that never happened —
 	// a digest claiming complete coverage on the strength of zero executed
 	// cells. That is precisely the defect the marker was built to catch (spec
 	// 46's postmortem, a 59-minute live run spent discovering a row that never
 	// ran), so a filtered run must emit NOTHING rather than something
 	// reassuring.
-	t.Run("family-matrix", func(t *testing.T) {
-		driveFamilies(ctx, t, run, h)
-	})
+	t.Logf("family matrix: started %s into the tier (queued at %s)",
+		time.Since(start).Round(time.Second), queued.Round(time.Second))
+	driveFamilies(ctx, t, run, h)
 
 	report := run.Report()
 	// "Nothing executed" is EVERY cell still at VerdictNotRun, never an empty
@@ -416,7 +441,7 @@ func TestLogicMatrix(t *testing.T) {
 	// run_logic_tests carries it for this reason).
 	fmt.Println(logicTierMarkerLine(report))
 
-	t.Logf("TestLogicMatrix: %d cell(s) judged (logic tier judged; provider tier's own rows recorded skipped-provider) in %s",
+	t.Logf("family matrix: %d cell(s) judged (logic tier judged; provider tier's own rows recorded skipped-provider) in %s",
 		len(report.Results), time.Since(start))
 }
 
