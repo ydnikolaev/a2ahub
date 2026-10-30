@@ -1109,8 +1109,11 @@ macos_delta() {
 # route came back `performance 0 [0/0/0] (min 80)` with every metric `n/a` —
 # which is what an unloaded page looks like, not a bad one. The same command on
 # this host: performance 96-99, accessibility 100, best-practices 100, SEO 100,
-# on every route. Lighthouse needs a browser stack the image does not carry, and
-# a threshold compared against an unmeasured zero is a verdict nobody earned.
+# on every route. A threshold compared against an unmeasured zero is a verdict
+# nobody earned. The cause was recorded here as a missing browser stack, and that
+# was wrong: it was the container's shared-memory size, fixed 2026-10-30 in
+# ci-parity-docker.sh, and the image now measures Lighthouse. This half stays on
+# the host because that move was not this change's to make, not because it must.
 #
 # The container keeps `npm run check` — unit tests, the build, and the dist
 # assertions — which it measures perfectly well.
@@ -1756,7 +1759,7 @@ release_gate() { # $1 = --dry-run | (empty)
   printf '%s\n' "$FAST_PASS_PLAN"
   printf 'phase 1 (container, GNU userland) — the full suite:\n'
   list_members | sed 's/^/  /'
-  printf 'phase 2 (host, darwin) — npm run check:quality:host (a11y + Lighthouse: measurable here, not in the image) and the macos-15 delta, derived from runs-on:\n'
+  printf 'phase 2 (host, darwin) — npm run check:quality:host (a11y + Lighthouse) and the macos-15 delta, derived from runs-on:\n'
   macos_jobs .github/workflows | sed 's/^/  /'
   printf 'receipt: %s/%s.json\n' "$RECEIPT_DIR" "$head_before"
 
@@ -3283,10 +3286,14 @@ EOF
   cp -R "$ROOT/.github/workflows" "$d39/repo/.github/"
   cp "$ROOT/web/package-lock.json" "$d39/repo/web/"
   git -C "$d39/repo" init -q
-  printf '#!/bin/sh\ncase "$*" in *inspect*) exit 1 ;; esac\nexit 0\n' >"$d39/bin/docker"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >>"%s/argv"\ncase "$*" in *inspect*) exit 1 ;; esac\nexit 0\n' "$d39" >"$d39/bin/docker"
   chmod +x "$d39/bin/docker"
   (cd "$d39/repo" && PATH="$d39/bin:$PATH" bash scripts/ci-parity-docker.sh true) >/dev/null 2>&1 || ok39=0
   [ "$(cat "$d39/repo/.a2a/cache/parity-container/.a2ahub-verify-cache-v1" 2>/dev/null)" = "$(verify_cache_marker /work)" ] || ok39=0
+  # T40 — the same stubbed run: without the shared-memory size, Lighthouse cannot
+  # load a page in the container and a web diff reds the everyday lane.
+  local ok40=1
+  grep -E '^run .*--shm-size=' "$d39/argv" >/dev/null 2>&1 || ok40=0
   rm -rf "$d39"
   if [ "$ok39" -ne 1 ]; then
     printf 'ci-parity --teeth: FAIL — T39: ci-parity-docker.sh must write the verify marker for /work into its bind before docker runs\n' >&2
@@ -3294,13 +3301,19 @@ EOF
   else
     printf 'ci-parity --teeth: T39 — the container bind is claimed before docker can create a mountpoint in it\n'
   fi
+  if [ "$ok40" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL — T40: ci-parity-docker.sh must give the container a shared-memory size, or Lighthouse cannot load a page\n' >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T40 — the container gets the shared-memory size Lighthouse needs\n'
+  fi
 
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
 
-  printf 'ci-parity --teeth: 39 case(s) green.\n'
+  printf 'ci-parity --teeth: 40 case(s) green.\n'
 }
 
 case "${1:---run}" in

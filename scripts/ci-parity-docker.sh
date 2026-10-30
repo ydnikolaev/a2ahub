@@ -231,7 +231,10 @@ parity_volume a2ahub-parity-state test
 parity_volume a2ahub-parity-gocache dev
 parity_volume a2ahub-parity-gomod dev
 
-exec docker run --rm -i \
+# --shm-size: Docker's default shared-memory size stops Chromium loading a page.
+# Lighthouse then reports CHROME_INTERSTITIAL_ERROR, on every route, and the same
+# command with this flag scores the site normally (measured 2026-10-30).
+exec docker run --rm -i --shm-size=2g \
   --name "$CONTAINER" \
   --label "heavy.run=${HEAVY_RUN_SLOT:-}" \
   --label dev.a2ahub.owner=a2ahub \
