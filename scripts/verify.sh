@@ -1705,7 +1705,7 @@ run_derived_phase() {
     go-test)         run_phase go-test run_go_tests ;;
     coverage-policy) run_phase coverage-policy go run internal/coveragepolicy/covercheck.go coverage.out ;;
     logic-e2e)       run_phase logic-e2e run_logic_tests ;;
-    harness-teeth)   run_phase harness-teeth make --no-print-directory _harness-check ;;
+    harness-teeth)   run_phase harness-teeth env A2A_STAGES_SINK="$(stages_sink)" RUN_TREE="${RUN_TREE:-}" make --no-print-directory _harness-check ;;
     live-e2e)
       fail "live-e2e is declared NEVER and must not be reachable from a derived lane"
       return 1
@@ -1969,7 +1969,7 @@ if [ "$MODE" = harness ]; then
   #   Makefile
   #   GNUmakefile
   #   docs/runbooks/publish-to-public.sh
-  run_phase harness-teeth make --no-print-directory _harness-check
+  run_phase harness-teeth env A2A_STAGES_SINK="$(stages_sink)" RUN_TREE="${RUN_TREE:-}" make --no-print-directory _harness-check
   exit 0
 fi
 

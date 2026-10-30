@@ -935,19 +935,17 @@ HARNESS_TEETH := \
 # is what makes the next one unnecessary.
 HARNESS_TESTS := $(sort $(wildcard scripts/tests/*_test.sh))
 
+# A COST list, not a membership list (release-speed P5, spec 05 T3): teeth that
+# share state with another tooth run after both pools, serially. Filled from the
+# probe in audits/p5-teeth-independence.md. A name that is not in HARNESS_TEETH
+# is refused by scripts/lib/harness-run.sh check-serial.
+HARNESS_TEETH_SERIAL :=
+
 _harness-check: export GITHUB_ACTIONS :=
 _harness-check:
-	@for s in $(HARNESS_TEETH); do \
-	  if [ -f "$$s" ]; then \
-	    bash "$$s" --teeth || exit 1; \
-	  else \
-	    echo "harness-check: skip — $$s absent (public checkout)."; \
-	  fi; \
-	done
-	@for s in $(HARNESS_TESTS); do \
-	  if [ -f "$$s" ]; then \
-	    bash "$$s" || exit 1; \
-	  else \
-	    echo "harness-check: skip — $$s absent (public checkout)."; \
-	  fi; \
-	done
+	@bash scripts/lib/harness-run.sh check-serial "$(HARNESS_TEETH_SERIAL)" "$(HARNESS_TEETH)" || exit 1
+	@rc=0; \
+	bash scripts/lib/harness-run.sh teeth $(filter-out $(HARNESS_TEETH_SERIAL),$(HARNESS_TEETH)) || rc=1; \
+	bash scripts/lib/harness-run.sh tests $(HARNESS_TESTS) || rc=1; \
+	HARNESS_TEETH_JOBS=1 bash scripts/lib/harness-run.sh teeth $(HARNESS_TEETH_SERIAL) || rc=1; \
+	exit $$rc
