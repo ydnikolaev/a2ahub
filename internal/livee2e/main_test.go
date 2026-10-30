@@ -12,5 +12,8 @@ import (
 // production code from this package's perspective even though make check
 // never executes the real GitHub matrix.
 func TestMain(m *testing.M) {
-	os.Exit(gitfixture.RunTests(m))
+	code := gitfixture.RunTests(m)
+	// The shared logic binary lives in a process-level dir no harness owns.
+	_ = sharedLogicBinary.Close() // reason: best-effort temp cleanup at exit
+	os.Exit(code)
 }

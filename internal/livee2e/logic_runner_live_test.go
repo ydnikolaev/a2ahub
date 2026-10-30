@@ -148,10 +148,10 @@ func TestLogicMatrix(t *testing.T) {
 	// other's min_binary_version, so `paths first` is now a free choice rather
 	// than a load-bearing one.
 	//
-	// The second harness pays a second binary build (seconds, warm cache)
-	// against a tier that costs ~41 minutes. Sharing one build across both is
-	// a real optimisation and deliberately NOT taken here: this wave changes
-	// isolation only, so that a measurement of it measures isolation.
+	// Both harnesses share ONE `a2a` build per test process
+	// (sharedLogicBinary, sharedbinary.go): P10 W1 measured the isolation
+	// change on its own, so the deferred build sharing is now taken. The
+	// binary lives in a process-level dir that no harness cleanup removes.
 	// P10 W2 — how many path spaces to stand up. The bound is DERIVED from
 	// the machine, never a literal tuned on one laptop (spec 10 §5), and is
 	// overridable so a bisect can pin it: A2A_LOGIC_PATH_SPACES=1 reproduces

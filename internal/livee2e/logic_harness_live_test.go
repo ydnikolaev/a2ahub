@@ -80,6 +80,11 @@ func logicRepoRoot() (string, error) {
 // instead of a literal chosen here, is what stays correct if that floor
 // ever moves out from under an unrelated check (CC-085) this rig does not
 // otherwise exercise.
+// init wires the untagged onceBuilder (sharedbinary.go) to this file's build,
+// so the untagged file never names a tagged symbol. The two path harnesses
+// share ONE build per test process; logic_provision_live_test.go keeps its own.
+func init() { sharedLogicBinary.build = buildLogicBinary }
+
 func buildLogicBinary(ctx context.Context, dir string) (string, error) {
 	root, err := logicRepoRoot()
 	if err != nil {
@@ -144,7 +149,7 @@ func newLogicHarness(ctx context.Context, t *testing.T) (*harness, func() error,
 		return nil
 	}
 
-	bin, err := buildLogicBinary(ctx, work)
+	bin, err := sharedLogicBinary.Get()
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("livee2e: newLogicHarness: %w", err)
 	}
@@ -290,7 +295,7 @@ func newBareRepoLogicHarness(ctx context.Context, t *testing.T, gates string) (*
 		return nil
 	}
 
-	bin, err := buildLogicBinary(ctx, work)
+	bin, err := sharedLogicBinary.Get()
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("livee2e: newBareRepoLogicHarness: %w", err)
 	}

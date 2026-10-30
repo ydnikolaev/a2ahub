@@ -3022,7 +3022,16 @@ func runPathGroup(ctx context.Context, t *testing.T, kind HostKind, h *harness, 
 			// BEFORE it, so it is this file's job to keep that same
 			// property, not driveFamilies'. Best-effort, errors ignored by
 			// design — same as the existing precedent.
+			//
+			// The park is skipped ONLY when folds.record ran for this path: its
+			// projectPathThreads already syncs both checkouts, so a second pair
+			// would be an idle duplicate. folds == nil (the local-confirm group)
+			// and a failed path never reach record, so they still park.
+			recorded := false
 			defer func() {
+				if recorded {
+					return
+				}
 				_, _, _ = h.A.Run(ctx, "sync")
 				_, _, _ = h.B.Run(ctx, "sync")
 			}()
@@ -3034,6 +3043,7 @@ func runPathGroup(ctx context.Context, t *testing.T, kind HostKind, h *harness, 
 			// A path that already failed has no end state worth comparing
 			// across hosts: its red is the finding, a diff would only bury it.
 			if folds != nil && !t.Failed() {
+				recorded = true
 				folds.record(ctx, t, kind, h, id, ids)
 			}
 		})

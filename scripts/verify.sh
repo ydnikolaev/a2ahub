@@ -854,7 +854,12 @@ run_logic_tests() {
   # written on a red run.
   local log rc=0
   log="$VERIFY_ROOT/.logic-e2e.$$.log"
-  go test ./internal/livee2e/... -tags=livee2e -race -v -skip '^TestLiveMatrix$' -count=1 -timeout 20m | tee "$log" || rc=$?
+  # The cap is explicit (release-speed P3 T1): inside the host queue go test's
+  # -parallel default is GOMAXPROCS, which the shim sets to the grant, so this
+  # changes no value; it makes the binding cap visible where the tier starts.
+  # Outside the queue the variable is unset and go test's default stays.
+  # shellcheck disable=SC2086 # empty when unset: two words or none, on purpose
+  go test ./internal/livee2e/... -tags=livee2e -race -v -skip '^TestLiveMatrix$' -count=1 -timeout 20m ${HEAVY_RUN_CORES:+-parallel "$HEAVY_RUN_CORES"} | tee "$log" || rc=$?
   logic_stage_rows "$log"
   rm -f "$log"
   return "$rc"
