@@ -1289,6 +1289,12 @@ telemetry_report() { # $1 = cutoff recorded before the run (telemetry_cutoff); $
       [ -n "$extra" ] && new="$(printf '%s\n%s' "$new" "$extra")"
     fi
   fi
+  # A `run:<mode>` row records one whole verify.sh invocation, not a phase: it
+  # paid for nothing the phase rows beside it did not, and `make lane` runs twice
+  # by design at under a second each. Counted, those rows redden the invariant
+  # below and inflate the receipt's verify_phases. They reached this report only
+  # once the container began writing them (2026-10-30), as `make deliver` needs.
+  new="$(grep -v '"gate":"run:' <<<"$new" || true)"
   total="$(printf '%s' "$new" | grep -c '"gate"' || true)"
   if [ "$total" -eq 0 ]; then
     gate_unmeasured "$label: zero phases were recorded between the start of this run and now. A suite that executed no measurable phase must not report a phase count of 0 as if that were a clean result."
@@ -2618,6 +2624,16 @@ EOF
   out16="$(env A2A_VERIFY_TELEMETRY="$d16/absent.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
   if [ "$rc16" -ne "$GATE_EXIT_UNMEASURED" ] || ! grep -qF 'UNMEASURED' <<<"$out16"; then
     printf 'ci-parity --teeth: FAIL — T16c: absent telemetry must be UNMEASURED (exit %s), never a phase count of zero reported as clean; got rc=%s\n%s\n' "$GATE_EXIT_UNMEASURED" "$rc16" "$out16" >&2
+    teeth_fail=1
+  fi
+  # T16d — a run record is not a phase: two of them neither red nor count.
+  cp "$d16/clean.jsonl" "$d16/runs.jsonl"
+  printf '{"gate":"run:lane","verdict":"pass","duration_ms":1,"mode":"lane","at":"2026-08-21T00:00:03Z"}\n' >> "$d16/runs.jsonl"
+  printf '{"gate":"run:lane","verdict":"pass","duration_ms":1,"mode":"lane","at":"2026-08-21T00:00:04Z"}\n' >> "$d16/runs.jsonl"
+  rc16=0
+  out16="$(env A2A_VERIFY_TELEMETRY="$d16/runs.jsonl" bash "$ROOT/scripts/ci-parity.sh" --phases 0 "the fixture" 2>&1)" || rc16=$?
+  if [ "$rc16" -ne 0 ] || ! grep -qF 'executed 3 verify phase(s)' <<<"$out16"; then
+    printf 'ci-parity --teeth: FAIL — T16d: a run record must neither red the repeat check nor count as a phase; got rc=%s\n%s\n' "$rc16" "$out16" >&2
     teeth_fail=1
   fi
   if [ "$teeth_fail" -eq 0 ]; then
