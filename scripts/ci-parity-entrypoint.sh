@@ -100,6 +100,9 @@ echo "parity: removing untracked files — CI checks out, it does not inherit a 
 # with that cache restored by actions/setup-go, so keeping it IS the parity;
 # cleaning it would rebuild the world every run for no fidelity gained.
 git -C "$WORK" clean -ffdxq -e web/node_modules -e .a2a
+# What provisioning below must leave alone. Compared, not asserted empty: a host
+# working tree with edits is a legitimate subject when iterating on a parity red.
+tracked_before=$(git -C "$WORK" diff | sha256sum)
 
 # Kept is not unbounded. verify.sh caps the host's build cache, but in CI mode
 # it never purges GOCACHE (that is the runner's), so this one grew unchecked:
@@ -132,10 +135,12 @@ fi
 # `make check` then sets GOPROXY=off deliberately, so the ceiling is offline.
 # Without this the container reached all 37 repo gates green and then died on
 # "module lookup disabled by GOPROXY=off" — a provisioning gap reported as a
-# build failure. `all` rather than the bare form because the testscript tier is
-# reached only behind a build tag, and its dependency is otherwise never pulled.
+# build failure. The bare form, as CI runs it: `all` added 363 lines to go.sum on
+# every run from 2026-08-20, so the suite judged a go.sum git does not hold and a
+# missing checksum could not go red here. Measured 2026-10-30 on an empty module
+# cache: the bare form builds every package offline, the livee2e tag included.
 echo "parity: priming the module cache"
-(cd "$WORK" && GOPROXY="${PARITY_GOPROXY:-https://proxy.golang.org,direct}" go mod download all)
+(cd "$WORK" && GOPROXY="${PARITY_GOPROXY:-https://proxy.golang.org,direct}" go mod download)
 
 # CI's next provisioning step, for the same reason: the deadcode oracle resolves
 # its OWN module graph, so `go mod download` never fetches it, and the gate reads
@@ -144,6 +149,14 @@ echo "parity: priming the module cache"
 # UNMEASURED inside the v0.27.1 ship gate.
 echo "parity: priming the deadcode oracle"
 (cd "$WORK" && GOPROXY_PRIME="${PARITY_GOPROXY:-https://proxy.golang.org,direct}" bash scripts/check-deadcode-ceiling.sh --prime)
+
+# Everything above provisions; nothing above may change what is judged. A change
+# here is a defect in this script, so it stops before any gate reads the tree.
+if [ "$(git -C "$WORK" diff | sha256sum)" != "$tracked_before" ]; then
+  echo "parity: provisioning changed tracked files, so the suite would judge a tree git does not hold:" >&2
+  git -C "$WORK" diff --stat >&2
+  exit 2
+fi
 
 echo "parity: $(uname -s)/$(uname -m) · go $(go version | awk '{print $3}') · node $(node --version) · awk $(awk --version 2>&1 | sed -n '1p')"
 exec "$@"
