@@ -22,8 +22,8 @@ kit_cores_docker := $(or $(KIT_QUEUE_CORES_DOCKER),8)
 kit_cores_web := $(or $(KIT_QUEUE_CORES_WEB),3)
 # Every goal over ~3 min or over 2 cores. scripts/tests/heavy_queue_shim_test.sh reads this line and proves each name
 # queues and is a real Makefile target.
-a2a_heavy_targets := check test coverage flaky-scan lane-run lane-run-strict harness-check ci-parity ci-parity-docker release-check release-preflight projection logic-e2e live-e2e web-quality site-check
-a2a_docker_targets := ci-parity-docker release-check
+a2a_heavy_targets := check test coverage flaky-scan lane-run lane-run-strict harness-check ci-parity ci-parity-docker release-check release-carry release-preflight projection logic-e2e live-e2e web-quality site-check
+a2a_docker_targets := ci-parity-docker release-check release-carry
 a2a_web_targets := web-quality
 kit_list := $(a2a_heavy_targets) $(subst $(kit_comma), ,$(KIT_HEAVY_TARGETS))
 kit_dev_names := dev-up dev-down dev-status run serve

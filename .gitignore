@@ -151,6 +151,7 @@ scripts/lib/*
 !scripts/lib/release-note-detect-budget.txt
 !scripts/lib/mcpb-manifest.template.json
 !scripts/lib/harness-run.sh
+!scripts/lib/projection-tree.sh
 !scripts/tests/
 scripts/tests/*
 !scripts/tests/deliver_test.sh

@@ -104,6 +104,8 @@ export VERIFY_AGAIN=1
 # `make check` reaches it the same way every other gate's does.
 # shellcheck source=lib/gate-lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
+# shellcheck source=lib/projection-tree.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/projection-tree.sh"
 
 # EXCUSED — each with the reason it cannot or should not run locally. An entry
 # here is a decision, not a hiding place: it prints on every audit.
@@ -993,8 +995,8 @@ suite_members() {
   run_step "npm run check"                             npm --prefix web run check
   run_step "npx playwright test tests/dashboard-visual-contract.spec.mjs" \
     sh -c 'cd web && npx playwright test tests/dashboard-visual-contract.spec.mjs'
-  run_step "gitleaks dir"                              gitleaks dir --config .gitleaks.toml --redact --verbose .
-  run_step "gitleaks git"                              gitleaks git --config .gitleaks.toml --redact --verbose .
+  run_step "gitleaks dir"                              gitleaks_dir_member
+  run_step "gitleaks git"                              gitleaks_git_member
   run_step "a2a-validate-reusable.yml validate --ci (a2ahub dogfood: a2a-ref=\"\", mode=v3-full-repo)" \
     a2a_validate_dogfood_step
 }
@@ -1079,6 +1081,12 @@ host_only() {
   run_step "npm run check:quality:host"                env CI=true npm --prefix web run check:quality:host
   macos_delta
 }
+
+# The two secret scans, as functions so `--carry-suite` runs the SAME commands
+# the full suite does rather than a second spelling of them (release-speed P8).
+# The command text stays in this block, which is what the CI audit greps.
+gitleaks_dir_member() { gitleaks dir --config .gitleaks.toml --redact --verbose .; }
+gitleaks_git_member() { gitleaks git --config .gitleaks.toml --redact --verbose .; }
 
 execute_all() {
   suite_members
@@ -1417,8 +1425,12 @@ COMPOSED_PHASE_COUNT=""
 # scar of a coverage claim drifting from the thing it claimed (the EXECUTES
 # markers, twice). Same mechanism, same reason: the source of truth is the code
 # that runs.
-list_members() {
-  sed -n '/^suite_members() {/,/^}/p' "$ROOT/scripts/ci-parity.sh" | awk '
+list_members() { _list_run_steps suite_members; }
+
+# _list_run_steps <function> — the labels of the run_step calls in that function's
+# body, read from this file. list_members and carry_members are its two callers.
+_list_run_steps() {
+  sed -n "/^$1() {/,/^}/p" "$ROOT/scripts/ci-parity.sh" | awk '
     # The label is the FIRST double-quoted argument, and it may contain
     # backslash-escaped quotes of its own (the dogfood step carries
     # a2a-ref=\"\"). A [^"]* match would truncate there and print a member
@@ -1865,6 +1877,171 @@ release_logged() {
   set -e
   keep_newest_logs "$dir" "$RELEASE_LOG_KEEP"
   return "$rc"
+}
+
+# --- THE CARRY (release-speed P8) ----------------------------------------
+#
+# A docs, feedback or checklist commit after a green release-check changes no
+# byte the public ever sees, and used to cost another 1443-1878 s ship gate (4 of
+# 22 receipt-to-receipt gaps in 9 weeks). `--carry` writes
+# .a2a/release-gate/<HEAD>.carry.json instead, and the publisher accepts it only
+# after RECOMPUTING the identity.
+#
+# IT IS NOT THE REFUSED CACHE (release-cost-2026-08 README:84-113). That cache
+# skipped a phase whose DECLARED inputs were unchanged and so trusted 37 opaque
+# declarations. This reads no declaration. It keys on the whole shipped tree: the
+# git tree of a commit minus the strip set THAT commit lists, equal to the
+# receipted ancestor's. And it re-runs, on HEAD, every question the private delta
+# can move: all repo gates (`make check-validators`, which holds the history
+# readers - release-notes-freshness, release-note-detect, epic-drift,
+# feature-lint - that a tree comparison cannot see), the raced Go suite with the
+# private files present, the gates' own teeth, both secret scans and the dogfood
+# validate. NOT re-run: the projection, the logic tier and the macOS and web
+# suites - every input of those ships, and so is byte-identical.
+#
+# THE TREE COMES FROM scripts/lib/projection-tree.sh, the one implementation of
+# "a commit's tree minus its own strip set"; the publisher's identity proof and
+# the consumer of this receipt are its other readers. A public checkout holds no
+# receipts, so a carry there refuses with "nothing to carry".
+CARRY_SCHEMA="a2ahub.release-gate.carry/v1"
+CARRY_BASE=""
+CARRY_TREE=""
+
+# _receipt_phases <file> — the receipt's "verify_phases", empty when absent or
+# not a number. The publisher reads it with the same expression.
+_receipt_phases() {
+  sed -n 's/.*"verify_phases"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$1" | head -1
+}
+
+# carry_plan <repo> <receipt dir> — steps 1 and 2 of the carry: find the base and
+# prove the projection trees equal. Prints `base <sha> tree <tree>` on success;
+# on a refusal, says why on stderr and returns 1 (UNMEASURED if the primitive is
+# not here). Pure git reads - nothing is run and nothing is written.
+carry_plan() {
+  local repo="$1" rdir="$2"
+  (
+    set -euo pipefail
+    cd "$repo"
+    head="$(git rev-parse HEAD)"
+    base=""
+    # The NEAREST ancestor with a FULL, passing, counted receipt. `<sha>.json`
+    # only: a carry is `<sha>.carry.json`, so a carry can never be a base - the
+    # walk passes over it without looking.
+    for sha in $(git rev-list --skip=1 "$head"); do
+      f="$rdir/$sha.json"
+      [ -f "$f" ] || continue
+      grep -q '"verdict": "pass"' "$f" || continue
+      n="$(_receipt_phases "$f")"
+      [ -n "$n" ] && [ "$n" != 0 ] || continue
+      base="$sha"
+      break
+    done
+    if [ -z "$base" ]; then
+      gate_fail "no ancestor of $head has a full, passing receipt over a counted run in $rdir, so there is nothing to carry. Run \`make release-check\`."
+      exit 1
+    fi
+    head_tree="$(candidate_projection_tree "$head")" || exit 1
+    base_tree="$(candidate_projection_tree "$base")" || exit 1
+    if [ "$head_tree" != "$base_tree" ]; then
+      gate_fail "$head ships different bytes than its receipted ancestor $base; a carry judges only a delta that changes no shipped byte. Differing shipped paths:"
+      git diff-tree -r --name-only "$base_tree" "$head_tree" | sed 's/^/    /' >&2
+      echo "Run \`make release-check\`." >&2
+      exit 1
+    fi
+    printf 'base %s tree %s\n' "$base" "$base_tree"
+  )
+}
+
+# carry_suite_members — step 3, run in the container. The commands are the full
+# suite's own (suite_members' gitleaks members and dogfood function), reused.
+carry_suite_members() {
+  run_step "make check-validators"                     make check-validators
+  run_step "make coverage"                             make coverage
+  run_step "make harness-check"                        make harness-check
+  run_step "gitleaks dir"                              gitleaks_dir_member
+  run_step "gitleaks git"                              gitleaks_git_member
+  run_step "a2a validate --ci (a2ahub dogfood)"        a2a_validate_dogfood_step
+}
+
+carry_members() { _list_run_steps carry_suite_members; }
+
+# write_carry_receipt <sha> <base> <base_tree> <wall seconds> <phase count> -
+# the schema is exactly spec 08 T2 item 4. Same guard as write_receipt: a count
+# that is not a positive integer is refused, not written as invalid JSON.
+write_carry_receipt() {
+  local sha="$1" base="$2" tree="$3" wall="$4" phases="$5" members="" label
+  case "$phases" in
+    ''|*[!0-9]*|0)
+      gate_unmeasured "the carry passed but no phase count reached the receipt, so nothing can be written about what it covered. No receipt written for $sha."
+      return "$GATE_EXIT_UNMEASURED" ;;
+  esac
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+    members="${members:+$members, }\"$(_json_string "$label")\""
+  done < <(carry_members)
+  mkdir -p "$RECEIPT_DIR"
+  cat > "$RECEIPT_DIR/$sha.carry.json" <<JSON
+{
+  "schema": "$CARRY_SCHEMA",
+  "verdict": "pass",
+  "base": "$base",
+  "base_tree": "$tree",
+  "members": [$members],
+  "verify_phases": $phases,
+  "wall_seconds": $wall
+}
+JSON
+  printf '\nci-parity: CARRY GREEN for %s (%ss, %s verify phase(s)), carrying %s.\n' "$sha" "$wall" "$phases" "$base"
+  printf 'receipt: %s\n' "$RECEIPT_DIR/$sha.carry.json"
+}
+
+release_carry() {
+  local head head_after dirty started ended plan cutoff rc=0 container_rc=0
+  started="$(date +%s)"
+  head="$(git -C "$ROOT" rev-parse HEAD)"
+  printf '\n=== release carry - the tree at %s ===\n' "$head"
+
+  dirty="$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)"
+  if [ -n "$dirty" ]; then
+    gate_fail "the working tree has staged, worktree or untracked changes, so a carry for $head would describe a tree that does not exist. Commit or clean first."
+    printf '%s\n' "$dirty" | head -20 | sed 's/^/    /' >&2
+    return 1
+  fi
+  # The identity refusal is a pure git read and decides which command the
+  # operator needs, so it comes before the Docker probe.
+  plan="$(carry_plan "$ROOT" "$RECEIPT_DIR")" || return $?
+  CARRY_BASE="${plan#base }"; CARRY_BASE="${CARRY_BASE%% *}"
+  CARRY_TREE="${plan##* tree }"
+  printf 'ci-parity: carrying the full receipt of %s (projection tree %s).\n' "$CARRY_BASE" "$CARRY_TREE"
+  printf 'members (container):\n'
+  carry_members | sed 's/^/  /'
+
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    gate_unmeasured "the carry's container phase could not START: Docker is not on PATH or its daemon is unreachable. NOTHING was measured; start Docker and re-run."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+
+  local container_telemetry="$ROOT/.a2a/cache/parity-container/telemetry.jsonl"
+  cutoff="$(telemetry_cutoff)"
+  if ! run_step "release carry - container suite" \
+      bash "$ROOT/scripts/ci-parity-docker.sh" bash scripts/ci-parity.sh --carry-suite; then
+    container_rc=1
+    gate_fail "the carry's container phase RAN and did not pass; no receipt is written."
+  fi
+
+  head_after="$(git -C "$ROOT" rev-parse HEAD)"
+  if [ "$head_after" != "$head" ]; then
+    gate_fail "the tree moved under this run. Judged: $head. HEAD is now: $head_after. No receipt was written."
+    return 1
+  fi
+  telemetry_report "$cutoff" "the carry run" "$container_telemetry:$cutoff" || rc=$?
+  ended="$(date +%s)"
+  if [ "$container_rc" -ne 0 ] || [ "$rc" -ne 0 ]; then
+    printf '\nci-parity: CARRY RED - no receipt written for %s.\n' "$head" >&2
+    [ "$container_rc" -eq 0 ] && [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ] && return "$GATE_EXIT_UNMEASURED"
+    return 1
+  fi
+  write_carry_receipt "$head" "$CARRY_BASE" "$CARRY_TREE" "$((ended - started))" "$COMPOSED_PHASE_COUNT"
 }
 
 # --- --teeth -----------------------------------------------------------
@@ -2820,12 +2997,135 @@ EOF
     printf 'ci-parity --teeth: T30 — make vulncheck is a release-preflight step, not a member, and the audit says so by name\n'
   fi
 
+  # T31..T36 - THE CARRY (release-speed P8). Every case drives the real CLI
+  # (`--carry-plan`) over a throwaway repository and receipt directory, so what is
+  # proved is what `make release-carry` runs first.
+  local d31 base31 out31 rc31 ok31 head31 here31
+  d31="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  here31="$ROOT/scripts/ci-parity.sh"
+  mkdir -p "$d31/repo/scripts/lib" "$d31/repo/internal/widget" "$d31/repo/releasenotes" "$d31/repo/docs" "$d31/rcpt"
+  git -C "$d31/repo" init -q -b main
+  git -C "$d31/repo" config user.email teethexample.invalid
+  git -C "$d31/repo" config user.name "carry teeth"
+  printf '%s\n' 'docs/' > "$d31/repo/scripts/lib/strip-set.txt"
+  printf '%s\n' 'package widget' > "$d31/repo/internal/widget/widget.go"
+  printf '%s\n' 'version: "0.1.0"' > "$d31/repo/releasenotes/0.1.0.yaml"
+  printf '%s\n' 'private' > "$d31/repo/docs/notes.md"
+  git -C "$d31/repo" add -A
+  git -C "$d31/repo" commit -q -m 'chore: seed release'
+  base31="$(git -C "$d31/repo" rev-parse HEAD)"
+  printf '{ "sha": "%s", "verdict": "pass", "verify_phases": 71 }\n' "$base31" > "$d31/rcpt/$base31.json"
+  _t31() { # runs the CLI; sets out31/rc31
+    rc31=0
+    out31="$(bash "$here31" --carry-plan "$d31/repo" "$d31/rcpt" 2>&1)" || rc31=$?
+  }
+
+  # T31 - a docs-only delta carries, and the base is the receipted ancestor.
+  printf '%s\n' 'more private' >> "$d31/repo/docs/notes.md"
+  git -C "$d31/repo" commit -q -am 'docs: private-only delta'
+  _t31
+  ok31=1
+  [ "$rc31" -eq 0 ] || ok31=0
+  printf '%s\n' "$out31" | grep -qF "base $base31 tree " || ok31=0
+  if [ "$ok31" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL - T31: a docs-only delta over a receipted base must carry (rc 0, naming the base); got rc=%s\n%s\n' "$rc31" "$out31" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T31 - a docs-only delta carries and names its receipted base\n'
+  fi
+
+  # T32 first needs the carried history, so it is staged here: a `fix:` that
+  # touches product code and is then undone leaves the tree IDENTICAL, which
+  # is the delta no tree comparison can see. The carry's plan lets it through;
+  # only a gate that reads commit subjects can refuse it.
+  printf '%s\n' 'package widget' 'const Fixed = true' > "$d31/repo/internal/widget/widget.go"
+  git -C "$d31/repo" commit -q -am 'fix(widget): close visible defect'
+  printf '%s\n' 'package widget' > "$d31/repo/internal/widget/widget.go"
+  git -C "$d31/repo" commit -q -am 'chore(widget): undo'
+  _t31
+  local rn31 rnrc31=0 gates31 ok36=1
+  rn31="$(ROOT="$d31/repo" bash "$ROOT/scripts/check-release-notes-freshness.sh" _internal-check 2>&1)" || rnrc31=$?
+  gates31="$(make --no-print-directory -s -C "$ROOT" _print-repo-gates 2>/dev/null || true)"
+  [ "$rc31" -eq 0 ] || ok36=0
+  [ "$rnrc31" -ne 0 ] || ok36=0
+  printf '%s\n' "$rn31" | grep -qF 'fix(widget): close visible defect' || ok36=0
+  carry_members | grep -qxF 'make check-validators' || ok36=0
+  for g31 in release-notes-freshness release-note-detect epic-drift feature-lint; do
+    printf '%s\n' "$gates31" | tr ' ' '\n' | grep -qxF "$g31" || ok36=0
+  done
+  if [ "$ok36" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL - T32: an identical tree behind a post-notes fix: commit must pass the identity plan (rc %s), RED release-notes-freshness naming the commit (rc %s), and the carry must run make check-validators with the four history gates in REPO_GATES\n%s\n%s\n' "$rc31" "$rnrc31" "$out31" "$rn31" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T32 - a post-notes fix: behind an identical tree passes the identity but reds release-notes-freshness, and the carry runs check-validators, which holds the four history gates\n'
+  fi
+
+  # T33 - the nearest receipt is a carry: the walk passes over it.
+  head31="$(git -C "$d31/repo" rev-parse HEAD)"
+  printf '{ "schema": "a2ahub.release-gate.carry/v1", "verdict": "pass", "base": "%s", "verify_phases": 9 }\n' "$base31" > "$d31/rcpt/$head31.carry.json"
+  printf '%s\n' 'private again' >> "$d31/repo/docs/notes.md"
+  git -C "$d31/repo" commit -q -am 'docs: another private-only delta'
+  _t31
+  ok31=1
+  [ "$rc31" -eq 0 ] || ok31=0
+  printf '%s\n' "$out31" | grep -qF "base $base31 tree " || ok31=0
+  if [ "$ok31" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL - T33: a carry receipt nearer than the full one must be walked past, never used as the base; got rc=%s\n%s\n' "$rc31" "$out31" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T33 - a carry receipt is never a base; the walk reaches the full receipt behind it\n'
+  fi
+
+  # T34 - one byte in internal/ is refused, naming the path and the full gate.
+  printf '%s\n' '// one byte' >> "$d31/repo/internal/widget/widget.go"
+  git -C "$d31/repo" commit -q -am 'docs: but one shipped byte moved'
+  _t31
+  ok31=1
+  [ "$rc31" -eq 1 ] || ok31=0
+  printf '%s\n' "$out31" | grep -qF 'internal/widget/widget.go' || ok31=0
+  printf '%s\n' "$out31" | grep -qF 'make release-check' || ok31=0
+  if [ "$ok31" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL - T34: a changed shipped byte must be refused (rc 1), naming the path and "make release-check"; got rc=%s\n%s\n' "$rc31" "$out31" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T34 - one byte under internal/ is refused, naming the path and sending the operator to release-check\n'
+  fi
+  git -C "$d31/repo" reset -q --hard HEAD~1
+
+  # T35 - a strip-set.txt change always differs (each commit's own list is read).
+  printf '%s\n' 'docs/' 'internal/widget/' > "$d31/repo/scripts/lib/strip-set.txt"
+  git -C "$d31/repo" commit -q -am 'chore: strip a directory'
+  _t31
+  ok31=1
+  [ "$rc31" -eq 1 ] || ok31=0
+  printf '%s\n' "$out31" | grep -qF 'scripts/lib/strip-set.txt' || ok31=0
+  if [ "$ok31" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL - T35: a strip-set.txt change must be refused, naming the file; got rc=%s\n%s\n' "$rc31" "$out31" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T35 - a strip-set.txt change is a shipped-byte change and is refused\n'
+  fi
+
+  # T36 - no full receipt anywhere in the ancestry.
+  rm -f "$d31/rcpt/$base31.json"
+  _t31
+  ok31=1
+  [ "$rc31" -eq 1 ] || ok31=0
+  printf '%s\n' "$out31" | grep -qF 'nothing to carry' || ok31=0
+  if [ "$ok31" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL - T36: no full receipt in the ancestry must be refused ("nothing to carry"); got rc=%s\n%s\n' "$rc31" "$out31" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T36 - an ancestry with no full receipt is refused, never carried from a carry\n'
+  fi
+  rm -rf "$d31"
+
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
 
-  printf 'ci-parity --teeth: 30 case(s) green.\n'
+  printf 'ci-parity --teeth: 36 case(s) green.\n'
 }
 
 case "${1:---run}" in
@@ -2856,6 +3156,13 @@ case "${1:---run}" in
   # breaking the real repository, and a gate nobody can watch fail is the shape
   # this whole file exists to remove.
   --fast-pass) fast_pass "${2:-$ROOT}" ;;
+  # --carry - a receipt carried across commits that change no shipped byte
+  # (release-speed P8). --carry-suite is its container entry point, the way
+  # --suite is the full gate's; --carry-plan is the identity half alone, over any
+  # repository and receipt directory, so a tooth can watch it refuse.
+  --carry) release_logged "$RELEASE_LOG_DIR" "$(git -C "$ROOT" rev-parse HEAD)" release_carry ;;
+  --carry-suite) carry_suite_members ;;
+  --carry-plan) carry_plan "${2:?--carry-plan needs a repository}" "${3:?--carry-plan needs a receipt directory}" ;;
   --macos-jobs) macos_jobs "${2:-.github/workflows}" ;;
   --members) list_members ;;
   # --phases — read back what a run's phases actually were. The composition
@@ -2863,5 +3170,5 @@ case "${1:---run}" in
   # operator holding a transcript and a question about it.
   --phases) telemetry_report "${2:-0}" "${3:-this run}" "${4:-}" ;;
   --teeth) run_teeth ;;
-  *) printf 'usage: %s [--run|--suite|--macos-delta|--release [--dry-run]|--fast-pass [root]|--audit [dir]|--audit-runbook [file]|--macos-jobs [dir]|--members|--teeth]\n' "$0" >&2; exit 2 ;;
+  *) printf 'usage: %s [--run|--suite|--macos-delta|--release [--dry-run]|--fast-pass [root]|--carry|--carry-suite|--carry-plan <repo> <dir>|--audit [dir]|--audit-runbook [file]|--macos-jobs [dir]|--members|--teeth]\n' "$0" >&2; exit 2 ;;
 esac
