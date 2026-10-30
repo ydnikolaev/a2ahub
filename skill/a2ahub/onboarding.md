@@ -140,6 +140,15 @@ space, made like this:
 Open threads do not carry over to the new space, and the old space's history
 goes with step 4.
 
+`a2a space delete --local <id> [--dir <path>] [--approve]` takes a local space
+this machine holds (the path defaults to this project's connection to `<id>`,
+else the data root's `spaces/<id>.git`). It is re-runnable: once the repository
+is gone it says `already deleted` and exits `0`. After `--approve` it prints one
+`next: in <system>'s repository run a2a disconnect <id>` line per participant
+that has not left. Every refusal it can give (a GitHub space, a path that is not
+a space a2a made, an id that differs from the one in `space.yaml`) is in
+[resolutions.md](resolutions.md).
+
 It creates the space under this machine's a2a data root and prints its path;
 `--dir <path>` puts it elsewhere. Keep that path: every repository connects
 to it. By default the space has `gates: confirm` (a gated write is refused
@@ -156,6 +165,19 @@ a2a connect <path>
 a2a space join --approve   # --approve only on the operator's word (G4)
 a2a doctor
 ```
+
+`a2a connect` says which of two things it did: `connect: space "<id>"
+connected; cloned its mirror` (the config entry came from `a2a init`, which
+never clones, and this connect made the clone) or `connect: space "<id>"
+already connected; mirror refreshed` (the clone was already there); a first
+connect with no entry prints `connect: registered space "<id>" and cloned its
+mirror`. When a read verb had cloned the mirror before `connect` filled in its
+location, `connect` removes that earlier clone (`connect: removed the
+superseded clone at <path>`) only if its origin is this same repository;
+otherwise it leaves it and prints `connect: kept the earlier clone at <path>:
+<why>`. Refusals of `init`/`connect`/`disconnect` (an id that is not one path
+segment, an unreadable `.a2a/config.yaml`) are in
+[resolutions.md](resolutions.md).
 
 There is no credential to create or configure: `a2a doctor`'s `credentials`
 row reads `local space, no credential needed`. `space join` adds the system as

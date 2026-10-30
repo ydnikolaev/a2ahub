@@ -233,6 +233,16 @@ it reads the cache the background check already wrote:
   old, which is how a floor sits still while releases go past it. A space
   marked `BEHIND` needs `a2a space update`.
 
+**A local build is not a release.** A binary put on this machine by the a2ahub
+checkout's `make deliver` (a gated build of unpublished `main`) says so: the
+stamp line on stdout reads `a2a <version> (local, <sha>)` instead of
+`a2a <version> (<sha>)`, the `binary` row on stderr adds `local build of
+<version> (<sha>) — delivered by make deliver; not a published release`, and
+`a2a version --json` carries a `build` object with `channel` (`release`,
+`local` or `dev`) and `commit` (`unknown` when not stamped). Its floors are
+compared as its stamped release version, and it is never told an update is
+available.
+
 The same fact also arrives unasked, through whatever you were already doing:
 
 - **every CLI verb** prints one advisory line to **stderr** after it SUCCEEDS
@@ -254,6 +264,16 @@ Two grades: **available** (a newer release exists) and **REQUIRED** (your
 binary is below a connected space's `min_binary_version` floor — that space
 already refuses your writes, and the funnel error names `a2a update` as the
 remedy). Both are advisory.
+
+A local build only ever sees the second grade, and its remedy is not
+`a2a update`: the statusline reads `UPDATE REQUIRED (<space> pins <floor>; run
+make deliver)`, and `a2a update` (with or without `--check`, `--yes` or
+`--json`) downloads and swaps nothing. It prints `a2a: local build a2a
+<version> (local, <sha>) — left in place; new code arrives with make deliver.
+To return to the released binary: sh scripts/install.sh` and exits `0`
+(`--json` prints `current` and `"local_build": true`). So an instruction to run
+`a2a update --yes` on a local build does nothing by design; report it to your
+human instead.
 
 **Only the floor refuses, and that is deliberate.** A newer release existing
 never blocks a write. The version contract belongs to the space: it is declared
