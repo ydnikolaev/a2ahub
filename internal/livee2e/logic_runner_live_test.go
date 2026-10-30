@@ -108,17 +108,11 @@ func TestLogicMatrix(t *testing.T) {
 	// ("local binary version older than space.yaml min_binary_version") —
 	// observed empirically, not assumed; see this wave's own report for the
 	// exact failure text. Run first, the space still matches the stamped
-	// binary. Wrapping driveFamilies itself in its own t.Run (so `-run
-	// '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'` could skip the family
-	// matrix too) was
-	// considered and rejected regardless of ordering:
-	// TestLogicTierWritesNothingOutsideItsOwnTempDirs and logicTierMarkerLine
-	// below both read state driveFamilies populates directly off run/report
-	// in this function's own body, and restructuring that call site is
-	// outside this brief's granted scope — reported as a residual in the
-	// wave's own report, not hidden. A path subtest failure still fails
-	// TestLogicMatrix as a whole, same as a family-matrix row failure
-	// already does.
+	// binary. The families have since become subtests of their own
+	// (family-A/-B/-C, below), so a `-run` on a path prunes them too; the report
+	// and the D-7 marker are emitted from a cleanup that reads the shared run,
+	// and emit nothing when no family cell executed. A path subtest failure
+	// still fails TestLogicMatrix as a whole, same as a family row failure does.
 	// P10 W1 — the paths get their OWN space. `h` above is the family
 	// matrix's; this is a second, independent one, and D1's "no second rig"
 	// is deliberately overturned here because the evidence that produced D1
@@ -213,8 +207,9 @@ func TestLogicMatrix(t *testing.T) {
 	// Spec 07 §6.2 — the host dimension. The same paths run a second time on a
 	// LOCAL space (a bare repository, no API, no token), in groups named
 	// local-group-N; a path that declares itself not on a host is reported with
-	// its reason instead (runConformancePaths). One semaphore bounds the groups
-	// of BOTH hosts to pathSpaces, so A2A_LOGIC_PATH_SPACES=1 stays serial.
+	// its reason instead (runConformancePaths). Both hosts' groups live under the
+	// one `paths` wrapper subtest. A2A_LOGIC_PATH_SPACES=1 stays serial because
+	// then neither the wrapper nor its groups call t.Parallel.
 	//
 	// Built here, on the test goroutine, for the same reason the GitHub ones
 	// are, and with t.Cleanup for the same one.
@@ -249,52 +244,81 @@ func TestLogicMatrix(t *testing.T) {
 		}
 	})
 
-	// The families run in two serial groups, each on a space of its own, beside
-	// the path groups. Group A authors only its own artifacts; group B bends
-	// space-wide state (space.yaml, branch protection, the write floor), which
-	// is why it cannot share a space with A (audits/p4-family-mutations.md).
+	// The families run in three serial groups, each on a space of its own, beside
+	// the path groups (groups per spec 04 section 11, set in allFamilies):
+	// family-A, family-B and family-C. The shared-state families (space.yaml,
+	// branch protection, the write floor, the raw push to origin/main) are all in
+	// C, which is why nothing else shares its space (audits/p4-family-mutations.md).
 	// Until 2026-10-30 they ran as ONE serial subtest, and every parallel group
 	// waited for it: ~500 s idle, ~14 min under load, which put the tier past
 	// its 20-minute hang ceiling twice in a row. Registered FIRST so each takes
 	// one of `go test -parallel`'s slots as soon as the parallel phase opens,
-	// rather than queueing behind a group. One Run collects both: the report
+	// rather than queueing behind a group. One Run collects all three: the report
 	// and the D-7 marker are emitted once, from the cleanup registered at the
 	// end of this function, after every subtest has finished.
 	// A2A_LOGIC_PATH_SPACES=1 keeps the whole tier serial (spec 10 §5): one
-	// group, every family, on the one family space, inline and first.
+	// group, every family in allFamilies order, on the one family space, inline
+	// and first; the path groups then run one at a time (no t.Parallel anywhere).
+	parallel := pathSpaces > 1
 	familiesQueued := time.Since(start)
 	stages.Mark("setup", "end")
 	familyRun := NewRunFor(logicOrg, logicRepo, Catalogue())
 	familyRun.Tier = TierLogic
 	familyRun.Preflight = h.Pre
-	if pathSpaces > 1 {
-		groupA, groupB := logicFamilyGroups()
-		groupBHarness, groupBCleanup, groupBErr := newLogicHarness(ctx, t)
-		t.Cleanup(func() {
-			if cleanupErr := groupBCleanup(); cleanupErr != nil {
-				t.Errorf("logic harness (family group B) cleanup failed: %v", cleanupErr)
-			}
-		})
-		if groupBErr != nil {
-			t.Fatalf("newLogicHarness (family group B): %v", groupBErr)
+	if parallel {
+		if missing := ungroupedFamilies(); len(missing) > 0 {
+			t.Fatalf("families with no logic-tier group: %v — they would stay not-run (set group in allFamilies)", missing)
 		}
-		t.Run("family-A", func(t *testing.T) {
-			t.Parallel()
-			runFamilyGroup(ctx, t, "family-A", h, familyRun, groupA, stages, start, familiesQueued)
-		})
-		t.Run("family-B", func(t *testing.T) {
-			t.Parallel()
-			runFamilyGroup(ctx, t, "family-B", groupBHarness, familyRun, groupB, stages, start, familiesQueued)
-		})
+		// Each group owns its harness exclusively and takes the binary from
+		// sharedLogicBinary, so a group costs a space and its clones, not a
+		// build. The first group uses h; the others are built here, on the test
+		// goroutine, like every other harness in this function.
+		sets := logicFamilyGroups()
+		groupHarnesses := make([]*harness, len(sets))
+		groupHarnesses[0] = h
+		for i := 1; i < len(sets); i++ {
+			name := sets[i].Name
+			gh, ghCleanup, ghErr := newLogicHarness(ctx, t)
+			t.Cleanup(func() {
+				if cleanupErr := ghCleanup(); cleanupErr != nil {
+					t.Errorf("logic harness (%s) cleanup failed: %v", name, cleanupErr)
+				}
+			})
+			if ghErr != nil {
+				t.Fatalf("newLogicHarness (%s): %v", name, ghErr)
+			}
+			groupHarnesses[i] = gh
+		}
+		for i, set := range sets {
+			t.Run(string(set.Name), func(t *testing.T) {
+				t.Parallel()
+				runFamilyGroup(ctx, t, string(set.Name), groupHarnesses[i], familyRun, set.Families, stages, start, familiesQueued)
+			})
+		}
 	} else {
 		t.Run("family-matrix", func(t *testing.T) {
 			runFamilyGroup(ctx, t, "family-matrix", h, familyRun, allFamilies(), stages, start, familiesQueued)
 		})
 	}
 
-	sem := make(chan struct{}, pathSpaces)
-	runConformancePaths(ctx, t, HostKindGitHub, pathHarnesses, sem, folds, stages)
-	runConformancePaths(ctx, t, HostKindBareRepo, localHarnesses, sem, folds, stages)
+	// ONE parallel wrapper holds every path group of both hosts. A group used to
+	// call t.Parallel and then block on a shared semaphore, so it held a
+	// `go test -parallel` slot while doing nothing, and the longest chain started
+	// at +196.9 s (audits/p1-baseline.md). Now no subtest holds a slot while it
+	// waits: Go's tRunner releases a parallel subtest's slot once its body has
+	// returned and it is only waiting for its own parallel children (testing.go,
+	// tRunner: `if len(t.sub) > 0 { t.tstate.release(); ... close(t.barrier);
+	// wait for t.sub }`), so the wrapper's groups take slots from -parallel alone.
+	// Serial mode: neither the wrapper nor its groups call t.Parallel, so the
+	// groups run one at a time, inline, exactly as A2A_LOGIC_PATH_SPACES=1 always
+	// meant.
+	t.Run("paths", func(t *testing.T) {
+		if parallel {
+			t.Parallel()
+		}
+		runConformancePaths(ctx, t, HostKindGitHub, pathHarnesses, parallel, folds, stages)
+		runConformancePaths(ctx, t, HostKindBareRepo, localHarnesses, parallel, folds, stages)
+	})
 
 	// The confirm-gates family (pathcatalogue_paths.go, Family 16) needs a
 	// local space whose gate policy is `confirm`; every pool space above is

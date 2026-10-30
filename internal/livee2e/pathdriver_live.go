@@ -25,20 +25,20 @@ import (
 // already stand up — no second harness, no fifth mechanism (plan D1).
 //
 // One t.Run subtest per drivenPathIDs() entry (pathdrivability.go), named
-// by the path's own ID, but nested one level BELOW a "group-N" subtest
-// (runConformancePaths splits the ids across harness groups), so:
+// by the path's own ID, but nested two levels BELOW the "paths" wrapper
+// subtest and a "group-N" subtest (runConformancePaths splits the ids across
+// harness groups), so:
 //
 //	go test ./internal/livee2e/... -tags=livee2e -race -count=1 \
-//	  -run '^TestLogicMatrix$/^group-[0-9]+$/^contract-baseline-published-settled$'
+//	  -run '^TestLogicMatrix$/^paths$/^group-[0-9]+$/^contract-baseline-published-settled$'
 //
-// runs exactly that one path (plus TestLogicMatrix's own family matrix —
-// see runConformancePaths' doc comment for why that residual exists and is
-// reported, not hidden).
+// runs exactly that one path (the family groups are subtests too, so the
+// filter prunes them; the local host's groups are local-group-N).
 //
-// THE MIDDLE SEGMENT IS NOT OPTIONAL, and leaving it out is a green run that
+// THE MIDDLE SEGMENTS ARE NOT OPTIONAL, and leaving them out is a green run that
 // drove nothing. This comment carried the two-segment form until P11 wave D
 // ran it: `-run '^TestLogicMatrix$/contract-baseline-published-settled'`
-// matches no subtest at level 1, so Go prunes the whole subtree, prints
+// matches no subtest at level 2, so Go prunes the whole subtree, prints
 // `--- PASS: TestLogicMatrix` and exits 0. The only signal is a `[no tests
 // to run]` suffix on the `ok` line, which is easy to skim past — measured,
 // not reasoned: 10.6s green with zero path subtests entered.
@@ -2866,25 +2866,25 @@ var driverForPath = map[string]func(ctx context.Context, t *testing.T, h *harnes
 // subtest, named by the path's id — DELIVERABLE 1's own requirement:
 //
 //	go test ./internal/livee2e/... -tags=livee2e -race -count=1 \
-//	  -run '^TestLogicMatrix$/^group-[0-9]+$/^<path-id>$'
+//	  -run '^TestLogicMatrix$/^paths$/^group-[0-9]+$/^<path-id>$'
 //
-// isolates exactly that one path's OWN assertions. The `group-[0-9]+`
-// segment is required — the ids are nested under this function's own group
-// subtests, and a two-segment pattern silently matches nothing and passes
-// (P11 wave D; see this file's header for the measurement). The residual this
-// command does NOT eliminate: `-run` prunes t.Run subtests, never
-// TestLogicMatrix's own body — driveFamilies' 30-row family matrix (called
-// immediately before this function, in TestLogicMatrix's own body) still
-// runs regardless of the filter. Wrapping driveFamilies itself in its own
-// t.Run was considered and rejected: TestLogicTierWritesNothingOutsideItsOwnTempDirs
-// and the D-7 marker (logicTierMarkerLine) both read state driveFamilies
-// populates directly off `run`/`report` in TestLogicMatrix's own body, and
-// restructuring that call site is a decision this brief's scope does not
-// grant — reported as a deviation, not hidden.
+// isolates exactly that one path's OWN assertions (the same for a local host:
+// `^local-group-[0-9]+$`). The `paths` and `group-[0-9]+` segments are required —
+// the ids are nested under the caller's `paths` wrapper subtest and this
+// function's own group subtests, and a shorter pattern silently matches nothing
+// and passes (P11 wave D; see this file's header for the measurement). The
+// family groups are subtests of TestLogicMatrix too, so this filter prunes them;
+// the report and the D-7 marker are then not emitted, because no family cell
+// executed.
 //
-// h is the SAME harness TestLogicMatrix already built via newLogicHarness —
-// no second rig (D1).
-func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harnesses []*harness, sem chan struct{}, folds *hostFoldLog, stages *stageRecorder) {
+// parallel says whether the groups run beside each other. The caller passes
+// true from inside a parallel `paths` wrapper, and false for
+// A2A_LOGIC_PATH_SPACES=1, where no subtest may call t.Parallel so the groups
+// run one at a time, inline.
+//
+// Each harness is built by TestLogicMatrix via newLogicHarness /
+// newBareRepoLogicHarness and owned by exactly one group.
+func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harnesses []*harness, parallel bool, folds *hostFoldLog, stages *stageRecorder) {
 	t.Helper()
 	if len(harnesses) == 0 {
 		t.Fatal("runConformancePaths: no harness supplied — nothing could be driven, and a green result would mean nothing")
@@ -2927,9 +2927,9 @@ func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harne
 	// nothing. Local groups are named local-group-N so `-v` lists each path
 	// once per host it runs on, and a one-row `-run` can pick either.
 	//
-	// sem bounds how many groups run at once ACROSS both hosts, so the
-	// pathSpaces knob (A2A_LOGIC_PATH_SPACES=1 included) still means what it
-	// meant before a second host existed.
+	// No semaphore: each group owns its harness exclusively, and -parallel is
+	// the only cap. A2A_LOGIC_PATH_SPACES=1 stays serial because the caller then
+	// passes parallel=false and no group calls t.Parallel.
 	excluded := map[string]bool{}
 	for _, ids := range [][]string{
 		departedCounterpartyPathIDs(),
@@ -2967,10 +2967,8 @@ func runConformancePaths(ctx context.Context, t *testing.T, kind HostKind, harne
 		h := harnesses[i]
 		groupName := fmt.Sprintf("%s-%d", prefix, i+1)
 		t.Run(groupName, func(t *testing.T) {
-			t.Parallel()
-			if sem != nil {
-				sem <- struct{}{}
-				defer func() { <-sem }()
+			if parallel {
+				t.Parallel()
 			}
 			stages.Mark(groupName, "start")
 			defer stages.Mark(groupName, "end")

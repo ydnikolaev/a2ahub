@@ -166,66 +166,83 @@ func TestLiveMatrix(t *testing.T) {
 type familyDriver struct {
 	name string
 	fn   func(context.Context, *harness) []Result
-	// sharedState is true for a family that bends space-wide state (space.yaml,
-	// branch protection, the write floor). The logic tier runs those in group B
-	// on a space of their own; every other family authors only its own artifacts
-	// and runs in group A. Audit: audits/p4-family-mutations.md.
-	sharedState bool
+	// group is the logic-tier group this family runs in. The live tier ignores
+	// it and runs every family in allFamilies' order on one space. Each group
+	// is serial and owns a space of its own; the groups run beside each other.
+	// A family that bends space-wide state (space.yaml, branch protection, the
+	// write floor, a raw push to origin/main) belongs to logicGroupC, the only
+	// group where that is safe, because nothing else shares its space.
+	// Audit: audits/p4-family-mutations.md; table: spec 04 section 11.
+	group logicFamilyGroup
 }
+
+// logicFamilyGroup names one serial group of families in the logic tier. The
+// value doubles as the group's subtest name and stage mark.
+type logicFamilyGroup string
+
+const (
+	logicGroupA logicFamilyGroup = "family-A"
+	logicGroupB logicFamilyGroup = "family-B"
+	logicGroupC logicFamilyGroup = "family-C"
+)
+
+// logicGroupOrder is the order logicFamilyGroups returns the groups in.
+var logicGroupOrder = []logicFamilyGroup{logicGroupA, logicGroupB, logicGroupC}
 
 // allFamilies is driveFamilies' dispatch table, in the order the families run.
 //
 // Order is cheapest-blast-radius first: the happy paths establish that the
 // ordinary flow works before the boundary and refusal families start bending
-// protection and the write floor. `bytes` stays last of group A: its raw push
-// to origin/main is safe only because group A is serial.
+// protection and the write floor. `bytes` is the FIRST family of the serial
+// shared-state group (family-C): its raw push to origin/main is safe only
+// because that group is serial and owns its space.
 func allFamilies() []familyDriver {
 	return []familyDriver{
 		// P7 §6.2 owns its own ordered sequence (visibility first, then
 		// receipt/work/server/contracts). Run it before legacy families mutate
 		// repository settings or the write floor.
-		{FamilyOperationalConfidence, runOperationalConfidenceScenarios, false},
-		{"happy", runHappyScenarios, false},
+		{FamilyOperationalConfidence, runOperationalConfidenceScenarios, logicGroupB},
+		{"happy", runHappyScenarios, logicGroupB},
 		// contract-integrity (AC-973.1) writes only to its own contract's
 		// section, the same "no shared-state mutation" property the happy
 		// family has — placed right after it, still ahead of boundary/
 		// refusal/space, which deliberately bend protection and the write
 		// floor.
-		{"contract-integrity", runContractIntegrityScenarios, false},
+		{"contract-integrity", runContractIntegrityScenarios, logicGroupA},
 		// AC-980.1 (spec 38 wave F) — Layer-1 rows for the five envelope
 		// kinds nothing else drives. Same "no shared-state mutation"
 		// property as happy/contract-integrity (every row authors its OWN
 		// fresh artifacts), so placed right after them, still ahead of
 		// boundary/refusal/space.
-		{"submitted-family", runSubmittedFamilyScenarios, false},
-		{"draft-family", runDraftFamilyScenarios, false},
+		{"submitted-family", runSubmittedFamilyScenarios, logicGroupA},
+		{"draft-family", runDraftFamilyScenarios, logicGroupA},
 		// AC-981.1 (spec 38 wave G) — Layer-2 illegal-transition rows, one
 		// per kind. Same "no shared-state mutation" property as the three
 		// families above (every row authors its OWN fresh artifacts and
 		// the refused call never reaches the funnel at all), so placed
 		// right after them, still ahead of boundary/refusal/space, which
 		// deliberately bend protection and the write floor.
-		{"illegal-transitions", runIllegalTransitionScenarios, false},
+		{"illegal-transitions", runIllegalTransitionScenarios, logicGroupA},
 		// AC-982.1/982.2/982.3 (spec 38 wave H) — Layer-3 failure/recovery
 		// rows. Same "no shared-state mutation" property as the four
 		// families above (every row authors its OWN fresh artifacts; the
 		// fault-injection row's proxy touches only its own one write), so
 		// placed right after them, still ahead of boundary/refusal/space,
 		// which deliberately bend protection and the write floor.
-		{"failure-recovery", runFailureRecoveryScenarios, false},
+		{"failure-recovery", runFailureRecoveryScenarios, logicGroupB},
 		// P46 (spec 46 §T3/§T4) — one row: a chain across two real logins,
 		// read back from BOTH sides. Same "no shared-state mutation"
 		// property as the families above (it authors its own fresh
 		// question and response), so it sits with them, ahead of the
 		// families that bend protection and the write floor.
-		{"thread-chain", runThreadChainScenarios, false},
+		{"thread-chain", runThreadChainScenarios, logicGroupB},
 		// Spec 05a — the contract data exchange loop. Same "no
 		// shared-state mutation" property as the families above (its one
 		// row authors its own fresh contract, work_request and data
 		// packages), so placed right after them, still ahead of
 		// boundary/refusal/space, which deliberately bend protection and
 		// the write floor.
-		{"data-loop", runDataLoopScenarios, false},
+		{"data-loop", runDataLoopScenarios, logicGroupB},
 		// P11 (agent-exchange-2026-08, spec 11) AC5 — the two-agent
 		// byte/document round trip plus its corruption twin. Same "no
 		// shared-state mutation" property as every family above (both
@@ -243,25 +260,92 @@ func allFamilies() []familyDriver {
 		// anything another family's own artifacts touch, and it never
 		// advances space-wide state (space.yaml, branch protection, the
 		// write floor) the way space/boundary/refusal deliberately do.
-		{"bytes", runBytesScenarios, false},
-		{"boundary", runBoundaryScenarios, true},
-		{"refusal", runRefusalScenarios, true},
-		{"space", runSpaceScenarios, true},
+		{"bytes", runBytesScenarios, logicGroupC},
+		{"boundary", runBoundaryScenarios, logicGroupC},
+		{"refusal", runRefusalScenarios, logicGroupC},
+		{"space", runSpaceScenarios, logicGroupC},
 	}
 }
 
-// logicFamilyGroups splits allFamilies for the logic tier: group A (authors
-// only its own artifacts) and group B (bends space-wide state), each in
-// allFamilies' relative order.
-func logicFamilyGroups() (groupA, groupB []familyDriver) {
-	for _, f := range allFamilies() {
-		if f.sharedState {
-			groupB = append(groupB, f)
-		} else {
-			groupA = append(groupA, f)
+// logicFamilyGroupSet is one logic-tier group and its families.
+type logicFamilyGroupSet struct {
+	Name     logicFamilyGroup
+	Families []familyDriver
+}
+
+// logicFamilyGroups splits allFamilies for the logic tier into the groups A, B
+// and C, in that order, each holding its families in allFamilies' relative
+// order. A family whose group is not one of the three appears in none of them;
+// TestLogicFamilyGroupsCoverEveryFamily fails on that, and TestLogicMatrix
+// refuses to run on it.
+func logicFamilyGroups() []logicFamilyGroupSet {
+	sets := make([]logicFamilyGroupSet, 0, len(logicGroupOrder))
+	for _, g := range logicGroupOrder {
+		set := logicFamilyGroupSet{Name: g}
+		for _, f := range allFamilies() {
+			if f.group == g {
+				set.Families = append(set.Families, f)
+			}
+		}
+		sets = append(sets, set)
+	}
+	return sets
+}
+
+// ungroupedFamilies names every family that logicFamilyGroups would drop.
+func ungroupedFamilies() []string {
+	placed := map[string]bool{}
+	for _, set := range logicFamilyGroups() {
+		for _, f := range set.Families {
+			placed[f.name] = true
 		}
 	}
-	return groupA, groupB
+	var missing []string
+	for _, f := range allFamilies() {
+		if !placed[f.name] {
+			missing = append(missing, f.name)
+		}
+	}
+	return missing
+}
+
+// TestLogicFamilyGroupsCoverEveryFamily is the guard behind logicFamilyGroups:
+// a family added to allFamilies without a group would run in no logic-tier
+// group and stay not-run, which reds the tier only at its very end.
+func TestLogicFamilyGroupsCoverEveryFamily(t *testing.T) {
+	t.Parallel()
+	if missing := ungroupedFamilies(); len(missing) > 0 {
+		t.Fatalf("families with no logic-tier group: %v — set the group field in allFamilies", missing)
+	}
+	sets := logicFamilyGroups()
+	var names []logicFamilyGroup
+	total := 0
+	for _, set := range sets {
+		names = append(names, set.Name)
+		if len(set.Families) == 0 {
+			t.Errorf("group %s has no family", set.Name)
+		}
+		total += len(set.Families)
+	}
+	if want := []logicFamilyGroup{logicGroupA, logicGroupB, logicGroupC}; fmt.Sprint(names) != fmt.Sprint(want) {
+		t.Errorf("group order = %v, want %v", names, want)
+	}
+	if total != len(allFamilies()) {
+		t.Errorf("groups hold %d families, allFamilies has %d", total, len(allFamilies()))
+	}
+	// Relative order: each group lists its families as allFamilies does.
+	index := map[string]int{}
+	for i, f := range allFamilies() {
+		index[f.name] = i
+	}
+	for _, set := range sets {
+		for i := 1; i < len(set.Families); i++ {
+			if index[set.Families[i-1].name] >= index[set.Families[i].name] {
+				t.Errorf("group %s lists %s before %s, against allFamilies' order",
+					set.Name, set.Families[i-1].name, set.Families[i].name)
+			}
+		}
+	}
 }
 
 // driveFamilies runs families (a slice of allFamilies()) and records what they return.
