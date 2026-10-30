@@ -407,13 +407,29 @@ VERIFY_STAGES="${A2A_VERIFY_STAGES:-$ROOT/.a2a/cache/verify/stages.jsonl}"
 # spaces, quotes and backslashes (the dogfood member's label has quotes).
 _json_string() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
 
+# _claim_stage_sink <dir> — a step row is the FIRST thing to touch the verify root
+# on a fresh checkout. Writing it there with no ownership marker made verify.sh
+# refuse the directory as foreign; a checkout that had ever run verify.sh hid that.
+# So the row claims the root the way verify.sh would. A non-empty root with no marker really is foreign: no
+# row lands in it, and verify.sh reports it. A sink elsewhere (--teeth) owns itself.
+_claim_stage_sink() {
+  local dir="$1" existing
+  [ "$dir" = "$ROOT/.a2a/cache/verify" ] || return 0
+  [ ! -f "$dir/.a2ahub-verify-cache-v1" ] || return 0
+  mkdir -p "$dir" || return 1
+  existing="$(find "$dir" -mindepth 1 -maxdepth 1 -print -quit)"
+  [ -z "$existing" ] || return 1
+  verify_cache_marker "$(cd "$ROOT" && pwd -P)" >"$dir/.a2ahub-verify-cache-v1"
+}
+
 # _step_row <label> <verdict> <seconds> — best effort by design: a row that
 # cannot be written must not turn a passing member red, and the telemetry the
 # receipt counts is untouched either way.
 _step_row() {
   local tree
   tree="$(git -C "$ROOT" rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
-  { mkdir -p "$(dirname "$VERIFY_STAGES")" \
+  { _claim_stage_sink "$(dirname "$VERIFY_STAGES")" \
+    && mkdir -p "$(dirname "$VERIFY_STAGES")" \
     && printf '{"gate":"step:%s","verdict":"%s","duration_ms":%s,"mode":"release-check","at":"%s","tree":"%s"}\n' \
       "$(_json_string "$1")" "$2" "$(($3 * 1000))" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$tree" >>"$VERIFY_STAGES"; } \
     || true # reason: the row is evidence, never a verdict
@@ -1020,6 +1036,23 @@ suite_members() {
 # a fact about the product. A composed ship gate that let the first wear the
 # second's clothes — in either direction — would be worse than three separate
 # targets, because it would look complete.
+#
+# THE DEVELOPER DIRECTORY IS PART OF THAT ENV. The CI job builds under full Xcode.
+# Under the Command Line Tools the compiler is never handed the swift-testing macro
+# plugin, so `swift test` stops with "plugin for module 'TestingMacros' not found"
+# while the same tree passes under Xcode (measured 2026-10-30, Swift 6.4, 14 tests).
+# That is a fact about this host's toolchain, not the notifier, hence UNMEASURED.
+notifier_developer_dir() { # $1 = where a full Xcode lives
+  local active="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
+  case "$active" in
+    "" | */CommandLineTools*)
+      [ -d "$1" ] || return 1
+      active="$1"
+      ;;
+  esac
+  printf '%s\n' "$active"
+}
+
 macos_delta() {
   if [ "$(uname -s)" != "Darwin" ]; then
     gate_unmeasured "the macos-15 delta needs a darwin host; this is $(uname -s). The container half of the release gate CANNOT stand in for it — ci.yml's and release.yml's macos-15 jobs build and package a Swift companion, and no Linux image runs them. Run \`bash scripts/ci-parity.sh --macos-delta\` on a macOS machine before shipping."
@@ -1027,6 +1060,12 @@ macos_delta() {
   fi
   if ! command -v swift >/dev/null 2>&1; then
     gate_unmeasured "the macos-15 delta needs a Swift toolchain and \`swift\` is not on PATH (install Xcode or the Command Line Tools). Nothing was measured about integrations/macos-notifier; this is NOT a claim that it builds."
+    return "$GATE_EXIT_UNMEASURED"
+  fi
+
+  local developer_dir
+  if ! developer_dir="$(notifier_developer_dir /Applications/Xcode.app/Contents/Developer)"; then
+    gate_unmeasured "the macos-15 delta builds under full Xcode, as ci.yml's job does, and this host has only the Command Line Tools, which compile without the swift-testing macro plugin. Install Xcode or set DEVELOPER_DIR. The macOS companion is NOT verified by this run."
     return "$GATE_EXIT_UNMEASURED"
   fi
 
@@ -1043,10 +1082,16 @@ macos_delta() {
     # ci.yml's macos-15 job sets these three in the step's own `env:` block. The
     # values are that job's, not invented here: a different VERSION or a real
     # SIGNING_MODE would be testing something CI does not run.
-    export VERSION=0.0.0 SIGNING_MODE=adhoc OUTPUT_DIR="$outdir"
-    run_step "swift --version"                                        swift --version
-    run_step "integrations/macos-notifier/scripts/test.sh"            bash integrations/macos-notifier/scripts/test.sh
-    run_step "integrations/macos-notifier/scripts/package-release.sh" bash integrations/macos-notifier/scripts/package-release.sh
+    export VERSION=0.0.0 SIGNING_MODE=adhoc OUTPUT_DIR="$outdir" DEVELOPER_DIR="$developer_dir"
+    # Explicit, because errexit is NOT in force here: this subshell is the left side
+    # of the list below, and run_step calls a member the same way. Bash ignores
+    # errexit inside such a body, even after an inner set -e, so a failed test.sh
+    # followed by a passing package-release.sh used to return 0.
+    member_rc=0
+    run_step "swift --version"                                        swift --version || member_rc=1
+    run_step "integrations/macos-notifier/scripts/test.sh"            bash integrations/macos-notifier/scripts/test.sh || member_rc=1
+    run_step "integrations/macos-notifier/scripts/package-release.sh" bash integrations/macos-notifier/scripts/package-release.sh || member_rc=1
+    exit "$member_rc"
   ) || rc=$?
   rm -rf "$outdir"
   return "$rc"
@@ -1078,8 +1123,31 @@ host_only() {
   #   retries:             CI?1:0
   # This is the half of the ship gate the container cannot cover, so nothing
   # else was ever going to catch it.
-  run_step "npm run check:quality:host"                env CI=true npm --prefix web run check:quality:host
-  macos_delta
+  #
+  # Every member runs and each status is kept: release_phase_two calls this through
+  # run_step, where errexit does not apply, so a bare sequence returned only the
+  # LAST member's status. A red outranks an UNMEASURED: "this failed" stays true
+  # whatever could not be measured beside it.
+  local quality_rc=0 delta_rc=0
+  run_step "npm run check:quality:host"                env CI=true npm --prefix web run check:quality:host || quality_rc=1
+  macos_delta || delta_rc=$?
+  [ "$quality_rc" -eq 0 ] || return "$quality_rc"
+  return "$delta_rc"
+}
+
+# release_phase_two — phase 2 of the ship gate and what its status means. The status
+# is captured with `||`. It used to be read as the first line inside an
+# `if ! run_step`, where $? is the NEGATED status, always 0: phase 2 could print
+# FAILED and still earn a receipt. Teeth T37 judges this function.
+release_phase_two() {
+  local rc=0
+  run_step "release gate phase 2 — host-only: check:quality:host + the macos-15 delta" host_only || rc=$?
+  if [ "$rc" -eq "$GATE_EXIT_UNMEASURED" ]; then
+    printf 'ci-parity: phase 2 was UNMEASURED (see above) — the composed gate makes no claim about the macOS companion.\n' >&2
+  elif [ "$rc" -ne 0 ]; then
+    gate_fail "phase 2 failed: a host-only member did not pass; its FAILED line is above."
+  fi
+  return "$rc"
 }
 
 # The two secret scans, as functions so `--carry-suite` runs the SAME commands
@@ -1762,14 +1830,7 @@ release_gate() { # $1 = --dry-run | (empty)
   fi
 
   # PHASE 2 — the host. The only part of CI nothing else can reach.
-  if ! run_step "release gate phase 2 — host-only: check:quality:host + the macos-15 delta" host_only; then
-    macos_rc=$?
-    if [ "$macos_rc" -eq "$GATE_EXIT_UNMEASURED" ]; then
-      printf 'ci-parity: phase 2 was UNMEASURED (see above) — the composed gate makes no claim about the macOS companion.\n' >&2
-    else
-      gate_fail "the macos-15 delta failed: the Swift companion CI ships does not build or test here."
-    fi
-  fi
+  release_phase_two || macos_rc=$?
 
   # AC4/T3 — a verdict may not outlive the SHA it judged.
   head_after="$(git -C "$ROOT" rev-parse HEAD)"
@@ -3120,12 +3181,115 @@ EOF
   fi
   rm -rf "$d31"
 
+  # T37 — A HOST MEMBER'S RED REACHES THE VERDICT. Phase 2 printed OK and earned a
+  # receipt over a failed notifier test on 2026-10-30. Each row stubs the members
+  # and calls the real functions: quality, delta, wanted status.
+  local d37 row37 ok37=1 got37 quality37 delta37 want37
+  d37="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  mkdir -p "$d37/bin"
+  printf '#!/bin/sh\nexit "${STUB_NPM_RC:-0}"\n' >"$d37/bin/npm"
+  chmod +x "$d37/bin/npm"
+  for row37 in "0 0 0" "1 0 1" "0 1 1" "0 3 3" "1 3 1"; do
+    read -r quality37 delta37 want37 <<<"$row37"
+    got37=0
+    (
+      VERIFY_STAGES="$d37/stages.jsonl"
+      PATH="$d37/bin:$PATH"
+      export STUB_NPM_RC="$quality37"
+      macos_delta() { return "$delta37"; }
+      release_phase_two
+    ) >/dev/null 2>&1 || got37=$?
+    [ "$got37" -eq "$want37" ] || ok37=0
+  done
+  # The real macos_delta over the shape that shipped: test.sh red, packaging green.
+  got37=0
+  (
+    VERIFY_STAGES="$d37/stages.jsonl"
+    uname() { printf 'Darwin\n'; }
+    swift() { return 0; }
+    notifier_developer_dir() { printf '%s\n' "$d37"; }
+    bash() { case "$1" in *test.sh) return 1 ;; *) return 0 ;; esac; }
+    macos_delta
+  ) >/dev/null 2>&1 || got37=$?
+  [ "$got37" -eq 1 ] || ok37=0
+  # The toolchain: Command Line Tools resolve to Xcode, a named directory stands, and
+  # with no Xcode at all there is nothing to name.
+  [ "$(DEVELOPER_DIR=/x/CommandLineTools notifier_developer_dir "$d37")" = "$d37" ] || ok37=0
+  [ "$(DEVELOPER_DIR=/x/Xcode-beta.app notifier_developer_dir "$d37")" = "/x/Xcode-beta.app" ] || ok37=0
+  DEVELOPER_DIR=/x/CommandLineTools notifier_developer_dir "$d37/absent" >/dev/null 2>&1 && ok37=0
+  rm -rf "$d37"
+  if [ "$ok37" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL — T37: a failed host member must redden phase 2 whichever member it is, and UNMEASURED must stay its own status\n' >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T37 — a failed host member reddens phase 2 whichever member it is\n'
+  fi
+
+  # T38 — THE FIRST STEP ROW CLAIMS THE VERIFY ROOT, AND ONLY AN EMPTY ONE. A row
+  # written with no marker made verify.sh refuse the whole ship gate on any fresh
+  # checkout. The marker must be verify.sh's own bytes, and a foreign root stays
+  # untouched.
+  local d38 ok38=1 root38 sink38
+  d38="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  root38="$(cd "$d38" && pwd -P)"
+  sink38="$root38/.a2a/cache/verify"
+  (
+    ROOT="$root38"
+    VERIFY_STAGES="$sink38/stages.jsonl"
+    _step_row 'first row' pass 1
+  ) >/dev/null 2>&1 || ok38=0
+  [ "$(cat "$sink38/.a2ahub-verify-cache-v1" 2>/dev/null)" = "$(verify_cache_marker "$root38")" ] || ok38=0
+  grep -qF '"gate":"step:first row"' "$sink38/stages.jsonl" 2>/dev/null || ok38=0
+  rm -rf "$sink38"
+  mkdir -p "$sink38"
+  : >"$sink38/foreign"
+  (
+    ROOT="$root38"
+    VERIFY_STAGES="$sink38/stages.jsonl"
+    _step_row 'second row' pass 1
+  ) >/dev/null 2>&1 || ok38=0
+  [ ! -e "$sink38/stages.jsonl" ] || ok38=0
+  [ ! -e "$sink38/.a2ahub-verify-cache-v1" ] || ok38=0
+  rm -rf "$d38"
+  if [ "$ok38" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL — T38: the first step row must write verify.sh'"'"'s marker on an empty root and touch nothing on a foreign one\n' >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T38 — the first step row claims an empty verify root and leaves a foreign one alone\n'
+  fi
+
+  # T39 — A FRESH CHECKOUT CAN START THE CONTAINER. ci-parity-docker.sh claims its
+  # bind as /work before docker runs, with a stubbed docker over a throwaway repo:
+  # the mountpoint docker creates in that bind must never meet an unclaimed root.
+  local d39 ok39=1
+  d39="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  mkdir -p "$d39/repo/scripts/lib" "$d39/bin"
+  cp "$ROOT/scripts/ci-parity-docker.sh" "$d39/repo/scripts/"
+  cp "$ROOT/scripts/lib/gate-lib.sh" "$d39/repo/scripts/lib/"
+  # The script derives its image's pins from these before it reaches the bind.
+  mkdir -p "$d39/repo/.github" "$d39/repo/web"
+  cp "$ROOT/go.mod" "$d39/repo/"
+  cp -R "$ROOT/.github/workflows" "$d39/repo/.github/"
+  cp "$ROOT/web/package-lock.json" "$d39/repo/web/"
+  git -C "$d39/repo" init -q
+  printf '#!/bin/sh\ncase "$*" in *inspect*) exit 1 ;; esac\nexit 0\n' >"$d39/bin/docker"
+  chmod +x "$d39/bin/docker"
+  (cd "$d39/repo" && PATH="$d39/bin:$PATH" bash scripts/ci-parity-docker.sh true) >/dev/null 2>&1 || ok39=0
+  [ "$(cat "$d39/repo/.a2a/cache/parity-container/.a2ahub-verify-cache-v1" 2>/dev/null)" = "$(verify_cache_marker /work)" ] || ok39=0
+  rm -rf "$d39"
+  if [ "$ok39" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL — T39: ci-parity-docker.sh must write the verify marker for /work into its bind before docker runs\n' >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T39 — the container bind is claimed before docker can create a mountpoint in it\n'
+  fi
+
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
 
-  printf 'ci-parity --teeth: 36 case(s) green.\n'
+  printf 'ci-parity --teeth: 39 case(s) green.\n'
 }
 
 case "${1:---run}" in

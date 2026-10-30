@@ -21,6 +21,9 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+# shellcheck source=lib/gate-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/gate-lib.sh"
+
 IMAGE=${PARITY_IMAGE:-a2ahub-ci-parity:local}
 # A fixed, repo-named container rather than docker's random two-word name: this
 # thing runs for twenty minutes and shows up in Docker Desktop next to every
@@ -182,6 +185,14 @@ fi
 # result." It was right, and this is what it was missing. Found on the ship
 # gate's fourth real run, 2026-08-21, with BOTH phases green.
 mkdir -p "$ROOT/.a2a/cache/parity-container"
+
+# THIS SCRIPT OWNS THE BIND, SO IT CLAIMS IT, as /work. The nested lint volume below
+# makes docker create its mountpoint inside the bind before the container runs
+# anything, so on a fresh directory verify.sh met a non-empty root with no marker and
+# refused it. Since that volume landed on 2026-10-27 only a checkout carrying an older
+# marker could run the ship gate; a fresh clone died at `make check` within seconds.
+[ -f "$ROOT/.a2a/cache/parity-container/.a2ahub-verify-cache-v1" ] \
+  || verify_cache_marker /work >"$ROOT/.a2a/cache/parity-container/.a2ahub-verify-cache-v1"
 
 # THE LINT CACHE STARTS EMPTY EVERY RUN, because CI's does. actions/setup-go
 # restores GOCACHE and the module cache, never the golangci-lint cache, so a

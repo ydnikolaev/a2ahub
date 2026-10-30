@@ -52,6 +52,11 @@ _GATE_UNMEASURED=0
 # shellcheck disable=SC2034  # consumed by sourcing scripts, not within this lib
 GATE_EXIT_UNMEASURED=3
 
+# verify_cache_marker <checkout root> — the bytes of the verify cache's ownership
+# marker. Two writers claim that directory, scripts/verify.sh and the step rows in
+# scripts/ci-parity.sh, and verify.sh refuses a marker that differs by one byte.
+verify_cache_marker() { printf 'a2ahub-verify-cache-v1\nrepo=%s\n' "$1"; }
+
 # In GitHub Actions, emit workflow annotations; otherwise plain text.
 _gate_ci() { [ "${GITHUB_ACTIONS:-}" = "true" ]; }
 

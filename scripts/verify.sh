@@ -55,7 +55,7 @@ fail() {
 }
 
 expected_marker() {
-  printf 'a2ahub-verify-cache-v1\nrepo=%s\n' "$ROOT"
+  verify_cache_marker "$ROOT"
 }
 
 # THE GO BUILD CACHE BELONGS TO THE MAIN CHECKOUT, every worktree shares it.
