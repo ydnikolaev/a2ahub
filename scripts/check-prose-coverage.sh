@@ -162,66 +162,6 @@ ledger_keys() { # $1 = yaml path, $2 = section ("covered:" or "declared:")
   ' "$1"
 }
 
-# ledger_has_key reports (via exit status) whether key is DECLARED inside
-# section, independent of its value — deliberately separate from
-# ledger_value: a key declared with a BLANK value and a key never declared
-# at all both produce an empty string from command substitution, and
-# collapsing "absent" and "present-but-blank" would misreport a blank
-# `declared:` reason as "no ledger entry" instead of "blank reason" (the
-# check-loop-coverage.sh precedent this function copies).
-# The lookup is deliberately not a pipeline, and the reason is a FLAKY GATE
-# rather than a style preference.
-# `grep -q` exits at the FIRST match. Under this file's `set -o pipefail`
-# (line 52) the pipeline then reports the PRODUCER's status, and the producer
-# is an awk that was still writing when grep closed the pipe: it dies of
-# SIGPIPE (141), so a key that IS present reports absent. Whether it happens
-# is pure scheduling — 0/200 locally on a small ledger, and on GitHub's
-# loaded runners a DIFFERENT random subset of keys every run. It reddened
-# `prose-coverage --teeth` in both repositories' CI on 2026-08-30 while every
-# local container stayed green; tooth (l) below reproduces it deterministically.
-# A here-string cannot fail this way: the producer has already finished, and
-# grep reads a file rather than a pipe.
-ledger_has_key() { # $1 = yaml path, $2 = section, $3 = key
-  local keys
-  keys="$(ledger_keys "$1" "$2")" || return 1
-  grep -qxF -- "$3" <<<"$keys"
-}
-
-# ledger_value prints the (quote-stripped, `\"`-unescaped) value of one key
-# inside one section, or nothing if that key has no row there. Matches by
-# literal string equality — never builds a dynamic regex from key, so a key
-# containing a regex-meaningful character (this file's own `:`-joined,
-# space-carrying keys) can never be misread. Unescaping `\"` matters here in
-# a way it does not for loop-phases.yaml's own values: several of this
-# corpus's real headings carry a literal quoted phrase (`§8.2 Send loop —
-# "I need something from another system"`), so a covered: value naming one
-# must itself escape that inner `"`, and this function must undo it before
-# comparing against the heading text anchor_exists reads off disk verbatim.
-ledger_value() { # $1 = yaml path, $2 = section, $3 = key
-  awk -v section="$2" -v key="$3" '
-    BEGIN { insec = 0 }
-    /^[a-zA-Z_]+:[ \t]*$/ {
-      insec = ($0 == section) ? 1 : 0
-      next
-    }
-    insec == 1 {
-      if (substr($0, 1, 2) != "  ") next
-      body = substr($0, 3)
-      if (substr(body, 1, 1) == "#") next
-      colon = index(body, ": ")
-      if (colon == 0) next
-      k = substr(body, 1, colon - 1)
-      if (k != key) next
-      v = substr(body, colon + 2)
-      gsub(/^"/, "", v)
-      gsub(/"[ \t]*$/, "", v)
-      gsub(/\\"/, "\"", v)
-      print v
-      exit
-    }
-  ' "$1"
-}
-
 # -- declared_classes: parsing --------------------------------------------
 #
 # A `declared:` reason written 100+ times, one per member, is the unbounded
@@ -246,6 +186,88 @@ ledger_value() { # $1 = yaml path, $2 = section, $3 = key
 #
 # class_names prints every class name declared under `declared_classes:`,
 # one per line, in file order.
+# ledger_rows prints one "key<TAB>value" line per row of a section, the value
+# stripped of its surrounding quotes and with each backslash-escaped quote
+# undone: several real headings carry a literal quoted phrase, so a covered:
+# value naming one must escape the inner quote, and anchor_exists compares the
+# unescaped text against the page. run_check looks rows up in memory instead of
+# starting a process per member. A key with a BLANK value still has a row, so
+# "present but blank" stays distinct from "absent".
+ledger_rows() { # $1 = yaml path, $2 = section
+  awk -v section="$2" '
+    BEGIN { insec = 0 }
+    /^[a-zA-Z_]+:[ \t]*$/ {
+      insec = ($0 == section) ? 1 : 0
+      next
+    }
+    insec == 1 {
+      if (substr($0, 1, 2) != "  ") next
+      body = substr($0, 3)
+      if (substr(body, 1, 1) == "#") next
+      colon = index(body, ": ")
+      if (colon == 0) next
+      k = substr(body, 1, colon - 1)
+      v = substr(body, colon + 2)
+      gsub(/^"/, "", v)
+      gsub(/"[ \t]*$/, "", v)
+      gsub(/\\"/, "\"", v)
+      printf "%s\t%s\n", k, v
+    }
+  ' "$1"
+}
+
+# tag_lines prefixes every line of its input with a tag and a tab.
+tag_lines() { # $1 = tag
+  awk -v t="$1" '{ print t "\t" $0 }'
+}
+
+# member_rows joins the universe against the ledger in one pass and prints one
+# row per member, in universe order, separated by the unit separator so a blank
+# field survives the read: member, in covered:, in declared:, how many classes
+# list it, those classes, its covered: value, its declared: reason. The first
+# row of a duplicated key wins.
+member_rows() { # $1 = yaml path, $2 = universe, $3 = class table
+  {
+    ledger_rows "$1" "covered:" | tag_lines C
+    ledger_rows "$1" "declared:" | tag_lines D
+    if [ -n "$3" ]; then printf '%s' "$3" | tag_lines K; fi
+    printf '%s\n' "$2" | tag_lines U
+  } | awk -v sep=$'\x1f' '
+    {
+      tag = substr($0, 1, 1)
+      rest = substr($0, 3)
+      if (tag == "U") {
+        if (rest == "") next
+        printf "%s%s%d%s%d%s%d%s%s%s%s%s%s\n", rest, sep, (rest in cov), sep, (rest in dec), sep, count[rest] + 0, sep, classes[rest], sep, cov[rest], sep, dec[rest]
+        next
+      }
+      tab = index(rest, "\t")
+      k = substr(rest, 1, tab - 1)
+      v = substr(rest, tab + 1)
+      if (tag == "C") { if (!(k in cov)) cov[k] = v }
+      else if (tag == "D") { if (!(k in dec)) dec[k] = v }
+      else {
+        classes[k] = (k in classes) ? classes[k] " " v : v
+        count[k]++
+      }
+    }
+  '
+}
+
+# in_lines reports whether $2 is one whole line of the newline list $1. No
+# process, because a teeth run asks this tens of thousands of times, and no
+# pipeline, which is a FLAKY GATE rather than a style preference: a grep that
+# exits at its first match under this file's pipefail (line 52) kills a
+# producer still writing, so a present key reports absent. That reddened
+# --teeth in both repositories' CI on 2026-08-30 while every local container
+# stayed green. Tooth (l) below holds this shut.
+in_lines() { # $1 = newline list, $2 = line
+  case $'\n'"$1"$'\n' in
+    *$'\n'"$2"$'\n'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 class_names() { # $1 = yaml path
   awk '
     /^declared_classes:[ \t]*$/ { insec = 1; next }
@@ -320,9 +342,9 @@ class_members() { # $1 = yaml path, $2 = class name
 # IN PASSING (rare for a structural reason, which cites a code or schema
 # fact, not a roadmap position) would false-positive; the fix is to word
 # the reason around the token, not to weaken this check.
+DEFERRAL_RE='\btodo\b|\bfixme\b|not (yet )?documented|\blater\b|\bsoon\b|\bpending\b|\bbacklog\b|\bdeferred\b|\bplanned\b|\bcoming\b|\bwill be\b|\bphase [0-9]+\b|\bwave[ -][0-9a-zA-Z]+\b|\bP[0-9]+\b|\bH[0-9]+\b'
 is_deferral_reason() { # $1 = reason text
-  grep -qiE \
-    '\btodo\b|\bfixme\b|not (yet )?documented|\blater\b|\bsoon\b|\bpending\b|\bbacklog\b|\bdeferred\b|\bplanned\b|\bcoming\b|\bwill be\b|\bphase [0-9]+\b|\bwave[ -][0-9a-zA-Z]+\b|\bP[0-9]+\b|\bH[0-9]+\b' <<<"$1"
+  grep -qiE "$DEFERRAL_RE" <<<"$1"
 }
 
 # anchor_exists reports (via exit status) whether md carries a markdown
@@ -331,15 +353,22 @@ is_deferral_reason() { # $1 = reason text
 # string (grep -F), never a regex: this corpus's headings carry `§`,
 # backticks and parens, exactly the characters a regex would misread.
 # The heading list is CAPTURED before it is matched, for the reason
-# ledger_has_key's own comment gives: piping into `grep -q` under
+# in_lines' own comment gives: piping into `grep -q` under
 # `set -o pipefail` reports a producer killed by SIGPIPE, so an anchor that
 # IS the first heading on a long page can read as absent. Here that would
-# refuse a `covered:` row whose page and heading both exist.
+# refuse a `covered:` row whose page and heading both exist. A page is read
+# once per run_check, which resets the index, so a mutated page is re-read.
+ANCHOR_PAGES=""
+ANCHOR_INDEX=""
 anchor_exists() { # $1 = md file, $2 = anchor text
   [ -f "$1" ] || return 1
-  local headings
-  headings="$(grep -E '^#{1,6}[[:space:]]' "$1" | sed -E 's/^#{1,6}[[:space:]]+//')" || return 1
-  grep -qxF -- "$2" <<<"$headings"
+  if ! in_lines "$ANCHOR_PAGES" "$1"; then
+    ANCHOR_PAGES="$ANCHOR_PAGES$1"$'\n'
+    # reason: a page with no heading makes grep exit 1, and the lookup below
+    # then finds nothing, which is the right answer.
+    ANCHOR_INDEX="$ANCHOR_INDEX$(grep -E '^#{1,6}[[:space:]]' "$1" | sed -E 's/^#{1,6}[[:space:]]+//' | awk -v p="$1" '{ print p "\t" $0 }')"$'\n'
+  fi
+  in_lines "$ANCHOR_INDEX" "$1"$'\t'"$2"
 }
 
 # schema_declared_fields prints, one per line sorted, the UNION of every
@@ -495,7 +524,7 @@ derive_universe() { # $1 = surfaces json, $2 = commands(nl), $3 = tools(nl), $4 
       field:*)
         total_fields=$((total_fields + 1))
         key="${line##*:}"
-        if grep -qxF "$key" <<<"$excluded_keys"; then
+        if in_lines "$excluded_keys" "$key"; then
           excluded_count=$((excluded_count + 1))
           continue
         fi
@@ -516,7 +545,7 @@ check_declared_keys() { # $1 = yaml, $2 = universe(nl, sorted)
   for section in "covered:" "declared:"; do
     while IFS= read -r key; do
       [ -z "$key" ] && continue
-      if ! grep -qxF "$key" <<<"$universe"; then
+      if ! in_lines "$universe" "$key"; then
         gate_fail "prose-coverage: declared key \"$key\" in $section is not part of the derived universe (a stale/renamed cmd:, tool: or field: entry)"
       fi
     done < <(ledger_keys "$yaml" "$section")
@@ -611,7 +640,7 @@ run_check() { # $1 = root
     fi
     while IFS= read -r cm; do
       [ -z "$cm" ] && continue
-      if ! grep -qxF "$cm" <<<"$universe"; then
+      if ! in_lines "$universe" "$cm"; then
         gate_fail "prose-coverage: declared class \"$cls\" lists \"$cm\", which is not part of the derived universe (a stale/renamed cmd:, tool: or field: entry)"
         continue
       fi
@@ -621,18 +650,21 @@ run_check() { # $1 = root
 
   local skill_dir="$root/skill/a2ahub"
   local member has_cov has_dec value page anchor reason member_classes member_class_count claims
-  while IFS= read -r member; do
+  # One join per run, not one lookup per member. This walk used to start four
+  # to eight processes for each of ~500 members, and --teeth runs it once per
+  # mutation: 176 s, the longest tooth in the harness (release-speed-2026-11
+  # P5). A bash prefix-strip over the ledger is no cheaper, at 60 ms a row.
+  ANCHOR_PAGES=""
+  ANCHOR_INDEX=""
+  local deferral_keys
+  # One grep over all the reasons at once; the line numbers map back to keys.
+  deferral_keys="$(ledger_rows "$yaml" "declared:" | cut -f2- | grep -niE "$DEFERRAL_RE" | cut -d: -f1 \
+    | awk -F'\t' 'NR==FNR{hit[$1]=1;next} FNR in hit{print $1}' - <(ledger_rows "$yaml" "declared:"))"
+  while IFS=$'\x1f' read -r member has_cov has_dec member_class_count member_classes value reason; do
     [ -z "$member" ] && continue
-    if ledger_has_key "$yaml" "covered:" "$member"; then has_cov=1; else has_cov=0; fi
-    if ledger_has_key "$yaml" "declared:" "$member"; then has_dec=1; else has_dec=0; fi
-    member_classes="$(printf '%s' "$class_table" | awk -F'\t' -v m="$member" '$1==m{print $2}')"
-    member_class_count=0
-    if [ -n "$member_classes" ]; then
-      member_class_count="$(printf '%s\n' "$member_classes" | grep -c .)"
-    fi
 
     if [ "$member_class_count" -gt 1 ]; then
-      gate_fail "prose-coverage: $member is listed in more than one declared class ($(printf '%s' "$member_classes" | tr '\n' ' ')) in $yaml — pick one"
+      gate_fail "prose-coverage: $member is listed in more than one declared class ($member_classes) in $yaml — pick one"
       continue
     fi
 
@@ -647,7 +679,6 @@ run_check() { # $1 = root
     fi
 
     if [ "$has_cov" -eq 1 ]; then
-      value="$(ledger_value "$yaml" "covered:" "$member")"
       case "$value" in
         *'#'*)
           page="${value%%#*}"
@@ -673,12 +704,11 @@ run_check() { # $1 = root
     fi
 
     if [ "$has_dec" -eq 1 ]; then
-      reason="$(ledger_value "$yaml" "declared:" "$member")"
-      if [ -z "$(printf '%s' "$reason" | tr -d '[:space:]')" ]; then
+      if [ -z "${reason//[[:space:]]/}" ]; then
         gate_fail "prose-coverage: $member is declared in $yaml with a blank reason — an exemption without a reason reads as a decision"
         continue
       fi
-      if is_deferral_reason "$reason"; then
+      if in_lines "$deferral_keys" "$member"; then
         gate_fail "prose-coverage: $member's declared: reason reads as a DEFERRAL, not a structural reason: \"$reason\" — a capability with no prose is a gap, not something to schedule"
       fi
       continue
@@ -686,7 +716,7 @@ run_check() { # $1 = root
 
     # member_class_count == 1 here: satisfied via its declared class — that
     # class's own reason was already validated once, above.
-  done <<<"$universe"
+  done < <(member_rows "$yaml" "$universe" "$class_table")
 
   check_declared_keys "$yaml" "$universe"
 
@@ -959,25 +989,25 @@ run_teeth() {
     return 1
   fi
 
-  # (l) ledger_has_key must find a key that a `grep -q` would match on the
-  # FIRST line of a ledger far larger than a pipe buffer. Written as a
-  # pipeline it cannot: grep exits at that first match, awk takes SIGPIPE
-  # with tens of thousands of lines still unwritten, and `pipefail` reports
-  # the dead producer — the present key reads as absent. 50k rows so the
-  # producer is guaranteed to still be writing; the real corpus is ~260 rows,
-  # fits the buffer, and therefore hides this on every fast machine.
+  # (l) A ledger far larger than a pipe buffer must still answer for its
+  # FIRST row and refuse a key it lacks. A lookup written as a pipeline into a
+  # first-match grep cannot do the first: the producer dies mid-write and
+  # pipefail reports it. 50k rows so a producer is guaranteed to still be
+  # writing; the real corpus fits the buffer and hides this on a fast machine.
   local big="$tmp/sigpipe.yaml"
   {
     printf 'schema: prose-coverage/v1\n'
     printf 'declared:\n'
     seq 1 50000 | sed 's#^#  cmd:fixture-#; s#$#: "a structural fixture reason"#'
   } >"$big"
-  if ! ledger_has_key "$big" "declared:" "cmd:fixture-1"; then
-    echo "prose-coverage --teeth: FAILED (l) — ledger_has_key reported the FIRST key of a 50000-row ledger absent. That is the SIGPIPE-under-pipefail defect: the lookup must not be a pipeline into \`grep -q\`." >&2
+  local big_keys
+  big_keys="$(ledger_keys "$big" "declared:")"
+  if ! in_lines "$big_keys" "cmd:fixture-1"; then
+    echo "prose-coverage --teeth: FAILED (l) — the FIRST key of a 50000-row ledger read as absent. That is the early-exit pipeline defect." >&2
     return 1
   fi
-  if ledger_has_key "$big" "declared:" "cmd:fixture-never"; then
-    echo "prose-coverage --teeth: FAILED (l) — ledger_has_key reported an absent key present; the fix must not green everything." >&2
+  if in_lines "$big_keys" "cmd:fixture-never"; then
+    echo "prose-coverage --teeth: FAILED (l) — an absent key read as present; the fix must not green every lookup." >&2
     return 1
   fi
 
