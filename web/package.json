@@ -17,6 +17,7 @@
     "check:a11y": "playwright test",
     "check:lighthouse": "node scripts/audit-lighthouse.mjs",
     "check:quality": "npm run check && npm run check:a11y && npm run check:lighthouse",
+    "check:quality:host": "npm run build && npm run check:a11y && npm run check:lighthouse",
     "preview": "astro preview"
   },
   "dependencies": {

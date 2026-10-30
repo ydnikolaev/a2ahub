@@ -120,6 +120,12 @@ excused_reason() { # $1 = command
       echo "provisioning, not a check" ;;
     echo\ *)
       echo "a workflow's own explanatory echo, not a check" ;;
+    # govulncheck.yml runs `make vulncheck`; the ship gate does not, because
+    # `make release-preflight` (runbook step 6) runs it later on the same HEAD
+    # and gates the tag, so a member here asked the same question twice
+    # (release-speed P7 T4 / R-2 Q2). Excused from the audit, not from the gate.
+    "make vulncheck")
+      echo "run by \`make release-preflight\` (runbook step 6), which gates the tag" ;;
     *"a2a feedback validate --ci"*)
       echo "runs inside a space's own CI against a submitted file, not this repo" ;;
     *"npm run build"*)
@@ -253,8 +259,9 @@ excused_reason() { # $1 = command
     #     harness-teeth, web-quality and projection, and `go-test-scoped:<pkg>`
     #     — which is `go test <pkg>`, a strict subset of go-test's `./...`.
     #   * Two of the others are EXECUTES members in their own right:
-    #     `make harness-check` (harness-teeth) and `npm run check:quality`
-    #     (web-quality's own first half). The third, projection, is a member
+    #     `make harness-check` (harness-teeth) and `npm run check:quality:host`
+    #     (web-quality's a11y + Lighthouse half; its `npm run check` half is the
+    #     container's own `npm run check` member). The third, projection, is a member
     #     of this suite again (R-1 / D-041, release-speed P6): `make projection`
     #     runs the template rehearsal and then CI's own `check` inside a public
     #     projection, so the one local judge covers it.
@@ -276,7 +283,7 @@ excused_reason() { # $1 = command
     # it can prove is that no phase goes unrun, which is what the list above
     # does.
     "make lane-run-strict")
-      echo "every phase it can derive is run by the suite around it — MODE=full covers all of them except harness-teeth and web-quality, each an EXECUTES member of its own ('make harness-check', 'npm run check:quality'), and projection, an EXECUTES member of its own ('make projection', R-1 / D-041), and the derivation refusal it adds is 'make lane', also below. Re-running it re-paid a whole ceiling per userland." ;;
+      echo "every phase it can derive is run by the suite around it — MODE=full covers all of them except harness-teeth and web-quality, each an EXECUTES member of its own ('make harness-check', 'npm run check:quality:host'), and projection, an EXECUTES member of its own ('make projection', R-1 / D-041), and the derivation refusal it adds is 'make lane', also below. Re-running it re-paid a whole ceiling per userland." ;;
 
     # Group 7 — shell scaffolding (set/exit lines with no check of their own).
     "set -e" | "set +e" | "set -euo pipefail" | "set -o pipefail" \
@@ -385,6 +392,31 @@ excused_reason() { # $1 = command
 # discipline says report what a phase cost rather than what it was expected to.
 # A step whose cost nobody records is a step nobody can argue about removing —
 # which is how three ceiling runs accumulated in one runbook.
+# EVERY MEMBER LEAVES A SECONDS ROW (release-speed P7 T1). One row per run_step
+# goes to the stage sink of the side it runs on — the same stages.jsonl
+# scripts/verify.sh's stages_sink names, bound out of the container with the rest
+# of its verify root — as gate "step:<label>", mode "release-check". It is NEVER
+# telemetry.jsonl: telemetry_report counts every "gate" row there as a verify.sh
+# phase, and a step is not one (it would turn the receipt's verify_phases into a
+# lie again). Overridable ONLY so --teeth can read a constructed sink.
+VERIFY_STAGES="${A2A_VERIFY_STAGES:-$ROOT/.a2a/cache/verify/stages.jsonl}"
+
+# _json_string <text> — the text as the inside of a JSON string. Labels carry
+# spaces, quotes and backslashes (the dogfood member's label has quotes).
+_json_string() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+# _step_row <label> <verdict> <seconds> — best effort by design: a row that
+# cannot be written must not turn a passing member red, and the telemetry the
+# receipt counts is untouched either way.
+_step_row() {
+  local tree
+  tree="$(git -C "$ROOT" rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
+  { mkdir -p "$(dirname "$VERIFY_STAGES")" \
+    && printf '{"gate":"step:%s","verdict":"%s","duration_ms":%s,"mode":"release-check","at":"%s","tree":"%s"}\n' \
+      "$(_json_string "$1")" "$2" "$(($3 * 1000))" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$tree" >>"$VERIFY_STAGES"; } \
+    || true # reason: the row is evidence, never a verdict
+}
+
 run_step() { # $1 = label, $2... = command
   local label="$1"; shift
   local start end rc=0
@@ -393,9 +425,11 @@ run_step() { # $1 = label, $2... = command
   "$@" || rc=$?
   end="$(date +%s)"
   if [ "$rc" -eq 0 ]; then
+    _step_row "$label" pass "$((end - start))"
     printf 'ci-parity: %s OK (%ss)\n' "$label" "$((end - start))"
     return 0
   fi
+  _step_row "$label" fail "$((end - start))"
   printf 'ci-parity: %s FAILED (%ss)\n' "$label" "$((end - start))" >&2
   return "$rc"
 }
@@ -915,7 +949,12 @@ a2a_validate_dogfood_step() (
 #     this whole block, comments included, and `check:quality` runs
 #     `npm run check` as its literal first step.
 #
-#     It is `npm --prefix web run check:quality` rather than `make web-quality`
+#     RELEASE-SPEED P7 SPLIT IT BY WHERE EACH HALF CAN BE MEASURED: the
+#     container's `npm run check` member below is its first half, and the host
+#     runs `check:quality:host` (build, a11y, Lighthouse) afterwards, so the
+#     host no longer re-runs the unit tests and the dist assertions the
+#     container already judged. It is `npm --prefix web run check:quality:host`
+#     rather than `make web-quality`
 #     on purpose: that target is presence-gated on web/node_modules and prints
 #     "skip" when it is absent. A silent skip is the correct behaviour for a
 #     COMMIT lane on a laptop that never installed Node, and the wrong one for
@@ -937,7 +976,6 @@ suite_members() {
   # projection` runs the template pin/floor rehearsal first, fail-fast, then CI's
   # own `check` inside a public projection, so no separate rehearsal member.
   run_step "make projection"                           make projection
-  run_step "make vulncheck"                            make vulncheck
   # THE ONLY MEMBER HERE THAT CI DOES NOT RUN, and it is deliberate.
   #
   # Every other member mirrors a CI command; this one exists because CI itself
@@ -1018,7 +1056,8 @@ macos_delta() {
 # have needed a hand-kept column. It is MEASURABILITY: run each thing where it
 # can actually be measured, and say so where it cannot.
 #
-# `npm run check:quality` (a11y + Lighthouse) was a container member until
+# `npm run check:quality:host` (build + a11y + Lighthouse) was, as
+# `check:quality`, a container member until
 # 2026-08-21, when the composed gate ran it there for the first time. Every
 # route came back `performance 0 [0/0/0] (min 80)` with every metric `n/a` —
 # which is what an unloaded page looks like, not a bad one. The same command on
@@ -1037,7 +1076,7 @@ host_only() {
   #   retries:             CI?1:0
   # This is the half of the ship gate the container cannot cover, so nothing
   # else was ever going to catch it.
-  run_step "npm run check:quality"                     env CI=true npm --prefix web run check:quality
+  run_step "npm run check:quality:host"                env CI=true npm --prefix web run check:quality:host
   macos_delta
 }
 
@@ -1634,7 +1673,7 @@ release_gate() { # $1 = --dry-run | (empty)
   printf '%s\n' "$FAST_PASS_PLAN"
   printf 'phase 1 (container, GNU userland) — the full suite:\n'
   list_members | sed 's/^/  /'
-  printf 'phase 2 (host, darwin) — npm run check:quality (a11y + Lighthouse: measurable here, not in the image) and the macos-15 delta, derived from runs-on:\n'
+  printf 'phase 2 (host, darwin) — npm run check:quality:host (a11y + Lighthouse: measurable here, not in the image) and the macos-15 delta, derived from runs-on:\n'
   macos_jobs .github/workflows | sed 's/^/  /'
   printf 'receipt: %s/%s.json\n' "$RECEIPT_DIR" "$head_before"
 
@@ -1711,7 +1750,7 @@ release_gate() { # $1 = --dry-run | (empty)
   fi
 
   # PHASE 2 — the host. The only part of CI nothing else can reach.
-  if ! run_step "release gate phase 2 — host-only: check:quality + the macos-15 delta" host_only; then
+  if ! run_step "release gate phase 2 — host-only: check:quality:host + the macos-15 delta" host_only; then
     macos_rc=$?
     if [ "$macos_rc" -eq "$GATE_EXIT_UNMEASURED" ]; then
       printf 'ci-parity: phase 2 was UNMEASURED (see above) — the composed gate makes no claim about the macOS companion.\n' >&2
@@ -1784,6 +1823,48 @@ write_receipt() { # $1 = sha, $2 = wall seconds, $3 = the composed phase count
 JSON
   printf '\nci-parity: RELEASE GATE GREEN for %s (%ss, %s verify phase(s)).\n' "$sha" "$wall" "$phases"
   printf 'receipt: %s\n' "$RECEIPT_DIR/$sha.json"
+}
+
+# THE TRANSCRIPT IS KEPT (release-speed P7 T1). A red release-check used to
+# leave only a scrollback: `TestT3Scripts` failed once and no subtest name
+# survived (docs/backlog.md). The whole output of a real run is teed to
+# <log dir>/<sha>.log, beside the receipt (gitignored under .a2a/), and a RED
+# run keeps its transcript too — a red run is exactly the one somebody reads.
+# The log dir is the receipt dir unless A2A_RELEASE_LOG_DIR moves it, which
+# exists so --teeth can run the refusal paths without evicting a real release's
+# transcript.
+RELEASE_LOG_DIR="${A2A_RELEASE_LOG_DIR:-$RECEIPT_DIR}"
+RELEASE_LOG_KEEP=5
+
+# keep_newest_logs <dir> <n> — delete every *.log in <dir> but the newest <n>.
+# Only *.log: the receipts beside them are evidence a publisher reads and are
+# never touched here.
+keep_newest_logs() {
+  local dir="$1" keep="$2" f i=0
+  [ -d "$dir" ] || return 0
+  # ls -t: newest first, on BSD and GNU alike. Names are <sha>.log, no spaces.
+  for f in $(ls -t "$dir"/*.log 2>/dev/null || true); do
+    i=$((i + 1))
+    [ "$i" -le "$keep" ] || rm -f -- "$f"
+  done
+}
+
+# release_logged <dir> <sha> <command...> — run the command with its stdout AND
+# stderr teed to <dir>/<sha>.log, rotate, and return the COMMAND's status (the
+# pipe's own would be tee's).
+release_logged() {
+  local dir="$1" sha="$2" rc=0
+  shift 2
+  mkdir -p "$dir"
+  # set +e around the pipe: PIPESTATUS must be read, not killed by errexit.
+  # The command re-enables errexit in its own subshell: a pipeline member
+  # inherits the +e set here, and release_gate was written under `set -e`.
+  set +e
+  ( set -e; "$@" ) 2>&1 | tee "$dir/$sha.log"
+  rc="${PIPESTATUS[0]}"
+  set -e
+  keep_newest_logs "$dir" "$RELEASE_LOG_KEEP"
+  return "$rc"
 }
 
 # --- --teeth -----------------------------------------------------------
@@ -2326,12 +2407,15 @@ EOF
   # danger is an authorisation written for a run that never happened.
   local d18 out18 rc18=0 before18 after18 t18
   d18="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
-  for t18 in bash uname mktemp rm date sed git awk grep wc sort tail head cat ls tr cp mkdir dirname basename swift; do
+  for t18 in bash uname mktemp rm date sed git awk grep wc sort tail head cat ls tr cp mkdir dirname basename swift tee; do
     if [ -x "/usr/bin/$t18" ]; then ln -sf "/usr/bin/$t18" "$d18/$t18"
     elif [ -x "/bin/$t18" ]; then ln -sf "/bin/$t18" "$d18/$t18"; fi
   done
   before18="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
-  out18="$(env PATH="$d18" /bin/bash "$ROOT/scripts/ci-parity.sh" --release 2>&1)" || rc18=$?
+  # A2A_RELEASE_LOG_DIR: this refusal is a real `--release`, so it is teed to a
+  # transcript; pointing that at the fixture keeps a tooth from evicting a real
+  # release's kept logs.
+  out18="$(env PATH="$d18" A2A_RELEASE_LOG_DIR="$d18/logs" /bin/bash "$ROOT/scripts/ci-parity.sh" --release 2>&1)" || rc18=$?
   after18="$( (ls -1 "$RECEIPT_DIR" 2>/dev/null || true) | wc -l | tr -d ' ')"
   if [ "$rc18" -ne "$GATE_EXIT_UNMEASURED" ] \
     || ! printf '%s\n' "$out18" | grep -qF 'UNMEASURED' \
@@ -2648,12 +2732,100 @@ EOF
     printf 'ci-parity --teeth: T27 — the phase window is a time, so a trimmed telemetry file still counts the run that trimmed it\n'
   fi
 
+  # T28 — EVERY MEMBER LEAVES A ROW, AND A ROW IS NEVER A PHASE (release-speed
+  # P7 T1). run_step appends `step:<label>` to the stage sink: pass and fail
+  # both, a label with spaces and quotes stays ONE JSON string, and the
+  # telemetry file the receipt counts is not touched.
+  local d28 rc28=0 rows28 ok28=1
+  d28="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  : > "$d28/telemetry.jsonl"
+  (
+    VERIFY_STAGES="$d28/stages.jsonl"
+    run_step 'a member with "quotes" and spaces' true >/dev/null
+    run_step 'a failing member' false >/dev/null 2>&1 || true
+  ) || rc28=$?
+  rows28="$(cat "$d28/stages.jsonl" 2>/dev/null || true)"
+  [ "$rc28" -eq 0 ] || ok28=0
+  [ "$(printf '%s\n' "$rows28" | grep -c .)" -eq 2 ] || ok28=0
+  printf '%s\n' "$rows28" | sed -n 1p | grep -qF '"gate":"step:a member with \"quotes\" and spaces","verdict":"pass"' || ok28=0
+  printf '%s\n' "$rows28" | sed -n 2p | grep -qF '"gate":"step:a failing member","verdict":"fail"' || ok28=0
+  printf '%s\n' "$rows28" | grep -vqF '"mode":"release-check"' && ok28=0
+  printf '%s\n' "$rows28" | grep -qF '"duration_ms":' || ok28=0
+  [ ! -s "$d28/telemetry.jsonl" ] || ok28=0
+  rm -rf "$d28"
+  if [ "$ok28" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL — T28: run_step must append one step:<label> row per member (pass and fail, quotes escaped, mode release-check) to the stage sink and never to telemetry; got rc=%s rows:\n%s\n' "$rc28" "$rows28" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T28 — each member leaves a step: row (pass or fail) in the stage sink, never a counted phase\n'
+  fi
+
+  # T29 — THE TRANSCRIPT IS KEPT, ROTATED AT 5, AND A RED RUN KEEPS ITS OWN.
+  # Six logs plus the one this run writes: the two oldest go, the receipt beside
+  # them is untouched, and the failing command's status is what comes back.
+  local d29 rc29=0 n29 i29 ok29=1
+  d29="$(mktemp -d "${TMPDIR:-/tmp}/ci-parity-teeth.XXXXXX")"
+  for i29 in 1 2 3 4 5 6; do
+    : > "$d29/old$i29.log"
+    touch -t "20200101000$i29" "$d29/old$i29.log"
+  done
+  echo '{}' > "$d29/old1.json"
+  _t29_red() { echo "transcript line one"; echo "a stderr line" >&2; return 7; }
+  release_logged "$d29" newsha _t29_red >/dev/null || rc29=$?
+  n29="$(ls -1 "$d29"/*.log | wc -l | tr -d ' ')"
+  [ "$rc29" -eq 7 ] || ok29=0
+  [ "$n29" -eq 5 ] || ok29=0
+  [ -f "$d29/newsha.log" ] || ok29=0
+  grep -qF 'transcript line one' "$d29/newsha.log" 2>/dev/null || ok29=0
+  grep -qF 'a stderr line' "$d29/newsha.log" 2>/dev/null || ok29=0
+  [ ! -e "$d29/old1.log" ] && [ ! -e "$d29/old2.log" ] || ok29=0
+  [ -e "$d29/old3.log" ] || ok29=0
+  [ -f "$d29/old1.json" ] || ok29=0
+  # errexit survives the tee: release_gate was written under `set -e`, and a
+  # pipeline member would otherwise inherit the +e that reads PIPESTATUS.
+  local rc29e=0
+  _t29_errexit() { false; echo "ran past a failure"; }
+  # NOT under `||`: bash ignores `set -e` for everything a `||` list runs, a
+  # nested `set -e` included, so that form could never see the difference.
+  set +e
+  ( release_logged "$d29" errsha _t29_errexit >/dev/null )
+  rc29e=$?
+  set -e
+  [ "$rc29e" -ne 0 ] || ok29=0
+  ! grep -qF 'ran past a failure' "$d29/errsha.log" 2>/dev/null || ok29=0
+  rm -rf "$d29"
+  unset -f _t29_red _t29_errexit
+  if [ "$ok29" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL — T29: release_logged must keep a red run'"'"'s transcript (stdout and stderr), return the command'"'"'s own status (7), keep the newest 5 logs only, leave receipts alone and keep errexit on inside the tee; got rc=%s logs=%s errexit-rc=%s\n' "$rc29" "$n29" "$rc29e" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T29 — the transcript is kept (red runs too), rotated at 5, receipts untouched\n'
+  fi
+
+  # T30 — `make vulncheck` IS NOT A MEMBER, AND ITS ONE EXCUSE IS WHAT KEEPS THE
+  # AUDIT GREEN (release-speed P7 T4). govulncheck.yml runs it, so the audit
+  # asks; release-preflight (runbook step 6) answers. The real corpus must audit
+  # clean, the member list must not name it, and the excuse must name step 6.
+  local out30 rc30=0 ok30=1 members30
+  out30="$(bash "$ROOT/scripts/ci-parity.sh" --audit 2>&1)" || rc30=$?
+  [ "$rc30" -eq 0 ] || ok30=0
+  printf '%s\n' "$out30" | grep -qF 'excused — make vulncheck' || ok30=0
+  members30="$(list_members)"
+  case "$members30" in *'make vulncheck'*) ok30=0 ;; esac
+  excused_reason 'make vulncheck' | grep -qF 'release-preflight' || ok30=0
+  if [ "$ok30" -ne 1 ]; then
+    printf 'ci-parity --teeth: FAIL — T30: make vulncheck must be absent from suite_members and excused by name (release-preflight) while the audit stays green; got rc=%s\n%s\n' "$rc30" "$out30" >&2
+    teeth_fail=1
+  else
+    printf 'ci-parity --teeth: T30 — make vulncheck is a release-preflight step, not a member, and the audit says so by name\n'
+  fi
+
   if [ "$teeth_fail" -ne 0 ]; then
     printf 'ci-parity --teeth: FAIL\n' >&2
     exit 1
   fi
 
-  printf 'ci-parity --teeth: 27 case(s) green.\n'
+  printf 'ci-parity --teeth: 30 case(s) green.\n'
 }
 
 case "${1:---run}" in
@@ -2671,7 +2843,14 @@ case "${1:---run}" in
   # nothing ran until 2026-08-21.
   --macos-delta) macos_delta ;;
   # --release — the composed ship gate: container-primary, host-delta, receipt.
-  --release) release_gate "${2:-}" ;;
+  # A real run is teed to .a2a/release-gate/<sha>.log; a rehearsal (or a usage
+  # error) executes nothing and keeps nothing.
+  --release)
+    if [ -n "${2:-}" ]; then
+      release_gate "$2"
+    else
+      release_logged "$RELEASE_LOG_DIR" "$(git -C "$ROOT" rev-parse HEAD)" release_gate
+    fi ;;
   # --fast-pass [root] — phase 0 alone, over any tree. The root argument is not
   # a convenience: it is the only way a tooth can watch this refuse without
   # breaking the real repository, and a gate nobody can watch fail is the shape
