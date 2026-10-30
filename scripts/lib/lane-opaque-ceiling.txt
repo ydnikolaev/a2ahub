@@ -87,4 +87,13 @@
 #      `make lane-declarations` red on four such reads (deliver.sh:33, :257,
 #      :262, :310). No declared glob could cover them, because none of them is
 #      tracked. The header above was restored by hand after the reseed, again.
-58
+# ---- 2026-10-30: RAISED 58 -> 59 (release-speed-2026-11 P8) ----
+# +1 `release-carry`: a new Makefile phase over scripts/ci-parity.sh, which
+# already carries the directive for the teeth-capable reason above. No new
+# construct was waved past the classifier.
+#
+# IT WAS GREEN FOR A WHOLE EPIC BECAUSE THE COUNT DEPENDS ON THE CHECKOUT. A
+# worktree, a clone and the container have no gitignored .agents/ harness, whose
+# epic_docs_drift.sh counts here, so they read 58 while the main checkout's host
+# run read 59. Only a host gate in the main checkout can see the ceiling's edge.
+59
