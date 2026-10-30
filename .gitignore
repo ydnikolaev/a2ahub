@@ -153,6 +153,7 @@ scripts/lib/*
 !scripts/tests/
 scripts/tests/*
 !scripts/tests/deliver_test.sh
+!scripts/tests/verify_static_block_test.sh
 !scripts/tests/check_contract_carried_set_test.sh
 !scripts/tests/check_event_writer_receipts_test.sh
 !scripts/tests/check_live_e2e_evidence_test.sh

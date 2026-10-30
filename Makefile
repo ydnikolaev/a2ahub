@@ -71,7 +71,7 @@ export GOTOOLCHAIN := go$(A2A_GO_VERSION)
 endif
 endif
 
-.PHONY: site-check site-check-teeth flaky-scan check repo-gates test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+.PHONY: site-check site-check-teeth flaky-scan check repo-gates test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow _print-early-go-tests dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -82,10 +82,26 @@ endif
 # the mate-managed harness (scripts/check-feature-lint.sh, .agents/scripts/
 # epic_docs_drift.sh) and are absent on a public checkout — each target below
 # presence-gates itself so `make check` never hard-fails on their absence.
-REPO_GATES := spec-verify-refs ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus view-vocabulary dashboard-props card-content pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral runner-economics space-template-baseline-check unmeasured-reach import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+REPO_GATES := ci-parity-audit frozen-allowlist lane-declarations classify-guard workflow-lint gosec-scope readme-lint dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations dashboard-props notify-workflow notify-secrets mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow loop-coverage human-gates loop-reachability prose-roster release-notes-freshness release-record roadmap-release-decisions runner-economics space-template-baseline-check unmeasured-reach import-rule-coverage verdict-exit-mapping harness-roster plugin-manifests view-vocabulary card-content provider-tier-deferral spec-verify-refs error-codes notify-selector-coverage feedback-corpus prose-coverage cross-layer-test-import-ceiling pendency-uniqueness
+# REPO_GATES_SLOW is a COST list, not a membership list (release-speed P2, spec
+# 02 T1): the ten gates whose host medians sum to ~370 s of the static block's
+# ~450 s. They sit at the tail of REPO_GATES and run as the static block's second
+# tier, after every cheap gate has had its say. A wrong entry moves a gate
+# between tiers, never in or out of the run.
+REPO_GATES_SLOW := view-vocabulary card-content provider-tier-deferral spec-verify-refs error-codes notify-selector-coverage feedback-corpus prose-coverage cross-layer-test-import-ceiling pendency-uniqueness
+# EARLY_GO_TESTS — bookkeeping Go tests run ahead of the suite (spec 02 T3), as
+# <package>:<TestName>. One list used twice: -run for the early pass, -skip for
+# go-test, so each runs once per gate.
+EARLY_GO_TESTS := ./internal/e2e:TestE2ECoverageParity ./internal/cli:TestHtmlCommandDemoJSONMatchesIndentedCompatibilityGolden
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
+
+_print-repo-gates-slow:
+	@echo "$(REPO_GATES_SLOW)"
+
+_print-early-go-tests:
+	@echo "$(EARLY_GO_TESTS)"
 
 # Every repo gate, carrying on past a red so one run names them all (`lane-run` stops at the first). Run it before
 # paying for the ceiling. One named goal, so the host queue estimates it from its own history.
