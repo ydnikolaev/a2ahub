@@ -146,9 +146,8 @@ func TestLogicMatrix(t *testing.T) {
 	// (sharedLogicBinary, sharedbinary.go): P10 W1 measured the isolation
 	// change on its own, so the deferred build sharing is now taken. The
 	// binary lives in a process-level dir that no harness cleanup removes.
-	// P10 W2 — how many path spaces to stand up. The bound is DERIVED from
-	// the machine, never a literal tuned on one laptop (spec 10 §5), and is
-	// overridable so a bisect can pin it: A2A_LOGIC_PATH_SPACES=1 reproduces
+	// P10 W2 — how many path spaces to stand up. Overridable so a bisect can
+	// pin it: A2A_LOGIC_PATH_SPACES=1 reproduces
 	// the serial behaviour exactly, which is the property that makes a
 	// concurrency regression reversible by one constant instead of a revert.
 	//
