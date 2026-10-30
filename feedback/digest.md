@@ -101,3 +101,11 @@ stay as the record of what was decided on the day.
 
 - fb-20261029-3e41f0 (feature -> accepted): A blocking wait so an agent session hears a counterparty move without polling
 - fb-20261029-52753d (bug -> accepted): contract check --suite rejects a root $id that is a URN
+
+## 2026-10-30 Release — v0.27.1
+
+Both records from the 2026-10-29 triage ship with `fast-loop-2026-10`. The
+rows below are the release flip, not a re-triage.
+
+- fb-20261029-3e41f0 (feature -> shipped in v0.27.1): A blocking wait so an agent session hears a counterparty move without polling
+- fb-20261029-52753d (bug -> shipped in v0.27.1): contract check --suite rejects a root $id that is a URN

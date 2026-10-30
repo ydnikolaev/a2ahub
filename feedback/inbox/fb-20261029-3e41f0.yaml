@@ -18,11 +18,12 @@ checks:
     no_sensitive_content: true
     duplicates_checked: true
 resolution: >-
-    Accepted into the fast-loop epic opened 2026-10-29. `a2a await` already
+    Shipped in v0.27.1 as `a2a wait` (RN-02701-2), built in the fast-loop
+    epic opened 2026-10-29. `a2a await` already
     blocks on one of MY pending writes reaching main (internal/cli/cmd_await.go);
     nothing blocks on a counterparty's move. The new verb is its inbound
     sibling: it exits when an event lands that is addressed to me, names an
     artifact I authored, or sits on a thread I am on, including the acknowledge
     and note that `inbox --actionable` omits. A local space can watch the bare
     repository's refs with no network.
-status: accepted
+status: shipped
