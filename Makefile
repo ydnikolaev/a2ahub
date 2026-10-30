@@ -114,7 +114,7 @@ check: ## THE CEILING — project-owned cache + one CLI artifact + static and Go
 	@echo "check: THE CEILING (~15 min) — the ship/release gate. Ordinary commit? Run \`make lane-run\`."
 	@bash scripts/verify.sh full
 
-test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TEST_RUN=Regex A2A_VERIFY_TEST_COUNT=N.
+test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TEST_RUN=Regex A2A_VERIFY_TEST_COUNT=N A2A_VERIFY_TEST_VERBOSE=1 (adds -v) A2A_VERIFY_TEST_TAGS=livee2e (one tagged path).
 	@test -n "$(PKG)" || { echo "test: set PKG, e.g. make test PKG=./internal/cache/..."; exit 2; }
 	@bash scripts/verify.sh test $(PKG)
 
@@ -491,7 +491,7 @@ release-check: ## THE SHIP GATE — the full suite in the container, the macos-1
 release-check-dry: ## Rehearse `release-check`: print its members, the derived macOS jobs and the receipt path; execute nothing, write nothing.
 	@bash scripts/ci-parity.sh --release --dry-run
 
-projection: ## Judge the SHIPPED suite against a faithful public projection (release-loop-2026-08 P3, presence-gated). Not in `check`: it RUNS the ceiling, so membership would make the ceiling run the ceiling.
+projection: ## Judge the SHIPPED suite against a faithful public projection (release-loop-2026-08 P3, presence-gated). A `make release-check` member (R-1, D-041); not in `check`: it RUNS the ceiling, so membership would make the ceiling run the ceiling.
 	@if [ -f scripts/check-projection.sh ]; then \
 	  bash scripts/check-projection.sh; \
 	else \
