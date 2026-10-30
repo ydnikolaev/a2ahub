@@ -1269,12 +1269,15 @@ _records_since() {
 # no-phase-ran-twice invariant holds ACROSS the boundary rather than inside
 # each side of it.
 telemetry_report() { # $1 = cutoff recorded before the run (telemetry_cutoff); $2 = a label
-  local cutoff="$1" label="$2" new dupes total
-  if [ ! -f "$VERIFY_TELEMETRY" ]; then
+  local cutoff="$1" label="$2" new="" dupes total extra_file="${3:-}"
+  extra_file="${extra_file%:*}"
+  # The host file alone may be absent: a fresh checkout whose verify.sh only ever
+  # ran in the container has none, and the container's file still holds every phase.
+  if [ ! -f "$VERIFY_TELEMETRY" ] && [ ! -f "$extra_file" ]; then
     gate_unmeasured "$label: scripts/verify.sh wrote no telemetry at $VERIFY_TELEMETRY, so the phase count is unknown. This is NOT a claim that fewer phases ran — it is a claim that nobody counted."
     return "$GATE_EXIT_UNMEASURED"
   fi
-  new="$(_records_since "$VERIFY_TELEMETRY" "$cutoff")"
+  [ ! -f "$VERIFY_TELEMETRY" ] || new="$(_records_since "$VERIFY_TELEMETRY" "$cutoff")"
   if [ -n "${3:-}" ]; then
     local extra_path="${3%:*}" extra_cut="${3##*:}"
     if [ -f "$extra_path" ]; then
@@ -2700,6 +2703,14 @@ EOF
     --phases 0 "the fixture" 2>&1)" || rc19=$?
   if [ "$rc19" -ne "$GATE_EXIT_UNMEASURED" ] || ! grep -qF 'UNMEASURED' <<<"$out19"; then
     printf 'ci-parity --teeth: FAIL — T19b: the same host file read alone must be UNMEASURED, which is what proves T19a counted across the boundary; got rc=%s\n%s\n' "$rc19" "$out19" >&2
+    teeth_fail=1
+  fi
+  # T19e - a fresh checkout has no host file at all, and the container's still counts.
+  rc19=0
+  out19="$(env A2A_VERIFY_TELEMETRY="$d19/absent.jsonl" bash "$ROOT/scripts/ci-parity.sh" \
+    --phases 0 "the fixture" "$d19/container.jsonl:0" 2>&1)" || rc19=$?
+  if [ "$rc19" -ne 0 ] || ! grep -qF 'executed 3 verify phase(s)' <<<"$out19"; then
+    printf 'ci-parity --teeth: FAIL - T19e: an absent host file must not hide the container phases; wanted 3, got rc=%s\n%s\n' "$rc19" "$out19" >&2
     teeth_fail=1
   fi
   # CODE only. A structural assertion that reads the prose above the code will
