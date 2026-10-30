@@ -18,6 +18,9 @@
 # Other test seams (all default to the real thing):
 #   A2A_DELIVER_ROOT      the checkout to deliver (default: this script's repo)
 #   A2A_DELIVER_GOCACHE   GOCACHE for the build (default: $ROOT/.a2a/cache/go/build)
+#   A2A_DELIVER_GATE_CMD  the command that runs one commit-subject gate, called as
+#                         `$A2A_DELIVER_GATE_CMD <gate>` from $ROOT (default:
+#                         `make --no-print-directory -s`); the T2 warning below
 #
 # Telemetry is read from the MAIN checkout only (spec 01 §11): a worktree is
 # refused outright, so its records never matter and a rebase cannot fake them.
@@ -140,6 +143,34 @@ if [ "$INST_CHANNEL" = local ] && [ -n "$INST_COMMIT" ] &&
   g merge-base --is-ancestor "$HEAD_SHA" "$INST_COMMIT" 2>/dev/null; then
   refuse "installed build $(sha12 "$INST_COMMIT") is newer than HEAD $(sha12 "$HEAD_SHA")" "deliver from the checkout that holds $(sha12 "$INST_COMMIT"), or sh scripts/install.sh to return to the release"
 fi
+
+# --- T2 (release-speed P2) the commit-subject gates, as a WARNING -------------
+# The next ceiling judges COMMITTED history, and a lane run before the commit
+# could not see it: a `fix(...)` subject with no newer release note, a tracker
+# row that does not ship with its commit. Say so now, while the commit is the
+# last thing the agent did, instead of 400 s into the next `make check`.
+#
+# IT NEVER REFUSES AND NEVER CHANGES THE EXIT STATUS. D-040 decides what deliver
+# refuses (a dirty tree, a HEAD with no evidence chain); a notes-freshness red
+# says nothing about the bytes being installed, so making it a refusal would
+# amend D-040. The same four gates are tier 1 of verify.sh's static block, so
+# the ceiling still refuses on them.
+warn_bookkeeping() {
+  local gate reds=""
+  local -a cmd
+  # shellcheck disable=SC2206 # the seam is a command prefix, split on purpose
+  cmd=(${A2A_DELIVER_GATE_CMD:-make --no-print-directory -s})
+  for gate in release-notes-freshness release-note-detect epic-drift feature-lint; do
+    if ! (cd "$ROOT" && "${cmd[@]}" "$gate") >/dev/null 2>&1; then
+      reds="${reds:+$reds, }$gate"
+    fi
+  done
+  if [ -n "$reds" ]; then
+    echo "deliver: the next ceiling will red on: $reds (bookkeeping, not this build's bytes)"
+  fi
+  return 0
+}
+warn_bookkeeping
 
 pin_toolchain() {
   local v

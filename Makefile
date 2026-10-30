@@ -11,8 +11,9 @@
 # make lane-run          RUN that lane. NOT the ceiling: `make check` stays the
 #                         release gate, and this makes the cheap lane CORRECT,
 #                         not the expensive one optional.
-# make check-validators  THE STATIC LANE — repo gates only, no tests. The inner
-#                         loop when the diff is docs/scripts and no Go changed.
+# make check-validators  THE STATIC BLOCK — build-cli, gofmt, vet, golangci-lint,
+#                         then every repo gate (slow tier last), naming every red
+#                         in one run. No tests.
 # make classify-guard    publish-boundary gate: no private (harness) path tracked.
 # make workflow-lint     every GitHub Action `uses:` is SHA-pinned (product gate).
 # make readme-lint       README stays compact, current, and linked to deeper docs.
@@ -71,7 +72,7 @@ export GOTOOLCHAIN := go$(A2A_GO_VERSION)
 endif
 endif
 
-.PHONY: site-check site-check-teeth flaky-scan check repo-gates test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow _print-early-go-tests dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+.PHONY: site-check site-check-teeth flaky-scan check test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -89,10 +90,6 @@ REPO_GATES := ci-parity-audit frozen-allowlist lane-declarations classify-guard 
 # tier, after every cheap gate has had its say. A wrong entry moves a gate
 # between tiers, never in or out of the run.
 REPO_GATES_SLOW := view-vocabulary card-content provider-tier-deferral spec-verify-refs error-codes notify-selector-coverage feedback-corpus prose-coverage cross-layer-test-import-ceiling pendency-uniqueness
-# EARLY_GO_TESTS — bookkeeping Go tests run ahead of the suite (spec 02 T3), as
-# <package>:<TestName>. One list used twice: -run for the early pass, -skip for
-# go-test, so each runs once per gate.
-EARLY_GO_TESTS := ./internal/e2e:TestE2ECoverageParity ./internal/cli:TestHtmlCommandDemoJSONMatchesIndentedCompatibilityGolden
 
 _print-repo-gates:
 	@echo "$(REPO_GATES)"
@@ -100,17 +97,7 @@ _print-repo-gates:
 _print-repo-gates-slow:
 	@echo "$(REPO_GATES_SLOW)"
 
-_print-early-go-tests:
-	@echo "$(EARLY_GO_TESTS)"
-
-# Every repo gate, carrying on past a red so one run names them all (`lane-run` stops at the first). Run it before
-# paying for the ceiling. One named goal, so the host queue estimates it from its own history.
-# lane-inputs: NEVER
-# lane-reason: an operator's pre-ceiling sweep; the gates it runs are each selected by their own declarations
-repo-gates:
-	@$(MAKE) --no-print-directory -k $(REPO_GATES)
-
-check-validators: ## Repo gates only; one shared CLI build feeds binary-backed static gates.
+check-validators: ## The static block: build-cli, gofmt, vet, golangci-lint, then every repo gate; names every red, runs no tests.
 	@bash scripts/verify.sh validators
 
 lane: ## PRINT the lane this working tree's changes can actually reach, with each phase's reason and measured median. Optional: LANE_FILES="a b c".

@@ -331,6 +331,17 @@ run_phase() {
   fi
   rm -f "$marker"
   append_telemetry "$gate" "$verdict" "$((end - start))"
+  # COLLECT-ALL IS A MODE OF THIS RUNNER, NOT A SECOND ONE (release-speed P2,
+  # spec 02 T1). Inside the static block STATIC_COLLECT=1: a red phase has
+  # already written its own telemetry row and printed its own failing lines
+  # above, so it is NAMED in STATIC_REDS and the block carries on; the block's
+  # two boundaries turn that list into the exit status. Outside the block this
+  # branch is dead and the status is returned exactly as before.
+  if [ "$rc" -ne 0 ] && [ "${STATIC_COLLECT:-}" = 1 ]; then
+    STATIC_REDS+=("$gate")
+    echo "verify: RED $gate ($verdict) - the static block carries on and names every red at its boundary." >&2
+    return 0
+  fi
   return "$rc"
 }
 
@@ -586,13 +597,62 @@ ci_golangci_version() {
     | sed -E 's#golangci-lint/(v[0-9.]+)/install\.sh#\1#' | sort -u | head -1
 }
 
+# THE STATIC BLOCK (release-speed P2, spec 02 T1). One roster, two cost tiers:
+# REPO_GATES is the membership (`make _print-repo-gates`), REPO_GATES_SLOW only
+# decides which tier a member runs in. Reds are collected across a tier
+# (STATIC_COLLECT, see run_phase) and judged at its boundary.
+STATIC_REDS=()
+STATIC_ALL_GATES=""
+STATIC_FAST_GATES=""
+STATIC_SLOW_GATES=""
+
+# split_repo_gates fills the three lists above, REPO_GATES order kept. A name in
+# REPO_GATES_SLOW that REPO_GATES does not carry is REFUSED: the slow list is a
+# cost list, and one that could name a gate the roster lacks would be a second
+# roster.
+split_repo_gates() {
+  local gate slow
+  STATIC_ALL_GATES="$(make --no-print-directory -s _print-repo-gates)"
+  slow="$(make --no-print-directory -s _print-repo-gates-slow)"
+  for gate in $slow; do
+    case " $STATIC_ALL_GATES " in
+      *" $gate "*) ;;
+      *)
+        fail "REPO_GATES_SLOW names '$gate', which is not in REPO_GATES: the slow list orders the roster, it never adds to it"
+        return 1
+        ;;
+    esac
+  done
+  STATIC_FAST_GATES=""
+  STATIC_SLOW_GATES=""
+  for gate in $STATIC_ALL_GATES; do
+    case " $slow " in
+      *" $gate "*) STATIC_SLOW_GATES="$STATIC_SLOW_GATES $gate" ;;
+      *) STATIC_FAST_GATES="$STATIC_FAST_GATES $gate" ;;
+    esac
+  done
+}
+
 run_repo_gates() {
-  local gate gates
-  gates="$(make --no-print-directory -s _print-repo-gates)"
-  for gate in $gates; do
+  local gate
+  for gate in "$@"; do
     run_phase "$gate" make --no-print-directory "$gate"
   done
-  echo "check-validators: repo gates green ($gates). No tests ran."
+}
+
+# static_boundary exits 1 naming every red collected so far; $1 says what did
+# not run because of it. The last line is the one a reader greps for.
+static_boundary() {
+  local n="${#STATIC_REDS[@]}" joined="" red
+  if [ "$n" -eq 0 ]; then
+    return 0
+  fi
+  for red in "${STATIC_REDS[@]}"; do
+    joined="${joined:+$joined, }$red"
+  done
+  echo "static block: $1 did not run." >&2
+  echo "static block: $n red: $joined" >&2
+  exit 1
 }
 
 harness_stamp() {
@@ -1780,6 +1840,30 @@ if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
     esac
   done
 
+  # THE STATIC BLOCK'S RULE, APPLIED TO THE STATIC PHASES THE LANE SELECTED
+  # (release-speed P2, spec 02 T1). Same tiers, same collect-all, same two
+  # boundaries as `full`; only the phases the diff reached run. Membership is
+  # untouched: every phase in run_now still runs exactly once. Phases that are
+  # not static gates (go-test, logic-e2e, harness-teeth, web-quality) keep the
+  # derivation order after the block.
+  split_repo_gates
+  # Roster order, not derivation order, inside each tier: the same order `full`
+  # runs them in, so the two lanes name reds in the same sequence.
+  lane_tier1="" lane_tier2="" lane_rest=""
+  for phase in build-cli gofmt vet golangci-lint $STATIC_FAST_GATES; do
+    case " $run_now " in *" $phase "*) lane_tier1="$lane_tier1 $phase" ;; esac
+  done
+  for phase in $STATIC_SLOW_GATES; do
+    case " $run_now " in *" $phase "*) lane_tier2="$lane_tier2 $phase" ;; esac
+  done
+  for phase in $run_now; do
+    case " $lane_tier1 $lane_tier2 " in
+      *" $phase "*) ;;
+      *) lane_rest="$lane_rest $phase" ;;
+    esac
+  done
+  run_now="$lane_tier1 $lane_tier2 $lane_rest"
+
   if [ "$plan_only" = 1 ]; then
     for phase in $run_now $run_coverage $run_last; do
       echo "lane: would run $phase"
@@ -1789,7 +1873,13 @@ if [ "$MODE" = lane ] || [ "$MODE" = lane-run ]; then
     exit 0
   fi
 
-  for phase in $run_now; do run_derived_phase "$phase"; ran=$((ran + 1)); done
+  STATIC_COLLECT=1
+  for phase in $lane_tier1; do run_derived_phase "$phase"; ran=$((ran + 1)); done
+  static_boundary "the slow gates and everything after them"
+  for phase in $lane_tier2; do run_derived_phase "$phase"; ran=$((ran + 1)); done
+  static_boundary "everything after the static block"
+  STATIC_COLLECT=""
+  for phase in $lane_rest; do run_derived_phase "$phase"; ran=$((ran + 1)); done
   for phase in $run_coverage; do run_derived_phase "$phase"; ran=$((ran + 1)); done
   for phase in $run_last; do run_derived_phase "$phase"; ran=$((ran + 1)); done
 
@@ -1812,7 +1902,10 @@ if [ "$MODE" = test ]; then
   exit 0
 fi
 
-if [ "$MODE" != live ] && [ "$MODE" != logic-e2e ]; then
+# `validators` and `full` run build-cli as the first phase of their static block
+# (below), so that block can name its red with every other one; every other mode
+# builds here, as before.
+if [ "$MODE" != live ] && [ "$MODE" != logic-e2e ] && [ "$MODE" != validators ] && [ "$MODE" != full ]; then
   # lane-inputs: ALWAYS
   # lane-reason: a prerequisite, not a verdict — the binary-backed static gates
   #   (skill-citations runs `a2a __catalog`, localserver-readonly-routes probes the
@@ -1955,13 +2048,16 @@ if [ "$MODE" = projection ]; then
   exit 0
 fi
 
-if [ "$MODE" = validators ]; then
-  run_repo_gates
-  exit 0
-fi
-
-if [ "$MODE" = full ]; then
-  run_repo_gates
+if [ "$MODE" = validators ] || [ "$MODE" = full ]; then
+  # THE STATIC BLOCK (release-speed P2, spec 02 T1): `validators` is this block
+  # alone, `full` runs it ahead of any Go test. Collect-all in two cost tiers:
+  #   tier 1  build-cli, gofmt, vet, golangci-lint, then REPO_GATES minus
+  #           REPO_GATES_SLOW; any red -> name them all and stop
+  #   tier 2  REPO_GATES_SLOW; any red -> name them all and stop
+  # A green tree runs exactly the phases it ran before; only the order moved.
+  split_repo_gates
+  STATIC_COLLECT=1
+  run_phase build-cli build_cli
   # lane-inputs:
   #   **/*.go
   run_phase gofmt check_gofmt
@@ -1978,6 +2074,17 @@ if [ "$MODE" = full ]; then
   #   go.sum
   #   .golangci.yml
   run_phase golangci-lint check_lint
+  # shellcheck disable=SC2086 # the gate lists are space-separated names, split on purpose
+  run_repo_gates $STATIC_FAST_GATES
+  static_boundary "tier 2 (the slow gates), the Go tests and the logic tier"
+  # shellcheck disable=SC2086
+  run_repo_gates $STATIC_SLOW_GATES
+  static_boundary "the Go tests and the logic tier"
+  STATIC_COLLECT=""
+  if [ "$MODE" = validators ]; then
+    echo "check-validators: static block green (build-cli, gofmt, vet, golangci-lint, $STATIC_ALL_GATES). No tests ran."
+    exit 0
+  fi
 fi
 
 # lane-inputs:
