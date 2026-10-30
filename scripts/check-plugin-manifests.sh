@@ -198,9 +198,10 @@ canonical_catalog_text() {
 canonical_launch_line() {
   local catalog names
   catalog="$(canonical_catalog_text)"
-  # Here-strings, not `printf | grep -q`: under pipefail grep -q's early exit
-  # SIGPIPEs the producer and reads as "absent" on a loaded host (seen in a
-  # release-speed lane, 2026-10-30; the class spec 09 drains).
+  # Here-strings, never a printf pipeline into a quiet match: with pipefail
+  # set, the matcher's early exit can SIGPIPE the producer and read as
+  # "absent" on a loaded host (a release-speed lane, 2026-10-30; the class
+  # release-speed spec 09 drains).
   if [ -z "$catalog" ] || ! grep -q '^## Commands' <<<"$catalog"; then
     return 1
   fi
