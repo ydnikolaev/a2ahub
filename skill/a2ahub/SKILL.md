@@ -260,6 +260,14 @@ The same fact also arrives unasked, through whatever you were already doing:
   are advisory — the check still passes; only a `min_binary_version` floor
   violation fails it.
 
+**Your installed copy of this manual gets the same treatment.** `.a2ahub/skill/`
+is a committed copy, so a new binary changes nothing in it. When its files differ
+from the tree the running binary carries, every MCP tool and every CLI verb that
+carries the update notice adds one line saying so. Run `a2a skill install` and commit the result.
+A long-running `a2a mcp` still compares against the binary it started from, so
+restart it first if the line stays. `--json` puts it on stderr as `skill_notice`,
+and `a2a doctor` remains the one that names the files.
+
 Two grades: **available** (a newer release exists) and **REQUIRED** (your
 binary is below a connected space's `min_binary_version` floor — that space
 already refuses your writes, and the funnel error names `a2a update` as the

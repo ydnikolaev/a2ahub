@@ -422,6 +422,31 @@ func withUpdateNotice(inner HandlerFunc, store *cache.Store) HandlerFunc {
 	}
 }
 
+// skillNoticeDecorator adds the installed-skill advisory to every tool's text
+// body, on updateNoticeDecorator's terms: never on an error, never touching
+// StructuredContent, and a nil notice leaves the handler untouched.
+func skillNoticeDecorator(notice func() string) func(HandlerFunc) HandlerFunc {
+	if notice == nil {
+		return func(inner HandlerFunc) HandlerFunc { return inner }
+	}
+	return func(inner HandlerFunc) HandlerFunc {
+		return func(ctx context.Context, args json.RawMessage) (any, string, error) {
+			result, body, err := inner(ctx, args)
+			if err != nil {
+				return result, body, err
+			}
+			sentence := notice()
+			if sentence == "" {
+				return result, body, nil
+			}
+			if body != "" {
+				body += "\n"
+			}
+			return result, body + "note: " + sentence, nil
+		}
+	}
+}
+
 func newContractsHandler(store *cache.Store) HandlerFunc {
 	return func(ctx context.Context, args json.RawMessage) (any, string, error) {
 		var in ContractsInput

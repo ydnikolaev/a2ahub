@@ -13,7 +13,9 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 	iversion "github.com/ydnikolaev/a2ahub/internal/version"
+	"github.com/ydnikolaev/a2ahub/skill"
 )
 
 // version and commit are the build-time stamp (§7.3, D-013 — the
@@ -127,6 +129,20 @@ func writeUpdateAdvisory(name string, args []string, stderr io.Writer) {
 		return
 	}
 	cli.WriteUpdateAdvisory(cli.IO{Stderr: stderr}, store.UpdateNotice(), jsonOut)
+	if cfg, err := space.LoadProjectConfig(p.projectConfig); err == nil {
+		cli.WriteSkillAdvisory(cli.IO{Stderr: stderr}, skillNotice(p.projectRoot, cfg.SkillDir), jsonOut)
+	}
+}
+
+// skillNotice is the one place both surfaces reach the installed-skill
+// advisory, because internal/cli and internal/mcp must not import the embedded
+// tree themselves. An unusable skill_dir is `a2a doctor`'s to name.
+func skillNotice(projectRoot, configuredDir string) string {
+	dir, err := space.NormalizeSkillDir(configuredDir)
+	if err != nil {
+		return ""
+	}
+	return cli.SkillNotice(skill.Files, projectRoot, dir, version)
 }
 
 // advisoryMode is the whole DECISION, separated from the store read so it can
