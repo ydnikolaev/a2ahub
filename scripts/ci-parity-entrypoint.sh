@@ -102,7 +102,10 @@ echo "parity: removing untracked files — CI checks out, it does not inherit a 
 git -C "$WORK" clean -ffdxq -e web/node_modules -e .a2a
 # What provisioning below must leave alone. Compared, not asserted empty: a host
 # working tree with edits is a legitimate subject when iterating on a parity red.
-tracked_before=$(git -C "$WORK" diff | sha256sum)
+# --full-index because the bare form abbreviates the blob ids to a length git picks
+# per process: on 2026-10-31 the first diff after the sync printed nine digits and
+# every later one eight, so an unchanged docs edit stopped the run here.
+tracked_before=$(git -C "$WORK" diff --full-index | sha256sum)
 
 # Kept is not unbounded. verify.sh caps the host's build cache, but in CI mode
 # it never purges GOCACHE (that is the runner's), so this one grew unchecked:
@@ -152,7 +155,7 @@ echo "parity: priming the deadcode oracle"
 
 # Everything above provisions; nothing above may change what is judged. A change
 # here is a defect in this script, so it stops before any gate reads the tree.
-if [ "$(git -C "$WORK" diff | sha256sum)" != "$tracked_before" ]; then
+if [ "$(git -C "$WORK" diff --full-index | sha256sum)" != "$tracked_before" ]; then
   echo "parity: provisioning changed tracked files, so the suite would judge a tree git does not hold:" >&2
   git -C "$WORK" diff --stat >&2
   exit 2
