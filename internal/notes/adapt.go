@@ -103,11 +103,12 @@ type Projection struct {
 	// Baseline is the adapted_through this walk started AFTER (exclusive),
 	// or "" when the repository has never recorded one.
 	Baseline string
-	// BinaryVersion bounds the walk (inclusive) — the running binary never
-	// shows notes for a version newer than itself.
+	// BinaryVersion bounds the walk (inclusive) — the running binary shows
+	// no note newer than itself except one authored ahead, which it embeds.
 	BinaryVersion string
 	// Releases is the count of releases strictly between Baseline
-	// (exclusive) and BinaryVersion (inclusive), counted BEFORE standing
+	// (exclusive) and BinaryVersion (inclusive) plus the notes authored
+	// ahead of it, counted BEFORE standing
 	// known issues are attached — attaching can synthesize a carrier entry
 	// for an otherwise-empty range, which must never inflate this count.
 	Releases int
@@ -123,6 +124,11 @@ type Projection struct {
 	// order (ascending release order, then each release's own Changes
 	// order) — NOT YET sorted by Group/impact; see Group's own doc.
 	Items []PendingItem
+	// AuthoredAhead names every obligation this binary carries in a note
+	// newer than its own version, already adapted or not: the exact set
+	// `a2a adapt --done` records, because an authored-ahead note has no
+	// release to stand behind adapted_through (see authoredAhead).
+	AuthoredAhead []string
 }
 
 // pendingGroup reports the Group a Change belongs in and whether it
@@ -155,13 +161,43 @@ func pendingGroup(ch Change) (Group, bool) {
 	}
 }
 
+// authoredAhead returns the notes of all that are newer than binaryVersion
+// and carry UnreleasedSentinel. A build from a checkout is stamped with the
+// last DATED release (LastReleased, D-040) while embedding the notes authored
+// since, so the code those notes describe is in this binary. No channel is
+// consulted: the note itself says what it is. A note that cannot be compared
+// is an error, never an exclusion (anti-pattern 22).
+func authoredAhead(all []ReleaseNotes, binaryVersion string) ([]ReleaseNotes, error) {
+	var out []ReleaseNotes
+	for _, rn := range all {
+		if rn.Released != UnreleasedSentinel {
+			continue
+		}
+		ahead, err := version.OlderThan(binaryVersion, rn.Version)
+		if err != nil {
+			return nil, &Error{Op: "authoredAhead", Input: rn.Version, Err: err}
+		}
+		if ahead {
+			out = append(out, rn)
+		}
+	}
+	return out, nil
+}
+
 // Pending computes the Projection for the range (baseline, binaryVersion]
-// over all (Load's own ascending-version postcondition) and currentIssues
+// plus the notes authored ahead of binaryVersion, over all (Load's own
+// ascending-version postcondition) and currentIssues
 // (LoadCurrentKnownIssues) — the EXISTING primitives this phase reuses
 // rather than rebuilds (P13 spec §5). baseline == "" means "never
 // adapted": the walk starts at the oldest embedded note and
 // Projection.StartedFromOldest reports that.
-func Pending(all []ReleaseNotes, currentIssues []Change, baseline, binaryVersion string) (Projection, error) {
+//
+// adaptedAhead lists the change IDs an earlier --done recorded from an
+// authored-ahead note; they stay out of Items, including after that note is
+// dated and falls inside the range. IDs rather than a version, because such a
+// note keeps growing until it ships (0.27.1 took seven commits) and a version
+// watermark would hide every change added after the record.
+func Pending(all []ReleaseNotes, currentIssues []Change, baseline, binaryVersion string, adaptedAhead []string) (Projection, error) {
 	// The upper bound is checked BEFORE the baseline, because an unusable one
 	// makes every later answer meaningless rather than merely wrong — see
 	// ErrBinaryVersionUnusable for the measurement that earned this guard.
@@ -182,14 +218,34 @@ func Pending(all []ReleaseNotes, currentIssues []Change, baseline, binaryVersion
 		proj.Oldest = all[0].Version
 	}
 
+	ahead, err := authoredAhead(all, binaryVersion)
+	if err != nil {
+		return Projection{}, err
+	}
+	for _, rn := range ahead {
+		for _, ch := range rn.Changes {
+			if _, ok := pendingGroup(ch); ok {
+				proj.AuthoredAhead = append(proj.AuthoredAhead, ch.ID)
+			}
+		}
+	}
+
 	slice := Since(all, baseline, binaryVersion)
+	slice = append(slice[:len(slice):len(slice)], ahead...)
 	proj.Releases = len(slice)
 	slice = AttachCurrentKnownIssues(slice, all, currentIssues)
 
+	adapted := make(map[string]struct{}, len(adaptedAhead))
+	for _, id := range adaptedAhead {
+		adapted[id] = struct{}{}
+	}
 	for _, rn := range slice {
 		for _, ch := range rn.Changes {
 			group, ok := pendingGroup(ch)
 			if !ok {
+				continue
+			}
+			if _, done := adapted[ch.ID]; done {
 				continue
 			}
 			proj.Items = append(proj.Items, PendingItem{Version: rn.Version, Change: ch, Group: group})

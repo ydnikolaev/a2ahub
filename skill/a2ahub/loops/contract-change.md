@@ -308,6 +308,14 @@ sees you, and that deprecation still reaches your inbox.
    written it refuses naming what to confirm: that `.a2a/config.yaml` exists,
    is valid YAML with a mapping at its root, and is writable.
 
+   **A local build owes what it carries.** A binary from `make deliver` is
+   stamped with the last published release and embeds the notes written since,
+   so `adapt` lists those too. They have no release for `adapted_through` to
+   name, so `--done` records their change ids under `adapted_ahead` beside it.
+   A change added to the same note later still shows up, and a recorded one
+   does not come back when that note is released. `--done --json` names them in
+   `recorded_ahead`.
+
    Two refusals worth knowing before you meet them. A baseline NEWER than
    your binary refuses rather than walking backwards, naming both versions —
    that is a downgrade, and adapt will not guess what you meant. And a

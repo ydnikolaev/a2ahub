@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,7 +34,11 @@ func TestPending_RealCorpusMeasurement(t *testing.T) {
 		t.Fatalf("LoadCurrentKnownIssues: %v", err)
 	}
 
-	proj, err := Pending(all, issues, "0.19.0", "0.25.6")
+	// A note authored ahead changes with every commit that adds to it, and it
+	// would surface here for this old binary. The pin judges dated notes only.
+	all = slices.DeleteFunc(all, func(rn ReleaseNotes) bool { return rn.Released == UnreleasedSentinel })
+
+	proj, err := Pending(all, issues, "0.19.0", "0.25.6", nil)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -105,7 +110,7 @@ func TestPendingExcludesScopeNoneAndStandingKnownIssues(t *testing.T) {
 		{ID: "KI-NONE", Kind: KindKnownIssue, Action: Action{Scope: "none"}},
 	}
 
-	proj, err := Pending(all, issues, "", "1.0.0")
+	proj, err := Pending(all, issues, "", "1.0.0", nil)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -147,7 +152,7 @@ func TestPendingGroupOrder(t *testing.T) {
 		}},
 	}
 
-	proj, err := Pending(all, nil, "", "1.0.0")
+	proj, err := Pending(all, nil, "", "1.0.0", nil)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -188,7 +193,7 @@ func TestPendingTwoClocks(t *testing.T) {
 		{Version: "0.30.0", Changes: []Change{{ID: "NEW", Kind: "feat", Action: Action{Scope: "local"}}}},
 	}
 
-	proj, err := Pending(all, nil, "0.10.0", "0.30.0")
+	proj, err := Pending(all, nil, "0.10.0", "0.30.0", nil)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -218,7 +223,7 @@ func TestPendingAbsentBaselineStartsFromOldest(t *testing.T) {
 		{Version: "0.1.0", Changes: []Change{{ID: "A", Kind: "feat", Action: Action{Scope: "local"}}}},
 		{Version: "0.2.0", Changes: []Change{{ID: "B", Kind: "feat", Action: Action{Scope: "local"}}}},
 	}
-	proj, err := Pending(all, nil, "", "0.2.0")
+	proj, err := Pending(all, nil, "", "0.2.0", nil)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -241,7 +246,7 @@ func TestPendingEmptyRangeIsNothingToAdapt(t *testing.T) {
 	all := []ReleaseNotes{
 		{Version: "1.0.0", Changes: []Change{{ID: "A", Kind: "feat", Action: Action{Scope: "none"}}}},
 	}
-	proj, err := Pending(all, nil, "", "1.0.0")
+	proj, err := Pending(all, nil, "", "1.0.0", nil)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -252,6 +257,79 @@ func TestPendingEmptyRangeIsNothingToAdapt(t *testing.T) {
 
 // TestValidateBaselineRefusesDowngrade (AC-10): a baseline above the
 // running binary refuses, naming both versions.
+// TestPendingAuthoredAhead is the local channel's whole contract: a build from
+// a checkout is stamped with the last dated release and embeds the notes
+// written since. Those obligations must surface, a recorded one must not come
+// back (even once its note is dated), and one added to the same note after the
+// record must not be lost.
+func TestPendingAuthoredAhead(t *testing.T) {
+	t.Parallel()
+
+	local := func(id string) Change {
+		return Change{ID: id, Kind: "feat", Impact: "normal", Subject: id, Detail: "d", Action: Action{Scope: "local", Why: "w"}}
+	}
+	dated := ReleaseNotes{Version: "0.27.1", Released: "2026-10-30", Changes: []Change{local("DATED")}}
+	aheadNote := ReleaseNotes{Version: "0.27.2", Released: UnreleasedSentinel, Changes: []Change{
+		local("FIRST"),
+		local("LATER"),
+		{ID: "QUIET", Kind: "fix", Impact: "low", Subject: "q", Detail: "d", Action: Action{Scope: "none", Why: "w"}},
+	}}
+	nowDated := aheadNote
+	nowDated.Released = "2026-11-02"
+
+	cases := []struct {
+		name         string
+		all          []ReleaseNotes
+		baseline     string
+		binary       string
+		adapted      []string
+		wantItems    []string
+		wantAhead    []string
+		wantReleases int
+	}{
+		{"an authored-ahead note obliges the build that embeds it", []ReleaseNotes{dated, aheadNote}, "0.27.1", "0.27.1", nil,
+			[]string{"FIRST", "LATER"}, []string{"FIRST", "LATER"}, 1},
+		{"a recorded change does not re-fire, and a later one still does", []ReleaseNotes{dated, aheadNote}, "0.27.1", "0.27.1", []string{"FIRST"},
+			[]string{"LATER"}, []string{"FIRST", "LATER"}, 1},
+		{"a recorded change stays out once its note is dated", []ReleaseNotes{dated, nowDated}, "0.27.1", "0.27.2", []string{"FIRST"},
+			[]string{"LATER"}, nil, 1},
+		{"a dated note newer than the binary still waits for the binary", []ReleaseNotes{dated, nowDated}, "0.27.1", "0.27.1", nil,
+			nil, nil, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			proj, err := Pending(tc.all, nil, tc.baseline, tc.binary, tc.adapted)
+			if err != nil {
+				t.Fatalf("Pending: %v", err)
+			}
+			var got []string
+			for _, item := range proj.Items {
+				got = append(got, item.Change.ID)
+			}
+			if !slices.Equal(got, tc.wantItems) {
+				t.Errorf("Items = %v, want %v", got, tc.wantItems)
+			}
+			if !slices.Equal(proj.AuthoredAhead, tc.wantAhead) {
+				t.Errorf("AuthoredAhead = %v, want %v", proj.AuthoredAhead, tc.wantAhead)
+			}
+			if proj.Releases != tc.wantReleases {
+				t.Errorf("Releases = %d, want %d", proj.Releases, tc.wantReleases)
+			}
+		})
+	}
+}
+
+// TestPendingAuthoredAheadUncomparableIsAnError holds anti-pattern 22: a note
+// that cannot be compared was not judged, so it must not read as excluded.
+func TestPendingAuthoredAheadUncomparableIsAnError(t *testing.T) {
+	t.Parallel()
+	all := []ReleaseNotes{{Version: "next", Released: UnreleasedSentinel}}
+	if _, err := Pending(all, nil, "", "0.27.1", nil); err == nil {
+		t.Fatal("Pending over an uncomparable authored-ahead note returned no error")
+	}
+}
+
 func TestValidateBaselineRefusesDowngrade(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -281,7 +359,7 @@ func TestValidateBaselineRefusesDowngrade(t *testing.T) {
 
 	// Pending surfaces the exact sentinel and names both versions in the
 	// wrapped Error's Input.
-	_, err := Pending(nil, nil, "0.7.0", "0.6.0")
+	_, err := Pending(nil, nil, "0.7.0", "0.6.0", nil)
 	if !errors.Is(err, ErrBaselineAheadOfBinary) {
 		t.Fatalf("Pending error = %v, want wrapping ErrBaselineAheadOfBinary", err)
 	}

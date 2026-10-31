@@ -115,12 +115,13 @@ type adaptJSON struct {
 
 // adaptDoneJSON is `a2a adapt --done --json`'s machine-readable shape.
 type adaptDoneJSON struct {
-	Recorded string `json:"recorded,omitempty"`
-	Total    int    `json:"total"`
-	Verified int    `json:"verified"`
-	Refused  bool   `json:"refused"`
-	Reason   string `json:"reason,omitempty"`
-	ChangeID string `json:"change_id,omitempty"`
+	Recorded      string   `json:"recorded,omitempty"`
+	RecordedAhead []string `json:"recorded_ahead,omitempty"`
+	Total         int      `json:"total"`
+	Verified      int      `json:"verified"`
+	Refused       bool     `json:"refused"`
+	Reason        string   `json:"reason,omitempty"`
+	ChangeID      string   `json:"change_id,omitempty"`
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error; 1 = corpus/
@@ -162,7 +163,7 @@ func (c *AdaptCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// init` yet is "never adapted", not a fatal error.
 	cfg, _ := c.loadProjectConfig(c.projectConfigPath)
 
-	proj, err := notes.Pending(all, currentIssues, cfg.AdaptedThrough, c.binaryVersion)
+	proj, err := notes.Pending(all, currentIssues, cfg.AdaptedThrough, c.binaryVersion, cfg.AdaptedAhead)
 	if err != nil {
 		if errors.Is(err, notes.ErrBaselineAheadOfBinary) {
 			_, _ = fmt.Fprintf(stdio.Stderr,
@@ -338,7 +339,7 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 	}
 	total := len(proj.Items)
 
-	if err := adaptSaveAdaptedThrough(c.readFile, c.writeFile, c.projectConfigPath, c.binaryVersion); err != nil {
+	if err := adaptSaveAdaptedThrough(c.readFile, c.writeFile, c.projectConfigPath, c.binaryVersion, proj.AuthoredAhead); err != nil {
 		if jsonMode {
 			return adaptEncodeDoneJSON(stdio, adaptDoneJSON{Total: total, Verified: verified, Refused: true, Reason: err.Error()})
 		}
@@ -350,7 +351,7 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 	}
 
 	if jsonMode {
-		return adaptEncodeDoneJSON(stdio, adaptDoneJSON{Recorded: c.binaryVersion, Total: total, Verified: verified})
+		return adaptEncodeDoneJSON(stdio, adaptDoneJSON{Recorded: c.binaryVersion, RecordedAhead: proj.AuthoredAhead, Total: total, Verified: verified})
 	}
 
 	switch {
@@ -364,6 +365,11 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 		_, _ = fmt.Fprintf(stdio.Stdout,
 			"a2a adapt --done: recorded adapted_through=v%s — %d/%d verified via detect:, %d recorded on the agent's word (no detect:)\n",
 			c.binaryVersion, verified, total, total-verified)
+	}
+	if n := len(proj.AuthoredAhead); n > 0 {
+		_, _ = fmt.Fprintf(stdio.Stdout,
+			"a2a adapt --done: %d change(s) from notes authored ahead of v%s recorded in adapted_ahead\n",
+			n, c.binaryVersion)
 	}
 	return 0
 }
@@ -403,8 +409,10 @@ func adaptRefuse(stdio IO, attempted, found, nextStep string) int {
 	return 1
 }
 
-// adaptSaveAdaptedThrough writes ONLY the adapted_through key into path's
-// existing YAML, preserving every other key, comment and ordering —
+// adaptSaveAdaptedThrough writes ONLY the adapted_through and adapted_ahead
+// keys into path's existing YAML, preserving every other key, comment and
+// ordering — adapted_ahead is dropped when ahead is empty, since the release
+// that dated those notes put them under adapted_through —
 // space.marshalMachineConfigPreservingExisting's (internal/space/
 // config.go) single-key yaml.Node update technique, copied here rather
 // than widened into a general ProjectConfig save path: this phase's
@@ -416,6 +424,7 @@ func adaptSaveAdaptedThrough(
 	writeFile func(string, []byte, os.FileMode) error,
 	path string,
 	version string,
+	ahead []string,
 ) error {
 	existing, err := readFile(path)
 	if err != nil {
@@ -430,21 +439,15 @@ func adaptSaveAdaptedThrough(
 	}
 
 	root := doc.Content[0]
-	value := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: version}
-	replaced := false
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "adapted_through" {
-			root.Content[i+1] = value
-			replaced = true
-			break
+	adaptSetKey(root, "adapted_through", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: version})
+	aheadNode := (*yaml.Node)(nil)
+	if len(ahead) > 0 {
+		aheadNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, id := range ahead {
+			aheadNode.Content = append(aheadNode.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: id})
 		}
 	}
-	if !replaced {
-		root.Content = append(root.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "adapted_through"},
-			value,
-		)
-	}
+	adaptSetKey(root, "adapted_ahead", aheadNode)
 
 	var out bytes.Buffer
 	enc := yaml.NewEncoder(&out)
@@ -456,6 +459,25 @@ func adaptSaveAdaptedThrough(
 		return err
 	}
 	return writeFile(path, out.Bytes(), 0o644)
+}
+
+// adaptSetKey replaces key's value in the mapping root, appends it when
+// absent, and removes the pair when value is nil.
+func adaptSetKey(root *yaml.Node, key string, value *yaml.Node) {
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != key {
+			continue
+		}
+		if value == nil {
+			root.Content = append(root.Content[:i], root.Content[i+2:]...)
+			return
+		}
+		root.Content[i+1] = value
+		return
+	}
+	if value != nil {
+		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, value)
+	}
 }
 
 var _ Command = (*AdaptCommand)(nil)

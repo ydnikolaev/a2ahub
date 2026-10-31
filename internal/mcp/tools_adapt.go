@@ -129,7 +129,7 @@ func newAdaptHandler(
 		// `a2a init` yet is "never adapted", not a fatal error.
 		cfg, _ := loadProjectConfig(projectConfigPath)
 
-		proj, err := notes.Pending(all, currentIssues, cfg.AdaptedThrough, binaryVersion)
+		proj, err := notes.Pending(all, currentIssues, cfg.AdaptedThrough, binaryVersion, cfg.AdaptedAhead)
 		if err != nil {
 			switch {
 			case errors.Is(err, notes.ErrBaselineAheadOfBinary):

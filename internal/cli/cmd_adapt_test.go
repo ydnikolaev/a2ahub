@@ -7,12 +7,14 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/releasenotes"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,6 +30,17 @@ func adaptTestCommand(binaryVersion, baseline string, load func() ([]notes.Relea
 		return space.ProjectConfig{AdaptedThrough: baseline}, nil
 	}
 	return c
+}
+
+// adaptDatedCorpus is the real corpus without a note authored ahead of its tag.
+// Such a note changes with every commit that adds to it, and it would surface
+// for the old binary the real-corpus pins name. They judge dated notes only.
+func adaptDatedCorpus() ([]notes.ReleaseNotes, error) {
+	all, err := notes.Load(releasenotes.FS)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(all, func(rn notes.ReleaseNotes) bool { return rn.Released == notes.UnreleasedSentinel }), nil
 }
 
 // adaptFixtureCorpus is a small synthetic corpus covering every group the
@@ -87,6 +100,7 @@ func newAdaptFileStore(initial string) (
 func TestAdaptRealCorpus_Baseline0190_Binary0256(t *testing.T) {
 	t.Parallel()
 	c := NewAdaptCommand("0.25.6", "/fake/.a2a/config.yaml")
+	c.load = adaptDatedCorpus
 	c.loadProjectConfig = func(string) (space.ProjectConfig, error) {
 		return space.ProjectConfig{AdaptedThrough: "0.19.0"}, nil
 	}
@@ -125,6 +139,7 @@ func TestAdaptRealCorpus_Baseline0190_Binary0256(t *testing.T) {
 func TestAdaptRealCorpus_UpToDateIsNothingToAdapt(t *testing.T) {
 	t.Parallel()
 	c := NewAdaptCommand("0.25.6", "/fake/.a2a/config.yaml")
+	c.load = adaptDatedCorpus
 	c.loadProjectConfig = func(string) (space.ProjectConfig, error) {
 		return space.ProjectConfig{AdaptedThrough: "0.25.6"}, nil
 	}
@@ -353,6 +368,66 @@ func TestAdaptDoneNothingPending(t *testing.T) {
 	}
 	if !strings.Contains(get(), "adapted_through: 0.10.0") {
 		t.Fatalf("config store = %q", get())
+	}
+}
+
+// TestAdaptDoneRecordsAuthoredAhead walks one authored-ahead note through a
+// local build's whole life: it obliges, --done records it, a change added to
+// the same note still obliges, and the release that dates the note clears the
+// record without firing the recorded change again.
+func TestAdaptDoneRecordsAuthoredAhead(t *testing.T) {
+	t.Parallel()
+	local := func(id string) notes.Change {
+		return notes.Change{ID: id, Kind: "feat", Impact: "normal", Subject: id, Detail: "d",
+			Action: notes.Action{Scope: "local", Why: "w"}}
+	}
+	corpus := []notes.ReleaseNotes{
+		{Version: "0.27.1", Released: "2026-10-30"},
+		{Version: "0.27.2", Released: notes.UnreleasedSentinel, Changes: []notes.Change{local("FIRST")}},
+	}
+	load := func() ([]notes.ReleaseNotes, error) { return corpus, nil }
+
+	c, get := adaptDoneTestCommand(t, "0.27.1", "system: sys\nspaces: []\nadapted_through: \"0.27.1\"\n")
+	c.load = load
+	run := func(args ...string) (int, string) {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		code := c.Run(context.Background(), args, IO{Stdout: &out, Stderr: &errOut})
+		return code, out.String()
+	}
+
+	if code, out := run(); code != 1 || !strings.Contains(out, "FIRST") {
+		t.Fatalf("before --done: exit %d, stdout %q; want exit 1 naming FIRST", code, out)
+	}
+	if code, out := run("--done"); code != 0 {
+		t.Fatalf("--done: exit %d, stdout %q", code, out)
+	}
+	if !strings.Contains(get(), "adapted_through: 0.27.1") || !strings.Contains(get(), "- FIRST") {
+		t.Fatalf("config store = %q, want adapted_through kept at the stamp and FIRST recorded", get())
+	}
+	if code, out := run(); code != 0 || strings.Contains(out, "FIRST") {
+		t.Fatalf("after --done: exit %d, stdout %q; want exit 0 with FIRST gone", code, out)
+	}
+
+	corpus[1].Changes = append(corpus[1].Changes, local("LATER"))
+	if code, out := run(); code != 1 || !strings.Contains(out, "LATER") || strings.Contains(out, "FIRST") {
+		t.Fatalf("after the note grew: exit %d, stdout %q; want LATER only", code, out)
+	}
+	if code, out := run("--done"); code != 0 {
+		t.Fatalf("second --done: exit %d, stdout %q", code, out)
+	}
+
+	corpus[1].Released = "2026-11-02"
+	corpus = append(corpus, notes.ReleaseNotes{Version: "0.27.3", Released: notes.UnreleasedSentinel})
+	c.binaryVersion = "0.27.2"
+	if code, out := run(); code != 0 || strings.Contains(out, "FIRST") || strings.Contains(out, "LATER") {
+		t.Fatalf("after the release: exit %d, stdout %q; want exit 0 with nothing re-fired", code, out)
+	}
+	if code, out := run("--done"); code != 0 {
+		t.Fatalf("--done after the release: exit %d, stdout %q", code, out)
+	}
+	if got := get(); !strings.Contains(got, "adapted_through: 0.27.2") || strings.Contains(got, "adapted_ahead") {
+		t.Fatalf("config store = %q, want adapted_through moved and adapted_ahead gone", got)
 	}
 }
 

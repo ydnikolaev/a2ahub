@@ -43,6 +43,11 @@ type ProjectConfig struct {
 	// one is neither available (the frozen release-notes `action` object)
 	// nor needed (there is no project-config schema at all).
 	AdaptedThrough string `yaml:"adapted_through,omitempty"`
+	// AdaptedAhead lists the change IDs `a2a adapt --done` recorded from
+	// notes authored ahead of the running binary, which adapted_through
+	// cannot name: a build from a checkout is stamped with the last dated
+	// release. Same non-strict load, so a tagged binary reads past it.
+	AdaptedAhead []string `yaml:"adapted_ahead,omitempty"`
 }
 
 // DefaultSkillDir is the provider-neutral installed-skill home used by old
