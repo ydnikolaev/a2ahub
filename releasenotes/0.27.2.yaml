@@ -1,0 +1,53 @@
+schema: release-notes/v1
+version: 0.27.2
+released: unreleased
+headline: a local build owes what it carries, and says when your skill is behind
+changes:
+- id: RN-02702-0
+  kind: fix
+  impact: normal
+  subject: a2a adapt lists the notes a local build carries ahead of its version
+  detail: >
+    A binary from `make deliver` is stamped with the last published release
+    and embeds the notes written since. `a2a adapt` stopped at the stamp, so a
+    repository on such a build was told "nothing to adapt" while the change
+    that obliged it was already in the binary.
+
+    `a2a adapt` now lists those notes too. They have no release for
+    `adapted_through` to name, so `a2a adapt --done` records their change ids
+    under `adapted_ahead` in `.a2a/config.yaml`. A change added to the same note
+    later still appears, and a recorded one does not come back when the note is
+    released. `--done --json` names them in `recorded_ahead`.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. A released binary carries no such note, and an older
+      binary reads past the new key.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction to the local delivery channel; a reader of the roadmap would
+      not plan around it.
+- id: RN-02702-1
+  kind: feat
+  impact: normal
+  subject: every verb says when the installed skill differs from the binary's
+  detail: >
+    `.a2ahub/skill/` is a committed copy, so a new binary changes nothing in it,
+    and only `a2a doctor` ever compared the two. Every MCP tool and every CLI verb
+    that carries the update notice now adds one line when the installed files
+    differ from the tree this binary carries. It compares the files rather than
+    the version stamp, so a local build whose skill moved is noticed, and an old
+    stamp over an unchanged skill stays quiet. The CLI writes the line to stderr,
+    as `skill_notice` under `--json`, and MCP adds it to the text body.
+  action:
+    scope: local
+    why: >
+      The manual changed in this release, so an installed skill is behind until it
+      is refreshed. Commit the result: the skill lives in your repository.
+    detect: ["! a2a doctor 2>/dev/null | grep -q '^skill manual current: FAIL'"]
+    run: ["a2a skill install"]
+  roadmap:
+    visibility: omit
+    why: >
+      An advisory for agents already using the tool; it changes no plan.
