@@ -59,8 +59,11 @@ run_check() {
   fi
   anchor="$(git -C "$ROOT" log -1 --format=%H -- "$newest")"
   if [ -z "$anchor" ]; then
-    echo "release-notes-freshness: FAIL — $newest has no commit anchor." >&2
-    return 1
+    # The file came from the index and no commit holds it: a new note staged for
+    # a lane before its commit. No commit can have outrun a note not yet written
+    # down, and the check judges it again once it has an anchor.
+    echo "release-notes-freshness: $newest is staged and not committed; nothing can have outrun it."
+    return 0
   fi
 
   local uncovered=""
@@ -176,6 +179,10 @@ run_teeth() {
 
   printf '%s\n' 'version: "0.2.0"' >"$tmp/releasenotes/0.2.0.yaml"
   git -C "$tmp" add releasenotes/0.2.0.yaml
+  if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null 2>&1; then
+    echo "release-notes-freshness --teeth: FAILED — a staged new note refused a lane run before its commit." >&2
+    exit 1
+  fi
   git -C "$tmp" commit -q -m 'docs: author 0.2.0 release notes'
   if ! ROOT="$tmp" bash "$SCRIPT_ABS" _internal-check >/dev/null; then
     echo "release-notes-freshness --teeth: FAILED — a newer notes commit did not green the gate." >&2
