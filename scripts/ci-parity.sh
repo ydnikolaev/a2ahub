@@ -257,13 +257,13 @@ excused_reason() { # $1 = command
     #
     #   * `scripts/verify.sh`'s MODE=full ordered set is run_repo_gates plus
     #     gofmt, vet, golangci-lint, go-test, coverage-policy and logic-e2e.
-    #     `run_derived_phase` can emit exactly those names plus three others:
-    #     harness-teeth, web-quality and projection, and `go-test-scoped:<pkg>`
+    #     `run_derived_phase` can emit exactly those names plus four others:
+    #     harness-teeth, web-quality, web-dist and projection, and `go-test-scoped:<pkg>`
     #     — which is `go test <pkg>`, a strict subset of go-test's `./...`.
-    #   * Two of the others are EXECUTES members in their own right:
-    #     `make harness-check` (harness-teeth) and `npm run check:quality:host`
-    #     (web-quality's a11y + Lighthouse half; its `npm run check` half is the
-    #     container's own `npm run check` member). The third, projection, is a member
+    #   * Three of the others are EXECUTES members in their own right:
+    #     `make harness-check` (harness-teeth), `npm run check` (web-dist, and the
+    #     first half of web-quality) and `npm run check:quality:host` (web-quality's
+    #     a11y + Lighthouse half). The fourth, projection, is a member
     #     of this suite again (R-1 / D-041, release-speed P6): `make projection`
     #     runs the template rehearsal and then CI's own `check` inside a public
     #     projection, so the one local judge covers it.
@@ -285,7 +285,7 @@ excused_reason() { # $1 = command
     # it can prove is that no phase goes unrun, which is what the list above
     # does.
     "make lane-run-strict")
-      echo "every phase it can derive is run by the suite around it — MODE=full covers all of them except harness-teeth and web-quality, each an EXECUTES member of its own ('make harness-check', 'npm run check:quality:host'), and projection, an EXECUTES member of its own ('make projection', R-1 / D-041), and the derivation refusal it adds is 'make lane', also below. Re-running it re-paid a whole ceiling per userland." ;;
+      echo "every phase it can derive is run by the suite around it — MODE=full covers all of them except harness-teeth, web-quality and web-dist, each an EXECUTES member of its own ('make harness-check', 'npm run check', 'npm run check:quality:host'), and projection, an EXECUTES member of its own ('make projection', R-1 / D-041), and the derivation refusal it adds is 'make lane', also below. Re-running it re-paid a whole ceiling per userland." ;;
 
     # Group 7 — shell scaffolding (set/exit lines with no check of their own).
     "set -e" | "set +e" | "set -euo pipefail" | "set -o pipefail" \

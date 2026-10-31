@@ -72,7 +72,7 @@ export GOTOOLCHAIN := go$(A2A_GO_VERSION)
 endif
 endif
 
-.PHONY: site-check site-check-teeth publish-teeth flaky-scan check check-docker lane-run-docker test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates pipefail-early-exit loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry release-carry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
+.PHONY: web-dist site-check site-check-teeth publish-teeth flaky-scan check check-docker lane-run-docker test check-validators ci-parity ci-parity-audit ci-parity-docker frozen-allowlist lane lane-run lane-declarations web-quality error-codes _print-repo-gates _print-repo-gates-slow dashboard-template-drift dashboard-cards dashboard-derivation feature-lint epic-drift operational-confidence-guard event-writer-receipts contract-carried-set work-checkpoint-schema operational-projection-single-source localserver-readonly-routes skill-citations cross-surface-citations feedback-corpus spec-verify-refs feedback-sync view-vocabulary pendency-uniqueness notify-workflow notify-secrets notify-selector-coverage mcp-schema-decodable refusal-ratchet vocabulary-carriers deadcode-ceiling discard-ceiling release-note-detect render-ledger usage-workflow error-codes loop-coverage human-gates pipefail-early-exit loop-reachability prose-roster prose-coverage release-notes-freshness release-record roadmap-release-decisions provider-tier-deferral unmeasured-reach space-template-baseline space-template-baseline-check readme-lint classify-guard workflow-lint gosec-scope harness-check _harness-check coverage vulncheck release-preflight release-postflight projection release-check release-check-dry release-carry live-e2e live-e2e-evidence logic-e2e install deliver tools import-rule-coverage cross-layer-test-import-ceiling verdict-exit-mapping harness-roster plugin-manifests
 
 # ONE list, consumed by both `check` (the ceiling) and `check-validators` (the
 # static lane). Two hand-kept copies of a gate list drift, and the drift is
@@ -128,6 +128,24 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 	@test -n "$(PKG)" || { echo "test: set PKG, e.g. make test PKG=./internal/cache/..."; exit 2; }
 	@bash scripts/verify.sh test $(PKG)
 
+# What a skill edit can break on the site, at the commit that makes it. The site is
+# generated from skill/**: web/scripts/generate-content.mjs reads
+# skill/a2ahub/docs-manifest.json and every doc body it names. On 2026-08-09 commit
+# a09db83e grew skill/a2ahub/loops.md by sixteen lines and pushed docs/work-loops.html
+# past its gzip budget; the lane selected nothing, and the breakage surfaced a day
+# later inside an unrelated wave. So a skill edit still pays for the build, the unit
+# suite and the budgets here: 15 s against web-quality's 399 s (measured 2026-10-31).
+# Playwright and Lighthouse wait for `make release-check`, which runs them on every
+# release whatever the diff. The local binary carries no site, so a prose edit buys
+# them nothing until a public one. web/** stays web-quality's, a superset of this.
+# lane-inputs:
+#   skill/**
+web-dist: ## The site built from the skill, with its unit suite and budgets. A skill edit's share of the web gate.
+	@if [ ! -d web/node_modules ]; then \
+	  bash scripts/lib/gate-lib.sh --unmeasured "web-dist: web/node_modules is absent, so NOTHING was measured — not the build, not the budgets. This is NOT a pass. Run 'npm --prefix web ci' and try again."; \
+	fi; \
+	npm --prefix web run check
+
 # The web lane. Deliberately NOT in REPO_GATES: `make check` stays byte-identical
 # (spec 12 J5) and the npm suite keeps its own entry. It exists as a target so the
 # lane the repo already HAS gets one declared home the derivation can find —
@@ -135,16 +153,7 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 # lane vanish silently on the repo's second-largest tracked tree.
 # Presence-gated locally on web/node_modules. The drift check runs inside this
 # same web lane; CI invokes both only after its filtered job has installed Node.
-# skill/** is declared because the SITE IS GENERATED FROM IT, and leaving it out
-# was a false green that lasted a day. web/scripts/generate-content.mjs reads
-# skill/a2ahub/docs-manifest.json and every doc body it names, so a skill edit
-# changes this gate's verdict as directly as a web edit does. On 2026-08-09
-# commit a09db83e grew skill/a2ahub/loops.md by sixteen lines and pushed
-# docs/work-loops.html past its gzip budget; the lane selected nothing, the
-# commit went green, and the breakage surfaced a day later inside an unrelated
-# wave. This is exactly the hole check-convention.md predicts in its own words —
-# "a non-Go edit that changes path meaning does NOT select it today" — and the
-# fix it prescribes.
+# skill/** is web-dist's input, not this gate's: see the block above that target.
 # TWO WAYS THIS GATE USED TO NOT MEASURE, AND ONLY ONE OF THEM WAS RED
 # (release-cost-2026-08 P3, and both are named in release.md step 8).
 #
@@ -165,10 +174,9 @@ test: ## Scoped race test through the owned environment. Optional: A2A_VERIFY_TE
 # lane-inputs:
 #   web/**
 #   ui/**
-#   skill/**
 #   internal/html/template.html
 #   scripts/dashboard-template-drift.sh
-web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/**, ui/** or skill/** changed.
+web-quality: ## The web stack's own quality gate (npm). NOT part of `make check` — run when web/** or ui/** changed.
 	@if [ ! -d web/node_modules ]; then \
 	  bash scripts/lib/gate-lib.sh --unmeasured "web-quality: web/node_modules is absent, so NOTHING was measured — not a11y, not Lighthouse, not the dashboard template drift. This is NOT a pass. Run 'npm --prefix web ci' and try again."; \
 	fi; \
