@@ -1,0 +1,29 @@
+
+feedback: v1
+id: fb-20261103-9f14cd
+kind: friction
+severity: major
+title: contract preflight and publish re-walk the space history per published version
+summary: |
+  `a2a contract preflight` took 90-122 s and `a2a contract publish` 10-11 min on a small space (525 commits, about 2,100 objects, 426 KB pack), with the a2a process at 4-14% CPU. A counting git shim on one preflight logged 21,526 git calls: cat-file 7834, rev-parse 3501, ls-tree 3495, rev-list 3352, diff-tree 3328. No fetch, no failure, no lock; the longest call 94 ms. The space has E = 258 commits that add an event file, and the contract V = 12 published versions: rev-list and diff-tree are about (V+1) x E = 3354. So cost grows as (V+1) x E, about 8% per new version, and every event in the space adds to it. An agent waits ten minutes on each contract version, and one wrong staging file costs that again. Publish time is measured by the clock only: its walks are read from source, its land queue and server hook are not measured.
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract preflight <contract> --version <next> --staging <dir>
+evidence:
+    steps:
+        - "Put a shim named git first on PATH that logs the verb and the elapsed time of each call, then execs the real git."
+        - "Run a2a contract preflight on a contract with about 12 published versions, in a space with about 250 event commits."
+        - "Sum the log by verb."
+    expected: "A preflight that only reads walks the event history once, so the git calls grow with the number of events, not with events times versions."
+    actual: "21,526 git calls on one preflight, one process per object. internal/space/contract_operation_repository.go:278 resolves each published version through a full walk (:352). The memo in internal/space/contract_git_memo.go is installed only for a2a html (internal/html/assemble.go:66)."
+proposal: |
+  Walk the history once per publication plan and reuse the result for each version, instead of one visitContractVersionsAt per version. A smaller step: install the existing object-addressed memo (space.WithContractGitCache) around preflight and publish planning, as a2a html already does.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
