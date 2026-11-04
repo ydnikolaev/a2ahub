@@ -1,0 +1,28 @@
+
+feedback: v1
+id: fb-20261104-32440f
+kind: bug
+severity: major
+title: "minor bump refused POL-008: compat check ignores conforms_to on multi-schema"
+summary: "A contract with several schemas and fixtures named <schema>--<case>.json, each with a correct conforms_to, can publish 1.0.0 but can never publish a minor. The computed compatibility check (internal/validate/compat.go, planMapping) maps a prior fixture to a schema only by file stem, fixtures/valid/<stem>.json to schema/<stem>.schema.json, and never reads conforms_to, which the docs make required on every fixture entry. With no stem match and several schemas it refuses with POL-008, calling the baseline broken. The baseline is immutable, so the producer cannot repair it: the only paths left are a major bump that lies about meaning, or stem-named copies of the schemas."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+    command: a2a contract preflight <XC-id> --version 1.1.0 --staging <dir>
+    error_code: POL-008
+evidence:
+    steps:
+        - "Draft a contract with two or more schemas, schema/a.schema.json and schema/b.schema.json, and fixtures fixtures/valid/a--one.json and fixtures/valid/b--one.json, each artifact entry carrying conforms_to."
+        - "Publish it as 1.0.0: accepted."
+        - "Stage an additive change and run a2a contract preflight <XC-id> --version 1.1.0 --staging <dir>."
+    expected: "Each prior fixture is validated against the new schema its conforms_to names; an additive change passes, a breaking one gets POL-007."
+    actual: "Refused: POL-008 computed compatibility could not be evaluated against the prior version's baseline: ambiguous fixture->schema mapping: candidates are [all schemas]. conforms_to is not read."
+proposal: "planMapping reads the prior version's conforms_to first and uses the stem convention only for an entry without one. A fixture whose conforms_to names a schema the new version dropped stays a POL-007."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
