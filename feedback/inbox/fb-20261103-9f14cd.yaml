@@ -36,4 +36,9 @@ resolution: >-
     commit for paths the first git log already printed. The space is the local
     draftmedia space (operator-confirmed); its merge gate runs in-process in the
     local binary, so the fix reaches it without a public release.
+    Fixed on main 2026-11-05 in 6481be94 and delivered locally (make deliver):
+    one git log --raw plus one cat-file --batch per walk, one walk for all
+    versions, the history memoized per anchor within a publish. Measured on
+    draftmedia, read-only preflight: 2 s and 171 git calls, against 1,222 s and
+    41,208. Ships publicly with 0.27.2 (RN-02702-2); flip to shipped then.
 status: accepted

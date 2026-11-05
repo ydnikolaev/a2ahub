@@ -119,3 +119,13 @@ rows below are the release flip, not a re-triage.
 - fb-20261103-9f14cd (friction -> accepted): contract preflight and publish re-walk the space history per published version
 - fb-20261104-32440f (bug -> accepted): minor bump refused POL-008: compat check ignores conforms_to on multi-schema
 - fb-20261105-7d8808 (friction -> duplicate): contract publish took 62 min: git calls grow as events times versions
+
+## 2026-11-05 Fixed on main — delivered locally
+
+Both accepted records from today's triage are fixed and installed on this
+machine with `make deliver`; the local draftmedia space they came from already
+runs the fix. No status changes: they flip to shipped with the public 0.27.2
+release, as v0.27.1's records did.
+
+- fb-20261103-9f14cd (friction, still accepted): fixed in 6481be94 (RN-02702-2); preflight on draftmedia 1,222 s -> 2 s
+- fb-20261104-32440f (bug, still accepted): fixed in 63d1d0c2 (RN-02702-3)

@@ -34,4 +34,9 @@ resolution: >-
     baseline entries; the V3 check (internal/cli/cmd_validate_ci.go, also the local land
     check) must read the prior descriptor at base. Reported from the local
     draftmedia space (operator-confirmed).
+    Fixed on main 2026-11-05 in 63d1d0c2 and delivered locally (make deliver):
+    planMapping follows the prior conforms_to first and the stem rule only for
+    fixtures without one, in both callers. A local space's land check has it
+    now; a GitHub space's CI gets it with the public 0.27.2 (RN-02702-3); flip
+    to shipped then.
 status: accepted
