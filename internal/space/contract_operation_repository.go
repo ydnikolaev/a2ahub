@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
@@ -34,6 +34,76 @@ type ContractPublicationRepository struct {
 
 	mu     sync.Mutex
 	anchor string
+
+	// histories remembers verified publication histories for this repository
+	// value's lifetime, which is one command invocation.
+	histories contractPublicationHistoryCache
+}
+
+// contractPublicationHistoryCache memoizes publicationHistoryAt per (anchor
+// commit, contract id). The key is safe because an anchor is an immutable
+// commit: the history reachable from it cannot change when a ref moves, so
+// callers that must notice a moved ref check the ref themselves (see
+// ContractPublicationRepository.publicationHistory). Only successes are kept —
+// an error may be transient, and remembering one would turn it into a verdict.
+// Entries are cloned on the way in and on the way out, so no caller can edit
+// what the next caller reads. The zero value is ready to use and safe for
+// concurrent use; it is never a package global.
+type contractPublicationHistoryCache struct {
+	mu      sync.Mutex
+	entries map[string][]HistoricalSnapshot
+	// requests and misses count reads asked for and walks actually performed.
+	// They are the hook that lets a test say "read once per (anchor,
+	// contract)" as numbers rather than by timing.
+	requests, misses atomic.Int64
+}
+
+func contractPublicationHistoryKey(anchor, contractID string) string {
+	return anchor + "\x00" + contractID
+}
+
+func (c *contractPublicationHistoryCache) load(anchor, contractID string) ([]HistoricalSnapshot, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	history, ok := c.entries[contractPublicationHistoryKey(anchor, contractID)]
+	if !ok {
+		return nil, false
+	}
+	return cloneHistoricalSnapshots(history), true
+}
+
+func (c *contractPublicationHistoryCache) store(anchor, contractID string, history []HistoricalSnapshot) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = make(map[string][]HistoricalSnapshot)
+	}
+	c.entries[contractPublicationHistoryKey(anchor, contractID)] = cloneHistoricalSnapshots(history)
+}
+
+// read returns the history at anchor, walking it only on the first request for
+// the pair. Two goroutines that miss together both walk; the answers are equal
+// because the anchor is immutable, so the last store wins harmlessly.
+func (c *contractPublicationHistoryCache) read(ctx context.Context, repoDir, anchor, contractID string, validator ContractHistoryDocumentValidator) ([]HistoricalSnapshot, error) {
+	c.requests.Add(1)
+	if history, ok := c.load(anchor, contractID); ok {
+		return history, nil
+	}
+	c.misses.Add(1)
+	history, err := publicationHistoryAt(ctx, repoDir, anchor, contractID, validator)
+	if err != nil {
+		return nil, err
+	}
+	c.store(anchor, contractID, history)
+	return history, nil
+}
+
+func cloneHistoricalSnapshots(history []HistoricalSnapshot) []HistoricalSnapshot {
+	clones := make([]HistoricalSnapshot, len(history))
+	for index, snapshot := range history {
+		clones[index] = cloneHistoricalSnapshot(snapshot)
+	}
+	return clones
 }
 
 // NewContractPublicationRepository is part of the public package API.
@@ -225,7 +295,7 @@ func (r *ContractPublicationRepository) publicationHistory(ctx context.Context, 
 	if err != nil || current != anchor {
 		return nil, fmt.Errorf("%w: publication history anchor changed", ErrOperationConflict)
 	}
-	history, err := publicationHistoryAt(ctx, r.repoDir, anchor, contractID, r.historyValidator)
+	history, err := r.histories.read(ctx, r.repoDir, anchor, contractID, r.historyValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -275,96 +345,175 @@ func PublishedContractVersionsAt(ctx context.Context, repoDir, anchor, contractI
 	return publishedContractVersionsAt(ctx, repoDir, commit, contractID)
 }
 
-func publicationHistoryAt(ctx context.Context, repoDir, anchor, contractID string, validator ContractHistoryDocumentValidator) ([]HistoricalSnapshot, error) {
-	published, err := publishedContractVersionsAt(ctx, repoDir, anchor, contractID)
+// publicationHistoryAt reads every published version of a contract as of
+// anchor, oldest first, each one verified. It is ONE pass: one git log for the
+// events, one rev-list for the descriptor, and one long-lived blob reader for
+// everything the pass reads, however many commits or versions there are. The
+// first version that cannot be resolved fails the whole history.
+func publicationHistoryAt(ctx context.Context, repoDir, anchor, contractID string, validator ContractHistoryDocumentValidator) (history []HistoricalSnapshot, err error) {
+	reader := newContractGitBatchReader(ctx, repoDir)
+	defer closeContractGitBatchReader(reader, &err)
+	events, err := scanContractPublishEvents(ctx, repoDir, anchor, contractID, reader)
 	if err != nil {
 		return nil, err
 	}
-	history := make([]HistoricalSnapshot, 0, len(published))
+	published, err := publishedVersionsFromEvents(events)
+	if err != nil {
+		return nil, err
+	}
+	history = make([]HistoricalSnapshot, 0, len(published))
+	if len(published) == 0 {
+		return history, nil
+	}
+	versions := make([]string, 0, len(published))
 	for _, publication := range published {
-		snapshot, err := resolveContractVersionAt(ctx, repoDir, anchor, contractID, publication.Version, validator)
-		if err != nil {
-			return nil, err
+		versions = append(versions, publication.Version)
+	}
+	descriptorPath, err := contractHistoryDescriptorPath(contractID, anchor, validator)
+	if err != nil {
+		return nil, err
+	}
+	err = visitScannedContractVersions(ctx, repoDir, reader, anchor, descriptorPath, contractID, versions, validator, events, func(result *HistoricalResolution) error {
+		if result.Err != nil {
+			return result.Err
 		}
-		history = append(history, snapshot)
+		history = append(history, cloneHistoricalSnapshot(result.Snapshot))
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return history, nil
 }
 
 // publishedContractVersionsAt is PublishedContractVersionsAt over an anchor
 // that is already a resolved commit.
-func publishedContractVersionsAt(ctx context.Context, repoDir, anchor, contractID string) ([]PublishedContractVersion, error) {
-	commits, err := contractPublishEventHistory(ctx, repoDir, anchor)
+func publishedContractVersionsAt(ctx context.Context, repoDir, anchor, contractID string) (published []PublishedContractVersion, err error) {
+	reader := newContractGitBatchReader(ctx, repoDir)
+	defer closeContractGitBatchReader(reader, &err)
+	events, err := scanContractPublishEvents(ctx, repoDir, anchor, contractID, reader)
 	if err != nil {
 		return nil, err
 	}
-	published := make([]PublishedContractVersion, 0)
-	seen := make(map[string]struct{})
+	return publishedVersionsFromEvents(events)
+}
+
+// contractPublishEvent is one publish event for the contract being read, as
+// the single walk found it: where it was added and which version it names.
+type contractPublishEvent struct {
+	Commit  string
+	Parent  string
+	Entry   contractGitTreeEntry
+	Version string
+}
+
+// scanContractPublishEvents runs the event walk once and decodes every event
+// file it added, returning the publish events whose subject is contractID, in
+// history order (oldest commit first, paths sorted within a commit). Events are
+// decoded, never matched as text, and one that does not decode is not this
+// contract's: strictness belongs to the git records, not to unrelated events.
+func scanContractPublishEvents(ctx context.Context, repoDir, anchor, contractID string, reader *contractGitBatchReader) ([]contractPublishEvent, error) {
+	commits, err := contractPublishEventWalk(ctx, repoDir, anchor)
+	if err != nil {
+		return nil, err
+	}
+	events := make([]contractPublishEvent, 0)
 	for _, commit := range commits {
-		parent, err := contractGitFirstParent(ctx, repoDir, commit)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		paths, err := contractGitAddedPaths(ctx, repoDir, commit, parent)
-		if err != nil {
-			return nil, err
-		}
-		sort.Strings(paths)
-		for _, eventPath := range paths {
-			if !isContractEventPath(eventPath) {
-				continue
-			}
-			file, err := contractGitReadPath(ctx, repoDir, commit, eventPath, contract.MaxFileBytes)
+		for _, entry := range commit.Events {
+			raw, err := reader.readBlob(ctx, entry, contract.MaxFileBytes)
 			if err != nil {
 				return nil, err
 			}
 			var event contractHistoricalEvent
-			if yaml.Unmarshal(file.Raw, &event) != nil || event.Subject != contractID || event.Transition != "publish" {
+			if yaml.Unmarshal(raw, &event) != nil || event.Subject != contractID || event.Transition != "publish" {
 				continue
 			}
-			// The standing-artifact lifecycle uses a versionless publish event
-			// when a contract descriptor first enters the space. Only P6's
-			// version-bearing publish events establish immutable versions.
-			if event.Version == "" {
-				continue
-			}
-			canonical, err := version.Canonical(event.Version)
-			if err != nil || canonical != event.Version {
-				return nil, fmt.Errorf("%w: publication event has invalid version", ErrContractHistoryInvalid)
-			}
-			if _, duplicate := seen[event.Version]; duplicate {
-				return nil, fmt.Errorf("%w: duplicate publication version %s", ErrContractHistoryInvalid, event.Version)
-			}
-			seen[event.Version] = struct{}{}
-			published = append(published, PublishedContractVersion{Version: event.Version, CommitSHA: commit})
-			if len(published) > maxContractPublicationEstablishments {
-				return nil, fmt.Errorf("%w: contract has more than %d publications", ErrContractBoundedResult, maxContractPublicationEstablishments)
-			}
+			events = append(events, contractPublishEvent{Commit: commit.Commit, Parent: commit.Parent, Entry: entry, Version: event.Version})
+		}
+	}
+	return events, nil
+}
+
+// publishedVersionsFromEvents lists the versions the scanned events publish.
+func publishedVersionsFromEvents(events []contractPublishEvent) ([]PublishedContractVersion, error) {
+	published := make([]PublishedContractVersion, 0)
+	seen := make(map[string]struct{})
+	for _, event := range events {
+		// The standing-artifact lifecycle uses a versionless publish event
+		// when a contract descriptor first enters the space. Only P6's
+		// version-bearing publish events establish immutable versions.
+		if event.Version == "" {
+			continue
+		}
+		canonical, err := version.Canonical(event.Version)
+		if err != nil || canonical != event.Version {
+			return nil, fmt.Errorf("%w: publication event has invalid version", ErrContractHistoryInvalid)
+		}
+		if _, duplicate := seen[event.Version]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate publication version %s", ErrContractHistoryInvalid, event.Version)
+		}
+		seen[event.Version] = struct{}{}
+		published = append(published, PublishedContractVersion{Version: event.Version, CommitSHA: event.Commit})
+		if len(published) > maxContractPublicationEstablishments {
+			return nil, fmt.Errorf("%w: contract has more than %d publications", ErrContractBoundedResult, maxContractPublicationEstablishments)
 		}
 	}
 	return published, nil
+}
+
+// contractHistoryDescriptorPath validates the reference a verified read is
+// about and names where its descriptor lives.
+func contractHistoryDescriptorPath(contractID, anchor string, validator ContractHistoryDocumentValidator) (string, error) {
+	parsedID, err := artifact.ParseID(contractID)
+	if err != nil || parsedID.Prefix != "XC" || parsedID.Class != artifact.ClassStanding ||
+		!validRemoteRecoveryOID(anchor) || validator == nil {
+		return "", ErrContractInvalidReference
+	}
+	layout, err := NewLayout(parsedID.System)
+	if err != nil {
+		return "", ErrContractInvalidReference
+	}
+	return layout.ProvidesContract(parsedID.Slug), nil
 }
 
 // visitContractVersionsAt is the streaming historical read used by projection
 // callers. It walks the authoritative first-parent event and descriptor
 // history once, then materializes at most one exact immutable package at a
 // time. Raw byte views are scrubbed immediately after the visitor returns.
-func visitContractVersionsAt(ctx context.Context, repoDir, anchor, contractID string, requestedVersions []string, validator ContractHistoryDocumentValidator, visit func(*HistoricalResolution) error) error {
-	parsedID, err := artifact.ParseID(contractID)
-	if err != nil || parsedID.Prefix != "XC" || parsedID.Class != artifact.ClassStanding ||
-		!validRemoteRecoveryOID(anchor) || validator == nil || visit == nil {
+func visitContractVersionsAt(ctx context.Context, repoDir, anchor, contractID string, requestedVersions []string, validator ContractHistoryDocumentValidator, visit func(*HistoricalResolution) error) (err error) {
+	if visit == nil {
 		return ErrContractInvalidReference
 	}
-	layout, err := NewLayout(parsedID.System)
-	if err != nil {
-		return ErrContractInvalidReference
-	}
-	descriptorPath := layout.ProvidesContract(parsedID.Slug)
-	descriptorHistory, err := contractDescriptorHistory(ctx, repoDir, anchor, descriptorPath)
+	descriptorPath, err := contractHistoryDescriptorPath(contractID, anchor, validator)
 	if err != nil {
 		return err
 	}
-	eventHistory, err := contractPublishEventHistory(ctx, repoDir, anchor)
+	reader := newContractGitBatchReader(ctx, repoDir)
+	defer closeContractGitBatchReader(reader, &err)
+	events, err := scanContractPublishEvents(ctx, repoDir, anchor, contractID, reader)
+	if err != nil {
+		return err
+	}
+	return visitScannedContractVersions(ctx, repoDir, reader, anchor, descriptorPath, contractID, requestedVersions, validator, events, visit)
+}
+
+// visitScannedContractVersions resolves the requested versions against events
+// that one walk already produced, so a caller that needed the event list first
+// (publicationHistoryAt) does not walk twice.
+func visitScannedContractVersions(
+	ctx context.Context,
+	repoDir string,
+	reader *contractGitBatchReader,
+	anchor, descriptorPath, contractID string,
+	requestedVersions []string,
+	validator ContractHistoryDocumentValidator,
+	events []contractPublishEvent,
+	visit func(*HistoricalResolution) error,
+) error {
+	descriptorHistory, err := contractDescriptorHistory(ctx, repoDir, anchor, descriptorPath)
 	if err != nil {
 		return err
 	}
@@ -373,39 +522,14 @@ func visitContractVersionsAt(ctx context.Context, repoDir, anchor, contractID st
 		requested[requestedVersion] = struct{}{}
 	}
 	establishments := make(map[string][]contractEstablishment, len(requestedVersions))
-
-	for _, commitSHA := range eventHistory {
-		if err := ctx.Err(); err != nil {
-			return err
+	for _, event := range events {
+		if _, wanted := requested[event.Version]; !wanted {
+			continue
 		}
-		parent, err := contractGitFirstParent(ctx, repoDir, commitSHA)
-		if err != nil {
-			return err
-		}
-		paths, err := contractGitAddedPaths(ctx, repoDir, commitSHA, parent)
-		if err != nil {
-			return err
-		}
-		sort.Strings(paths)
-		for _, eventPath := range paths {
-			if !isContractEventPath(eventPath) {
-				continue
-			}
-			file, err := contractGitReadPath(ctx, repoDir, commitSHA, eventPath, contract.MaxFileBytes)
-			if err != nil {
-				return err
-			}
-			var event contractHistoricalEvent
-			if yaml.Unmarshal(file.Raw, &event) != nil || event.Subject != contractID || event.Transition != "publish" {
-				continue
-			}
-			if _, wanted := requested[event.Version]; !wanted {
-				continue
-			}
-			establishments[event.Version] = append(establishments[event.Version], contractEstablishment{
-				CommitSHA: commitSHA, EventPath: eventPath,
-			})
-		}
+		establishments[event.Version] = append(establishments[event.Version], contractEstablishment{
+			CommitSHA: event.Commit, Parent: event.Parent, EventPath: event.Entry.Path,
+			EventMode: event.Entry.Mode, EventOID: event.Entry.OID,
+		})
 	}
 
 	for _, requestedVersion := range requestedVersions {
@@ -419,12 +543,12 @@ func visitContractVersionsAt(ctx context.Context, repoDir, anchor, contractID st
 		case len(candidates) != 1:
 			result.Err = fmt.Errorf("%w: duplicate establishment", ErrContractHistoryInvalid)
 		default:
-			candidate, err := validateHistoricalContractEstablishment(ctx, repoDir, descriptorPath, contractID, requestedVersion, descriptorHistory, candidates[0], validator)
+			candidate, err := validateHistoricalContractEstablishment(ctx, repoDir, reader, descriptorPath, contractID, requestedVersion, descriptorHistory, candidates[0], validator)
 			if err != nil {
 				result.Err = err
 				break
 			}
-			result.Snapshot, result.Err = readHistoricalContractSnapshot(ctx, repoDir, descriptorPath, candidate)
+			result.Snapshot, result.Err = readHistoricalContractSnapshot(ctx, repoDir, reader, descriptorPath, candidate)
 		}
 		if result.Err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -444,17 +568,21 @@ func visitContractVersionsAt(ctx context.Context, repoDir, anchor, contractID st
 
 func validateHistoricalContractEstablishment(
 	ctx context.Context,
-	repoDir, descriptorPath, contractID, requestedVersion string,
+	repoDir string,
+	reader *contractGitBatchReader,
+	descriptorPath, contractID, requestedVersion string,
 	descriptorHistory map[string]struct{},
 	candidate contractEstablishment,
 	validator ContractHistoryDocumentValidator,
 ) (contractEstablishment, error) {
-	eventFile, err := contractGitReadPath(ctx, repoDir, candidate.CommitSHA, candidate.EventPath, contract.MaxFileBytes)
+	eventRaw, err := reader.readBlob(ctx, contractGitTreeEntry{
+		Mode: candidate.EventMode, Kind: "blob", OID: candidate.EventOID, Path: candidate.EventPath,
+	}, contract.MaxFileBytes)
 	if err != nil {
 		return contractEstablishment{}, err
 	}
 	var event contractHistoricalEvent
-	if err := yaml.Unmarshal(eventFile.Raw, &event); err != nil || event.Subject != contractID || event.Version != requestedVersion || event.Transition != "publish" {
+	if err := yaml.Unmarshal(eventRaw, &event); err != nil || event.Subject != contractID || event.Version != requestedVersion || event.Transition != "publish" {
 		return contractEstablishment{}, fmt.Errorf("%w: publish event identity mismatch", ErrContractHistoryInvalid)
 	}
 	parts := strings.Split(candidate.EventPath, "/")
@@ -475,7 +603,7 @@ func validateHistoricalContractEstablishment(
 	if _, changed := descriptorHistory[candidate.CommitSHA]; !changed {
 		return contractEstablishment{}, fmt.Errorf("%w: matching event does not change descriptor", ErrContractHistoryInvalid)
 	}
-	currentFile, err := contractGitReadPath(ctx, repoDir, candidate.CommitSHA, descriptorPath, contract.MaxFileBytes)
+	treeObjectID, currentFile, err := readHistoricalContractRoot(ctx, repoDir, reader, candidate.CommitSHA, descriptorPath)
 	if err != nil {
 		return contractEstablishment{}, err
 	}
@@ -483,12 +611,8 @@ func validateHistoricalContractEstablishment(
 	if err != nil || current.ID != contractID || current.Version != requestedVersion {
 		return contractEstablishment{}, fmt.Errorf("%w: descriptor identity mismatch", ErrContractHistoryInvalid)
 	}
-	parent, err := contractGitFirstParent(ctx, repoDir, candidate.CommitSHA)
-	if err != nil {
-		return contractEstablishment{}, err
-	}
-	if parent != "" {
-		parentFile, parentErr := contractGitReadPath(ctx, repoDir, parent, descriptorPath, contract.MaxFileBytes)
+	if parent := candidate.Parent; parent != "" {
+		parentFile, parentErr := reader.readPath(ctx, parent, descriptorPath, contract.MaxFileBytes)
 		if parentErr == nil {
 			prior, parseErr := parseHistoricalDescriptor(parentFile.Raw)
 			if parseErr != nil || prior.Version == requestedVersion {
@@ -504,16 +628,40 @@ func validateHistoricalContractEstablishment(
 	if err := validator.ValidateHistoricalContractDocuments(ctx, ContractHistoryDocuments{
 		Descriptor: ContractHistoryDocument{Path: descriptorPath, Schema: current.Schema, Raw: currentFile.Raw},
 		PublishEvent: ContractHistoryDocument{
-			Path: candidate.EventPath, Schema: event.Schema, Raw: eventFile.Raw,
+			Path: candidate.EventPath, Schema: event.Schema, Raw: eventRaw,
 		},
 	}); err != nil {
 		return contractEstablishment{}, fmt.Errorf("%w: canonical document validation failed: %w", ErrContractHistoryInvalid, err)
 	}
 	candidate.Descriptor = current
-	candidate.EventRaw = eventFile.Raw
+	candidate.EventRaw = eventRaw
+	candidate.TreeObjectID = treeObjectID
+	candidate.DescriptorFile = currentFile
 	candidate.Event = event
 	candidate.Profile = profile
 	return candidate, nil
+}
+
+// readHistoricalContractRoot answers two questions about commit: what does the
+// contract descriptor hold, and which tree object is the contract root. The
+// descriptor is read first because a root without one is the more specific
+// refusal. Two ls-trees are unavoidable: git lists a path's tree entry only
+// when no deeper path is requested in the same call (asking for the root and
+// the descriptor together returns the descriptor alone).
+func readHistoricalContractRoot(ctx context.Context, repoDir string, reader *contractGitBatchReader, commit, descriptorPath string) (string, ContractSnapshotFile, error) {
+	contractRoot := path.Dir(descriptorPath)
+	file, err := reader.readPath(ctx, commit, descriptorPath, contract.MaxFileBytes)
+	if err != nil {
+		return "", ContractSnapshotFile{}, err
+	}
+	entries, err := contractGitListTree(ctx, repoDir, commit, false, contractRoot)
+	if err != nil {
+		return "", ContractSnapshotFile{}, err
+	}
+	if len(entries) != 1 || entries[0].Path != contractRoot || entries[0].Kind != "tree" || entries[0].Mode != "040000" {
+		return "", ContractSnapshotFile{}, fmt.Errorf("%w: contract root %q is not a Git tree", ErrContractHistoryInvalid, contractRoot)
+	}
+	return entries[0].OID, file, nil
 }
 
 // releaseHistoricalResolution invalidates the borrowed raw-byte views shared

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
@@ -70,7 +71,7 @@ func TestContractGitResolveCommitRejectsBlobObject(t *testing.T) {
 	}
 }
 
-func newContractHistoryRepo(t *testing.T) string {
+func newContractHistoryRepo(t testing.TB) string {
 	t.Helper()
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
@@ -81,7 +82,7 @@ func newContractHistoryRepo(t *testing.T) string {
 	return repo
 }
 
-func contractTestGit(t *testing.T, dir string, args ...string) {
+func contractTestGit(t testing.TB, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
@@ -95,7 +96,7 @@ func contractTestGit(t *testing.T, dir string, args ...string) {
 	}
 }
 
-func contractTestGitOutput(t *testing.T, dir string, args ...string) string {
+func contractTestGitOutput(t testing.TB, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", gitfixture.Args(args...)...)
 	cmd.Dir = dir
@@ -110,4 +111,13 @@ func contractTestGitOutput(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v (dir=%s): %v\n%s", args, dir, err, stderr.Bytes())
 	}
 	return stdout.String()
+}
+
+// withContractGitSpawnCounter installs a git-process counter on the returned
+// context: every one-shot contractGitBytes exec and every batch-reader start
+// under it increments the counter. Test-only by construction — production code
+// reads the counter but nothing in production ever installs one.
+func withContractGitSpawnCounter(ctx context.Context) (context.Context, *atomic.Int64) {
+	counter := &atomic.Int64{}
+	return context.WithValue(ctx, contractGitSpawnCounterKey{}, counter), counter
 }

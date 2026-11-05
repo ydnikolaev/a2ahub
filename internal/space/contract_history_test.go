@@ -670,7 +670,7 @@ contract
 `, contractTestID, version)
 }
 
-func contractV2Publication(t *testing.T, version, schemaRaw string) (string, map[string]string, string) {
+func contractV2Publication(t testing.TB, version, schemaRaw string) (string, map[string]string, string) {
 	t.Helper()
 	descriptor := fmt.Sprintf(`---
 schema: envelope/v2
@@ -733,7 +733,7 @@ contract
 	return descriptor, files, set.AggregateDigest
 }
 
-func legacyContractDigest(t *testing.T, files map[string]string) string {
+func legacyContractDigest(t testing.TB, files map[string]string) string {
 	t.Helper()
 	candidates := make([]contract.CandidateFile, 0, len(files))
 	for path, raw := range files {
@@ -799,7 +799,7 @@ type canonicalContractHistoryValidator struct {
 	engine *validate.Engine
 }
 
-func contractHistoryValidator(t *testing.T) canonicalContractHistoryValidator {
+func contractHistoryValidator(t testing.TB) canonicalContractHistoryValidator {
 	t.Helper()
 	corpus, err := schema.Load()
 	if err != nil {
@@ -827,4 +827,213 @@ func (v canonicalContractHistoryValidator) ValidateHistoricalContractDocuments(c
 		return fmt.Errorf("event violations: %v", event.Violations)
 	}
 	return nil
+}
+
+// contractHistorySpawns returns how many git processes ONE publication-history
+// read spawns over a space with `events` event commits and `versions` published
+// versions of the contract.
+func contractHistorySpawns(t testing.TB, events, versions int) int64 {
+	t.Helper()
+	fixture := buildContractScaleRepo(t, events, versions)
+	ctx, spawns := withContractGitSpawnCounter(t.Context())
+	history, err := publicationHistoryAt(ctx, fixture.Repo, fixture.Anchor, contractTestID, contractHistoryValidator(t))
+	if err != nil {
+		t.Fatalf("publicationHistoryAt(E=%d, V=%d): %v", events, versions, err)
+	}
+	if len(history) != versions {
+		t.Fatalf("history(E=%d, V=%d) has %d versions", events, versions, len(history))
+	}
+	for index, snapshot := range history {
+		if snapshot.Version != fixture.Versions[index] {
+			t.Fatalf("history[%d] = %s, want %s (oldest first)", index, snapshot.Version, fixture.Versions[index])
+		}
+	}
+	return spawns.Load()
+}
+
+// The spawn cost of one publication-history read is a + b*V and nothing else:
+//
+//	a = 3: the single `git log` event walk, the single `git rev-list` that
+//	       orders the descriptor history, and the one `git cat-file --batch`
+//	       process that serves every blob.
+//	b = 4: per requested version, ls-tree for the descriptor, ls-tree for the
+//	       contract root, ls-tree for the parent's descriptor, and the
+//	       recursive ls-tree of the carried package.
+//
+// E, the event-commit count, must not appear. Before the walk was made one pass
+// the same read cost 264 / 2,424 spawns at E=20 / E=200 for V=1 and 1,342 /
+// 11,062 at V=8 (measured on the previous implementation).
+const (
+	contractHistorySpawnFixed      = 3
+	contractHistorySpawnPerVersion = 4
+)
+
+func TestContractPublicationHistorySpawnsAreAffineInVersionsAndFlatInEvents(t *testing.T) {
+	t.Parallel()
+
+	for _, versions := range []int{1, 4, 8} {
+		want := int64(contractHistorySpawnFixed + contractHistorySpawnPerVersion*versions)
+		for _, events := range []int{20, 200} {
+			if got := contractHistorySpawns(t, events, versions); got != want {
+				t.Errorf("spawns(E=%d, V=%d) = %d, want %d (= %d + %d*V, independent of E)",
+					events, versions, got, want, contractHistorySpawnFixed, contractHistorySpawnPerVersion)
+			}
+		}
+	}
+}
+
+const (
+	walkOIDa = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	walkOIDb = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	walkOIDc = "cccccccccccccccccccccccccccccccccccccccc"
+	walkZero = "0000000000000000000000000000000000000000"
+)
+
+func walkMeta(first bool, mode, oid string) string {
+	prefix := ""
+	if first {
+		prefix = "\n"
+	}
+	return prefix + ":000000 " + mode + " " + walkZero + " " + oid + " A"
+}
+
+func TestParseContractEventWalkReadsRootMultiFileAndNonEventCommits(t *testing.T) {
+	t.Parallel()
+
+	raw := "\x00" + walkOIDa + " \x00" + // root commit: header has a trailing space and no parent
+		walkMeta(true, "100644", walkOIDc) + "\x00axon/events/2026/ZZ.yaml\x00" +
+		walkMeta(false, "100644", walkOIDb) + "\x00axon/events/2026/AA.yaml\x00" +
+		walkMeta(false, "100644", walkOIDb) + "\x00axon/exchange/2026/note.md\x00" +
+		"\x00" + walkOIDb + " " + walkOIDa + "\x00" +
+		walkMeta(true, "100644", walkOIDc) + "\x00axon/exchange/only.md\x00"
+	commits, err := parseContractEventWalk([]byte(raw))
+	if err != nil {
+		t.Fatalf("parseContractEventWalk: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("commits = %d, want 1 (a commit with no event path is dropped): %+v", len(commits), commits)
+	}
+	root := commits[0]
+	if root.Commit != walkOIDa || root.Parent != "" {
+		t.Fatalf("root = %s parent %q, want %s with no parent", root.Commit, root.Parent, walkOIDa)
+	}
+	if len(root.Events) != 2 || root.Events[0].Path != "axon/events/2026/AA.yaml" || root.Events[1].Path != "axon/events/2026/ZZ.yaml" {
+		t.Fatalf("events = %+v, want AA then ZZ (sorted by path)", root.Events)
+	}
+	if root.Events[0].OID != walkOIDb || root.Events[0].Mode != "100644" || root.Events[0].Kind != "blob" {
+		t.Fatalf("AA entry = %+v, want blob 100644 %s", root.Events[0], walkOIDb)
+	}
+}
+
+func TestParseContractEventWalkKeepsOnlyTheFirstParentOfAMerge(t *testing.T) {
+	t.Parallel()
+
+	raw := "\x00" + walkOIDc + " " + walkOIDa + " " + walkOIDb + "\x00" +
+		walkMeta(true, "100755", walkOIDb) + "\x00axon/events/2026/M.yaml\x00"
+	commits, err := parseContractEventWalk([]byte(raw))
+	if err != nil {
+		t.Fatalf("parseContractEventWalk: %v", err)
+	}
+	if len(commits) != 1 || commits[0].Parent != walkOIDa {
+		t.Fatalf("commits = %+v, want one commit whose parent is the FIRST parent %s", commits, walkOIDa)
+	}
+	if commits[0].Events[0].Mode != "100755" {
+		t.Fatalf("mode = %s, want 100755 carried through for the later regular-file check", commits[0].Events[0].Mode)
+	}
+}
+
+func TestParseContractEventWalkRefusesMalformedRecords(t *testing.T) {
+	t.Parallel()
+
+	good := walkMeta(true, "100644", walkOIDb) + "\x00axon/events/2026/AA.yaml\x00"
+	header := "\x00" + walkOIDa + " \x00"
+	cases := map[string]string{
+		"not NUL terminated":          strings.TrimSuffix(header+good, "\x00"),
+		"header is not an object id":  "\x00nothex \x00" + good,
+		"header lacks a parent field": "\x00" + walkOIDa + "\x00" + good,
+		"parent is not an object id":  "\x00" + walkOIDa + " zz\x00" + good,
+		"record does not open empty":  "junk\x00" + walkOIDa + " \x00" + good,
+		"meta has no path":            header + walkMeta(true, "100644", walkOIDb) + "\x00",
+		"source is not the null mode": header + strings.Replace(good, ":000000", ":100644", 1),
+		"source oid is not null":      header + strings.Replace(good, walkZero, walkOIDc, 1),
+		"status is not an addition":   header + strings.Replace(good, " A\x00", " M\x00", 1),
+		"destination oid is bad":      header + strings.Replace(good, walkOIDb, "short", 1),
+		"unknown file mode":           header + strings.Replace(good, "100644", "100000", 1),
+		"empty path":                  header + walkMeta(true, "100644", walkOIDb) + "\x00\x00",
+		"commit repeated":             header + good + header + good,
+	}
+	for name, raw := range cases {
+		commits, err := parseContractEventWalk([]byte(raw))
+		if !errors.Is(err, ErrContractHistoryInvalid) {
+			t.Errorf("%s: err = %v (commits %+v), want ErrContractHistoryInvalid", name, err, commits)
+		}
+	}
+}
+
+func TestParseContractEventWalkEmptyLogIsEmptyNotAnError(t *testing.T) {
+	t.Parallel()
+
+	commits, err := parseContractEventWalk(nil)
+	if err != nil || commits == nil || len(commits) != 0 {
+		t.Fatalf("empty log = %+v, %v; want an empty non-nil list and no error", commits, err)
+	}
+}
+
+// The walk runs over real git: a root commit, a side branch merged with a merge
+// commit that brings an event the first parent lacked, and an event added in the
+// very commit that deletes a near-identical one (default rename detection would
+// report that as a rename and --diff-filter=A would drop it, hiding the event).
+func TestContractPublishEventWalkSeesRootMergeAndRenameLookalike(t *testing.T) {
+	t.Parallel()
+
+	repo := newContractHistoryRepo(t)
+	body := strings.Repeat("schema: event/v2\nsubject: XC-axon-widget\ntransition: publish\n", 8)
+	put := func(name, content string) {
+		t.Helper()
+		writeContractCandidateFile(t, repo, name, content)
+	}
+	put("axon/events/2026/ROOT.yaml", body)
+	contractTestGit(t, repo, "add", ".")
+	contractTestGit(t, repo, "commit", "-q", "-m", "root")
+	root := strings.TrimSpace(contractTestGitOutput(t, repo, "rev-parse", "HEAD"))
+
+	contractTestGit(t, repo, "checkout", "-q", "-b", "side")
+	put("axon/events/2026/SIDE.yaml", body+"side\n")
+	contractTestGit(t, repo, "add", ".")
+	contractTestGit(t, repo, "commit", "-q", "-m", "side")
+
+	contractTestGit(t, repo, "checkout", "-q", "main")
+	contractTestGit(t, repo, "rm", "-q", "--", "axon/events/2026/ROOT.yaml")
+	put("axon/events/2026/RENAMED.yaml", body+"x\n")
+	contractTestGit(t, repo, "add", ".")
+	contractTestGit(t, repo, "commit", "-q", "-m", "delete one, add a near-identical one")
+	lookalike := strings.TrimSpace(contractTestGitOutput(t, repo, "rev-parse", "HEAD"))
+
+	contractTestGit(t, repo, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+	merge := strings.TrimSpace(contractTestGitOutput(t, repo, "rev-parse", "HEAD"))
+
+	commits, err := contractPublishEventWalk(t.Context(), repo, merge)
+	if err != nil {
+		t.Fatalf("contractPublishEventWalk: %v", err)
+	}
+	type seen struct{ commit, parent, path string }
+	var got []seen
+	for _, commit := range commits {
+		for _, event := range commit.Events {
+			got = append(got, seen{commit.Commit, commit.Parent, event.Path})
+		}
+	}
+	want := []seen{
+		{root, "", "axon/events/2026/ROOT.yaml"},
+		{lookalike, root, "axon/events/2026/RENAMED.yaml"},
+		{merge, lookalike, "axon/events/2026/SIDE.yaml"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("walk saw %+v, want %+v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("walk[%d] = %+v, want %+v (oldest first, first-parent, renames not folded)", index, got[index], want[index])
+		}
+	}
 }

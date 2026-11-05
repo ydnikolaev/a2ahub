@@ -17,6 +17,13 @@ import (
 // render. `resolveContractVersionDetails` re-walks the same history once per
 // consumer pin, which is a caller shape this package cannot see.
 //
+// Since contract-speed (2026-11-05) a history walk is one `git log --raw` plus
+// one long-lived `cat-file --batch` (contract_git_batch.go) and a few ls-tree
+// per version; neither the log nor the batch reader passes through this memo,
+// and no production path issues `diff-tree` any more. The figures above are
+// the pre-fix baseline; the memo now absorbs the per-version ls-tree,
+// rev-list and one-shot cat-file repeats that remain.
+//
 // So the seam remembers instead. This is a memo, not a cache with a lifetime
 // policy: it lives exactly as long as the context that installs it, which is
 // one render, and no caller that does not ask for it is affected at all.

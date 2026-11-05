@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 )
@@ -50,15 +51,13 @@ func contractGitBytes(ctx context.Context, repoDir string, limit int64, args ...
 		}
 	}
 	bufferLimit := limit + 1
-	gitArgs := append([]string{"--no-replace-objects", "--literal-pathspecs"}, args...)
-	cmd := exec.CommandContext(ctx, "git")
-	cmd.Args = append([]string{"git"}, gitArgs...)
-	cmd.Dir = repoDir
-	cmd.Env = contractGitEnvironment()
+	cmd := contractGitCommand(ctx, repoDir, args...)
+	gitArgs := cmd.Args[1:]
 	stdout := &boundedCommandBuffer{remaining: bufferLimit}
 	stderr := &boundedCommandBuffer{remaining: maxTreeCommitMetadataBytes}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	countContractGitSpawn(ctx)
 	err := cmd.Run()
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -77,6 +76,32 @@ func contractGitBytes(ctx context.Context, repoDir string, limit int64, args ...
 		memo.put(memoKey, raw)
 	}
 	return raw, nil
+}
+
+// contractGitCommand is the one place a contract read assembles its git
+// invocation: the hardened argv prefix and the scrubbed environment are shared
+// by the one-shot bounded read above and the long-lived batch reader, so the
+// two cannot drift apart. ctx cancellation kills the process.
+func contractGitCommand(ctx context.Context, repoDir string, args ...string) *exec.Cmd {
+	gitArgs := append([]string{"--no-replace-objects", "--literal-pathspecs"}, args...)
+	cmd := exec.CommandContext(ctx, "git")
+	cmd.Args = append([]string{"git"}, gitArgs...)
+	cmd.Dir = repoDir
+	cmd.Env = contractGitEnvironment()
+	return cmd
+}
+
+// contractGitSpawnCounterKey carries a test-only process counter through the
+// context. Nothing installs one in production, so the lookup costs a single
+// failed type assertion per spawn and there is no package-level state.
+type contractGitSpawnCounterKey struct{}
+
+// countContractGitSpawn records one git process start when a counter was
+// installed on ctx (see withContractGitSpawnCounter in the tests).
+func countContractGitSpawn(ctx context.Context) {
+	if counter, ok := ctx.Value(contractGitSpawnCounterKey{}).(*atomic.Int64); ok {
+		counter.Add(1)
+	}
 }
 
 func contractGitEnvironment() []string {
@@ -216,6 +241,16 @@ func contractGitReadBlob(ctx context.Context, repoDir string, entry contractGitT
 }
 
 func contractGitReadPath(ctx context.Context, repoDir, commit, name string, maximum int) (ContractSnapshotFile, error) {
+	return contractGitReadPathWith(ctx, repoDir, commit, name, func(entry contractGitTreeEntry) ([]byte, error) {
+		return contractGitReadBlob(ctx, repoDir, entry, maximum)
+	})
+}
+
+// contractGitReadPathWith resolves name at commit to its tree entry and reads
+// the blob through readBlob. The one-shot reader above and the batch reader
+// (contract_git_batch.go) share it, so the missing-path and not-a-regular-file
+// verdicts cannot diverge between them.
+func contractGitReadPathWith(ctx context.Context, repoDir, commit, name string, readBlob func(contractGitTreeEntry) ([]byte, error)) (ContractSnapshotFile, error) {
 	entry, found, err := contractGitExactTreeEntry(ctx, repoDir, commit, name)
 	if err != nil {
 		return ContractSnapshotFile{}, err
@@ -223,11 +258,17 @@ func contractGitReadPath(ctx context.Context, repoDir, commit, name string, maxi
 	if !found {
 		return ContractSnapshotFile{}, fmt.Errorf("%w: historical file %q is missing", ErrContractHistoryInvalid, name)
 	}
+	return contractGitReadEntryWith(name, entry, readBlob)
+}
+
+// contractGitReadEntryWith is the verdict half of contractGitReadPathWith for a
+// caller that already holds the tree entry: it must be a regular file.
+func contractGitReadEntryWith(name string, entry contractGitTreeEntry, readBlob func(contractGitTreeEntry) ([]byte, error)) (ContractSnapshotFile, error) {
 	kind := contractGitCandidateKind(entry)
 	if kind != contract.CandidateRegular {
 		return ContractSnapshotFile{}, fmt.Errorf("%w: %q has git mode/type %s/%s", ErrContractUnsafeEntry, name, entry.Mode, entry.Kind)
 	}
-	raw, err := contractGitReadBlob(ctx, repoDir, entry, maximum)
+	raw, err := readBlob(entry)
 	if err != nil {
 		return ContractSnapshotFile{}, err
 	}

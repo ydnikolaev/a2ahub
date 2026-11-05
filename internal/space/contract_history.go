@@ -124,7 +124,17 @@ type ContractHistoryDocumentValidator interface {
 }
 
 type contractEstablishment struct {
-	CommitSHA  string
+	CommitSHA string
+	// Parent is the establishing commit's first parent ("" for a root commit),
+	// carried from the one event walk so no later step asks git again.
+	Parent string
+	// TreeObjectID and DescriptorFile are the contract root's tree object and
+	// the descriptor at CommitSHA, resolved once by the establishment check.
+	TreeObjectID   string
+	DescriptorFile ContractSnapshotFile
+	// EventMode and EventOID are the event file as the walk saw it added.
+	EventMode  string
+	EventOID   string
 	Descriptor contractHistoricalDescriptor
 	EventPath  string
 	EventRaw   []byte
@@ -261,13 +271,12 @@ func contractDescriptorHistory(ctx context.Context, repoDir, authoritativeCommit
 	fields := strings.Fields(string(raw))
 	seen := make(map[string]struct{}, len(fields))
 	for _, field := range fields {
+		// rev-list prints full object ids of commits it just walked, so the id
+		// needs no second round trip to be believed; only its shape is checked.
 		if !contractGitObjectID(field) {
 			return nil, fmt.Errorf("%w: descriptor history contains a non-object id", ErrContractHistoryInvalid)
 		}
-		verified, err := contractGitResolveCommit(ctx, repoDir, field)
-		if err != nil {
-			return nil, err
-		}
+		verified := strings.ToLower(field)
 		if _, duplicate := seen[verified]; duplicate {
 			return nil, fmt.Errorf("%w: descriptor history repeats commit %s", ErrContractHistoryInvalid, verified)
 		}
@@ -276,48 +285,151 @@ func contractDescriptorHistory(ctx context.Context, repoDir, authoritativeCommit
 	return seen, nil
 }
 
-// contractPublishEventHistory discovers every first-parent commit that adds a
-// canonical event path. Discovery is based on paths rather than raw YAML text:
-// escaped but semantically equal subjects therefore cannot evade resolution.
-// The one bounded Git listing is the supported-history ceiling; event decode
-// and target filtering happen only for the returned commits.
-func contractPublishEventHistory(ctx context.Context, repoDir, authoritativeCommit string) ([]string, error) {
-	raw, err := contractGitBytes(ctx, repoDir, maxContractGitListingBytes,
-		"log", "--first-parent", "--reverse", "--diff-merges=first-parent", "--format=%x00%H%x00",
-		"--name-only", "--diff-filter=A", "-z", authoritativeCommit)
+// maxContractEventWalkBytes is the supported-history ceiling of the ONE git log
+// that discovers every publish event. It was 1 MiB (maxContractGitListingBytes)
+// when the listing printed paths only, about 110 bytes per added event, which
+// supported roughly 9,500 event commits. Carrying each added file's mode and
+// blob id (`--raw --no-abbrev`) is what lets the walk stop asking git again per
+// commit, and it costs about 345 bytes per commit that adds an event and one
+// more file (measured: 3.45 MB for 10,000 such commits). 64 MiB therefore
+// supports roughly 190,000 of them, and a refusal past it is still the bounded
+// ErrContractBoundedResult, never a silently shorter history.
+const maxContractEventWalkBytes = 64 << 20
+
+// contractEventCommit is one first-parent commit that added at least one
+// canonical event path, with everything the later steps need about it.
+type contractEventCommit struct {
+	Commit string
+	// Parent is the first parent, "" for a root commit.
+	Parent string
+	// Events are the event paths this commit added, sorted by path.
+	Events []contractGitTreeEntry
+}
+
+// contractPublishEventWalk discovers every first-parent commit that adds a
+// canonical event path, from ONE git invocation that also prints each commit's
+// first parent and every added file's mode and blob id. Discovery is based on
+// paths rather than raw YAML text: escaped but semantically equal subjects
+// therefore cannot evade resolution.
+//
+// Renames are not detected: an event file that merely resembles a deleted one
+// is still an added event. (With detection on, `--diff-filter=A` drops such a
+// file, and the publication it establishes disappears from history.)
+func contractPublishEventWalk(ctx context.Context, repoDir, authoritativeCommit string) ([]contractEventCommit, error) {
+	raw, err := contractGitBytes(ctx, repoDir, maxContractEventWalkBytes,
+		"log", "--first-parent", "--reverse", "--diff-merges=first-parent", "--no-renames",
+		"--raw", "-z", "--no-abbrev", "--diff-filter=A", "--format=%x00%H %P%x00", authoritativeCommit)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
 		return nil, fmt.Errorf("%w: cannot walk contract publish events; run a2a sync: %w", ErrContractObjectUnavailable, err)
 	}
-	records := bytes.Split(raw, []byte{0})
-	commits := make([]string, 0)
+	return parseContractEventWalk(raw)
+}
+
+// parseContractEventWalk reads the record stream of the log above, split on
+// NUL. Per commit it is
+//
+//	""  "<oid> [<parent>...]"  ""  then, per added file,  ":<meta> A"  "<path>"
+//
+// where the first meta record is additionally preceded by a newline. Anything
+// else is an error: a record that cannot be read is never skipped, because a
+// skipped commit is a publication that silently never happened.
+func parseContractEventWalk(raw []byte) ([]contractEventCommit, error) {
+	if len(raw) == 0 {
+		return []contractEventCommit{}, nil
+	}
+	if raw[len(raw)-1] != 0 {
+		return nil, fmt.Errorf("%w: publish event history is not NUL-terminated", ErrContractHistoryInvalid)
+	}
+	records := bytes.Split(raw[:len(raw)-1], []byte{0})
+	commits := make([]contractEventCommit, 0)
 	seen := make(map[string]struct{})
-	current := ""
-	for index := 0; index < len(records); index++ {
-		if len(records[index]) == 0 && index+2 < len(records) && len(records[index+2]) == 0 && contractGitObjectID(string(records[index+1])) {
-			current = strings.ToLower(string(records[index+1]))
+	for index := 0; index < len(records); {
+		if len(records[index]) != 0 || index+1 >= len(records) {
+			return nil, fmt.Errorf("%w: publish event history has a malformed commit record", ErrContractHistoryInvalid)
+		}
+		commit, parent, err := parseContractEventWalkHeader(string(records[index+1]))
+		if err != nil {
+			return nil, err
+		}
+		if _, duplicate := seen[commit]; duplicate {
+			return nil, fmt.Errorf("%w: publish event history repeats commit %s", ErrContractHistoryInvalid, commit)
+		}
+		seen[commit] = struct{}{}
+		index += 2
+		if index < len(records) && len(records[index]) == 0 {
+			index++ // git's own record terminator after the --format text under -z
+		}
+		entry := contractEventCommit{Commit: commit, Parent: parent}
+		for index < len(records) && len(records[index]) != 0 {
+			if index+1 >= len(records) {
+				return nil, fmt.Errorf("%w: publish event history has a diff record without a path", ErrContractHistoryInvalid)
+			}
+			added, err := parseContractEventWalkEntry(string(records[index]), string(records[index+1]))
+			if err != nil {
+				return nil, err
+			}
 			index += 2
+			if isContractEventPath(added.Path) {
+				entry.Events = append(entry.Events, added)
+			}
+		}
+		if len(entry.Events) == 0 {
 			continue
 		}
-		name := strings.TrimPrefix(string(records[index]), "\n")
-		if name == "" {
-			continue
-		}
-		if current == "" {
-			return nil, fmt.Errorf("%w: publish event history contains a path without a commit", ErrContractHistoryInvalid)
-		}
-		if !isContractEventPath(name) {
-			continue
-		}
-		if _, duplicate := seen[current]; duplicate {
-			continue
-		}
-		seen[current] = struct{}{}
-		commits = append(commits, current)
+		// Git emits tree order, which is not byte order; the pipeline has
+		// always visited a commit's events in sorted order.
+		sort.Slice(entry.Events, func(i, j int) bool { return entry.Events[i].Path < entry.Events[j].Path })
+		commits = append(commits, entry)
 	}
 	return commits, nil
+}
+
+func parseContractEventWalkHeader(record string) (commit, parent string, err error) {
+	fields := strings.Split(record, " ")
+	if len(fields) < 2 || !contractGitObjectID(fields[0]) {
+		return "", "", fmt.Errorf("%w: publish event history has a malformed commit header", ErrContractHistoryInvalid)
+	}
+	parents := fields[1:]
+	if len(parents) == 1 && parents[0] == "" {
+		parents = nil // a root commit prints no parent
+	}
+	for _, candidate := range parents {
+		if !contractGitObjectID(candidate) {
+			return "", "", fmt.Errorf("%w: publish event history has a malformed parent id", ErrContractHistoryInvalid)
+		}
+	}
+	if len(parents) > 0 {
+		parent = strings.ToLower(parents[0])
+	}
+	return strings.ToLower(fields[0]), parent, nil
+}
+
+// parseContractEventWalkEntry reads one `:<src mode> <dst mode> <src oid> <dst
+// oid> A` record and its path. Only additions can appear (--diff-filter=A), so
+// the source side must be the null mode and object.
+func parseContractEventWalkEntry(meta, name string) (contractGitTreeEntry, error) {
+	fields := strings.Split(strings.TrimPrefix(meta, "\n"), " ")
+	if len(fields) != 5 || !strings.HasPrefix(fields[0], ":") || name == "" ||
+		fields[0] != ":000000" || fields[4] != "A" ||
+		!contractGitObjectID(fields[2]) || strings.Trim(fields[2], "0") != "" || !contractGitObjectID(fields[3]) {
+		return contractGitTreeEntry{}, fmt.Errorf("%w: publish event history has a malformed diff record", ErrContractHistoryInvalid)
+	}
+	mode := fields[1]
+	var kind string
+	switch mode {
+	case "100644", "100755", "120000":
+		kind = "blob"
+	case "160000":
+		kind = "commit"
+	case "040000":
+		kind = "tree"
+	default:
+		return contractGitTreeEntry{}, fmt.Errorf("%w: publish event history has an unknown file mode %q", ErrContractHistoryInvalid, mode)
+	}
+	return contractGitTreeEntry{Mode: mode, Kind: kind, OID: strings.ToLower(fields[3]), Path: name}, nil
 }
 
 func validateContractPublicationPair(descriptor contractHistoricalDescriptor, event contractHistoricalEvent, profile contract.DigestProfile) error {
@@ -327,59 +439,6 @@ func validateContractPublicationPair(descriptor contractHistoricalDescriptor, ev
 		return fmt.Errorf("%w: unsupported descriptor/event/profile pairing %q/%q/%q", ErrContractHistoryInvalid, descriptor.Schema, event.Schema, profile)
 	}
 	return nil
-}
-
-func contractGitFirstParent(ctx context.Context, repoDir, commitSHA string) (string, error) {
-	raw, err := contractGitBytes(ctx, repoDir, maxTreeCommitMetadataBytes, "rev-list", "--parents", "-n", "1", commitSHA)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", ctxErr
-		}
-		return "", fmt.Errorf("%w: cannot inspect commit parents; run a2a sync: %w", ErrContractObjectUnavailable, err)
-	}
-	fields := strings.Fields(string(raw))
-	if len(fields) == 0 || strings.ToLower(fields[0]) != commitSHA {
-		return "", fmt.Errorf("%w: malformed commit parent record", ErrContractHistoryInvalid)
-	}
-	if len(fields) == 1 {
-		return "", nil
-	}
-	return contractGitResolveCommit(ctx, repoDir, fields[1])
-}
-
-func contractGitAddedPaths(ctx context.Context, repoDir, commitSHA, firstParent string) ([]string, error) {
-	args := []string{"diff-tree", "--no-commit-id", "--diff-filter=A", "--name-only", "-r", "-z"}
-	if firstParent == "" {
-		args = append(args, "--root", commitSHA, "--")
-	} else {
-		args = append(args, firstParent, commitSHA, "--")
-	}
-	raw, err := contractGitBytes(ctx, repoDir, maxContractGitListingBytes, args...)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr
-		}
-		return nil, fmt.Errorf("%w: cannot inspect establishment commit tree: %w", ErrContractObjectUnavailable, err)
-	}
-	return parseContractGitNames(raw)
-}
-
-func parseContractGitNames(raw []byte) ([]string, error) {
-	if len(raw) == 0 {
-		return []string{}, nil
-	}
-	if raw[len(raw)-1] != 0 {
-		return nil, fmt.Errorf("%w: Git returned a non-NUL-terminated path list", ErrContractHistoryInvalid)
-	}
-	records := bytes.Split(raw[:len(raw)-1], []byte{0})
-	paths := make([]string, 0, len(records))
-	for _, record := range records {
-		if len(record) == 0 || bytes.ContainsRune(record, '\x00') {
-			return nil, fmt.Errorf("%w: Git returned an invalid empty path", ErrContractHistoryInvalid)
-		}
-		paths = append(paths, string(record))
-	}
-	return paths, nil
 }
 
 func isContractEventPath(name string) bool {
@@ -398,24 +457,20 @@ func isContractEventPath(name string) bool {
 	return true
 }
 
-func readHistoricalContractSnapshot(ctx context.Context, repoDir, descriptorPath string, establishment contractEstablishment) (HistoricalSnapshot, error) {
+func readHistoricalContractSnapshot(ctx context.Context, repoDir string, reader *contractGitBatchReader, descriptorPath string, establishment contractEstablishment) (HistoricalSnapshot, error) {
 	contractRoot := path.Dir(descriptorPath)
 	eventRaw := establishment.EventRaw
 	if len(eventRaw) == 0 {
-		eventFile, err := contractGitReadPath(ctx, repoDir, establishment.CommitSHA, establishment.EventPath, contract.MaxFileBytes)
+		eventBytes, err := reader.readBlob(ctx, contractGitTreeEntry{
+			Mode: establishment.EventMode, Kind: "blob", OID: establishment.EventOID, Path: establishment.EventPath,
+		}, contract.MaxFileBytes)
 		if err != nil {
 			return HistoricalSnapshot{}, err
 		}
-		eventRaw = eventFile.Raw
+		eventRaw = eventBytes
 	}
-	treeObjectID, err := contractGitTreeObjectID(ctx, repoDir, establishment.CommitSHA, contractRoot)
-	if err != nil {
-		return HistoricalSnapshot{}, err
-	}
-	descriptorFile, err := contractGitReadPath(ctx, repoDir, establishment.CommitSHA, descriptorPath, contract.MaxFileBytes)
-	if err != nil {
-		return HistoricalSnapshot{}, err
-	}
+	treeObjectID := establishment.TreeObjectID
+	descriptorFile := establishment.DescriptorFile
 	descriptorFile.Path = contract.DescriptorPath
 	descriptor, err := contract.ParseDescriptor(descriptorFile.Raw)
 	if err != nil {
@@ -458,7 +513,7 @@ func readHistoricalContractSnapshot(ctx context.Context, repoDir, descriptorPath
 		if kind != contract.CandidateRegular {
 			return HistoricalSnapshot{}, fmt.Errorf("%w: %q has git mode/type %s/%s", ErrContractUnsafeEntry, relative, entry.Mode, entry.Kind)
 		}
-		raw, err := contractGitReadBlob(ctx, repoDir, entry, contract.MaxFileBytes)
+		raw, err := reader.readBlob(ctx, entry, contract.MaxFileBytes)
 		if err != nil {
 			return HistoricalSnapshot{}, err
 		}
