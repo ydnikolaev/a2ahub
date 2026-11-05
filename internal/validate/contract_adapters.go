@@ -23,14 +23,23 @@ func (ContractCompatibilityAdapter) CheckCompatibility(input contract.Compatibil
 		}
 	}
 	priorFixtures := make(map[string][]byte)
+	// Both entry paths and conforms_to values are contract-relative, the key
+	// space NewSchemas and PriorFixtures use here, so no conversion applies.
+	var priorConformsTo map[string]string
 	for _, entry := range input.BaselineEntries {
 		if entry.Role == contract.RoleValidFixture && entry.Normative {
 			priorFixtures[entry.Path] = append([]byte(nil), input.BaselineBytes[entry.Path]...)
+			if entry.ConformsTo != "" {
+				if priorConformsTo == nil {
+					priorConformsTo = make(map[string]string)
+				}
+				priorConformsTo[entry.Path] = entry.ConformsTo
+			}
 		}
 	}
 	computed := CheckComputedCompatibility(CompatInput{
 		DeclaredBump: input.DeclaredBump, PriorVersion: input.PriorVersion, NewVersion: input.NewVersion,
-		NewSchemas: newSchemas, PriorFixtures: priorFixtures,
+		NewSchemas: newSchemas, PriorFixtures: priorFixtures, PriorConformsTo: priorConformsTo,
 	})
 	result := contract.CompatibilityResult{Failures: make([]contract.CompatibilityFailure, 0, len(computed.Failures))}
 	for _, failure := range computed.Failures {

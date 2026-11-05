@@ -5,8 +5,9 @@
 // "pure core", D-F): CheckComputedCompatibility does no I/O and never
 // logs. The caller (spec 37 T2's two consumers — `contract publish` and
 // `validate --ci`) is responsible for reading the prior version's
-// fixtures/valid/** and the new version's schema/** off disk (or git) and
-// handing the raw bytes in here, keyed by their repo-relative paths;
+// fixtures/valid/** and the new version's schema/** off disk (or git),
+// plus the prior descriptor's conforms_to declarations, and handing them
+// in here, keyed by their repo-relative paths;
 // this package never opens a file or resolves a version itself.
 //
 // The only place that may compile an arbitrary, caller-supplied JSON
@@ -40,6 +41,16 @@ type CompatInput struct {
 	// PriorFixtures is the PRIOR version's fixtures/valid/** files:
 	// repo-relative path -> raw file bytes.
 	PriorFixtures map[string][]byte
+	// PriorConformsTo is the PRIOR version's descriptor-declared
+	// fixture -> schema mapping (contract-set-v2's `conforms_to`): a
+	// PriorFixtures key -> the NewSchemas key that fixture was declared to
+	// conform to, in exactly the key spaces those two maps already use.
+	// A fixture with an entry is mapped by it instead of by file stem; if
+	// NewSchemas no longer holds the named schema, that schema was removed
+	// (POL-007). A fixture without an entry (or with an empty value) falls
+	// back to the stem rule. nil/empty means no fixture declared one, which
+	// leaves every verdict exactly as the stem rule alone gives it.
+	PriorConformsTo map[string]string
 }
 
 // CompatFailure is one prior-version fixture that no longer validates
@@ -111,7 +122,7 @@ func CheckComputedCompatibility(in CompatInput) CompatResult {
 	fixtureKeys := sortedKeys(in.PriorFixtures)
 	schemaKeys := sortedKeys(in.NewSchemas)
 
-	plan, planErr := planMapping(fixtureKeys, in.NewSchemas, schemaKeys)
+	plan, planErr := planMapping(fixtureKeys, in.NewSchemas, schemaKeys, in.PriorConformsTo)
 	if planErr != nil {
 		return brokenBaseline(planErr.fixture, planErr.detail)
 	}
@@ -123,10 +134,11 @@ func CheckComputedCompatibility(in CompatInput) CompatResult {
 	// unevaluatable baseline — it is the breaking change itself, reported
 	// as such, with an empty Schema because there is no longer one to name.
 	for _, fixturePath := range plan.schemaRemoved {
-		failures = append(failures, CompatFailure{
-			Fixture: fixturePath,
-			Detail:  "the schema this fixture validated against in the prior version is not published by the new version",
-		})
+		detail := "the schema this fixture validated against in the prior version is not published by the new version"
+		if declared := in.PriorConformsTo[fixturePath]; declared != "" {
+			detail = fmt.Sprintf("the schema this fixture declared conformance to in the prior version (%s) is not published by the new version", declared)
+		}
+		failures = append(failures, CompatFailure{Fixture: fixturePath, Detail: detail})
 	}
 
 	for _, fixturePath := range fixtureKeys {
@@ -169,6 +181,13 @@ func CheckComputedCompatibility(in CompatInput) CompatResult {
 	for i, f := range failures {
 		names[i] = f.Fixture
 	}
+	// A schema a fixture DECLARED (conforms_to) and the new version dropped is
+	// named in the message, since the failure's Detail does not reach every
+	// caller. Stem-mapped removals have no declared name and add nothing.
+	removedNote := ""
+	if removed := declaredRemovedSchemas(plan.schemaRemoved, in.PriorConformsTo); len(removed) > 0 {
+		removedNote = fmt.Sprintf(" (schemas no longer published: %s)", strings.Join(removed, ", "))
+	}
 	return CompatResult{
 		Computed: true,
 		Failures: failures,
@@ -176,13 +195,34 @@ func CheckComputedCompatibility(in CompatInput) CompatResult {
 			Code:  "POL-007",
 			Class: ClassPolicy,
 			Message: fmt.Sprintf(
-				"declared %s bump (%s -> %s) contradicts computed compatibility: %s no longer validate against the new version's schemas",
-				in.DeclaredBump, orPlaceholder(in.PriorVersion), orPlaceholder(in.NewVersion), strings.Join(names, ", "),
+				"declared %s bump (%s -> %s) contradicts computed compatibility: %s no longer validate against the new version's schemas%s",
+				in.DeclaredBump, orPlaceholder(in.PriorVersion), orPlaceholder(in.NewVersion), strings.Join(names, ", "), removedNote,
 			),
 			CCRef:    "CC-080",
 			Severity: SeverityReject,
 		},
 	}
+}
+
+// declaredRemovedSchemas lists, sorted and de-duplicated, the schemas the
+// removed fixtures declared via conforms_to. Fixtures that went to
+// schemaRemoved through the stem rule contribute nothing.
+func declaredRemovedSchemas(removedFixtures []string, priorConformsTo map[string]string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, fixturePath := range removedFixtures {
+		name := priorConformsTo[fixturePath]
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // brokenBaseline builds the CompatResult D-B's fail-closed half requires:
@@ -214,8 +254,9 @@ type mappingPlan struct {
 	// schemaFor maps a fixture path to the NewSchemas key it validates
 	// against. A fixture absent from this map is in schemaRemoved.
 	schemaFor map[string]string
-	// schemaRemoved lists fixtures that named a schema by stem which the
-	// new version no longer publishes (sorted).
+	// schemaRemoved lists fixtures whose schema the new version no longer
+	// publishes (sorted): one declared by conforms_to and absent from
+	// NewSchemas, or, under the stem convention, one with no stem match.
 	schemaRemoved []string
 }
 
@@ -235,7 +276,17 @@ type mappingRefusal struct{ fixture, detail string }
 // was never its own, and the whole publish reported Computed:true with
 // zero failures — while a schema had in fact been removed in a minor bump.
 //
-// So the mode is chosen once, from what the batch as a whole looks like:
+// The descriptor's own declaration comes first: a fixture with a
+// priorConformsTo entry names its schema outright, so it is mapped to that
+// schema when NewSchemas has it and is a removed schema (POL-007) when it
+// does not. File names play no part for such a fixture, which is what lets a
+// multi-schema contract name its fixtures `<schema>--<case>.json`. Only the
+// fixtures WITHOUT a declaration are left to the stem rule below, and the
+// batch modes are chosen over that remaining set alone — a declared fixture
+// neither counts as a stem match nor as an unmatched one.
+//
+// For that fallback set the mode is chosen once, from what the set as a
+// whole looks like:
 //
 //  1. EVERY fixture matches a schema by stem (fixtures/valid/<stem>.json ->
 //     schema/<stem>.schema.json, compared on base names since these keys
@@ -254,12 +305,28 @@ type mappingRefusal struct{ fixture, detail string }
 //
 // A stem that matches TWO schemas at different directory depths (nothing
 // constrains schema/** to be flat) is ambiguous under every mode and
-// refuses rather than silently taking the first — case 4.
-func planMapping(sortedFixtureKeys []string, newSchemas map[string][]byte, sortedSchemaKeys []string) (mappingPlan, *mappingRefusal) {
+// refuses rather than silently taking the first — case 4. That refusal is
+// raised for the fallback set only; a declared fixture never reaches it.
+func planMapping(sortedFixtureKeys []string, newSchemas map[string][]byte, sortedSchemaKeys []string, priorConformsTo map[string]string) (mappingPlan, *mappingRefusal) {
+	declared := map[string]string{}
+	var removed, fallback []string
+	for _, fixturePath := range sortedFixtureKeys {
+		want := priorConformsTo[fixturePath]
+		if want == "" {
+			fallback = append(fallback, fixturePath)
+			continue
+		}
+		if _, ok := newSchemas[want]; ok {
+			declared[fixturePath] = want
+		} else {
+			removed = append(removed, fixturePath)
+		}
+	}
+
 	matched := map[string]string{}
 	var unmatched []string
 
-	for _, fixturePath := range sortedFixtureKeys {
+	for _, fixturePath := range fallback {
 		want := strings.TrimSuffix(pathBaseName(fixturePath), ".json") + ".schema.json"
 		var hits []string
 		for _, k := range sortedSchemaKeys {
@@ -283,19 +350,28 @@ func planMapping(sortedFixtureKeys []string, newSchemas map[string][]byte, sorte
 		}
 	}
 
+	schemaFor := declared // owned here; merge the stem matches into it
+	for fixturePath, schemaPath := range matched {
+		schemaFor[fixturePath] = schemaPath
+	}
+
 	switch {
-	case len(unmatched) == 0: // case 1
-		return mappingPlan{schemaFor: matched}, nil
+	case len(unmatched) == 0: // case 1 (or nothing left to fall back on)
+		sort.Strings(removed)
+		return mappingPlan{schemaFor: schemaFor, schemaRemoved: removed}, nil
 
 	case len(matched) == 0 && len(newSchemas) == 1: // case 2
 		only := sortedSchemaKeys[0]
-		for _, fixturePath := range sortedFixtureKeys {
-			matched[fixturePath] = only
+		for _, fixturePath := range unmatched {
+			schemaFor[fixturePath] = only
 		}
-		return mappingPlan{schemaFor: matched}, nil
+		sort.Strings(removed)
+		return mappingPlan{schemaFor: schemaFor, schemaRemoved: removed}, nil
 
 	case len(matched) > 0: // case 3
-		return mappingPlan{schemaFor: matched, schemaRemoved: unmatched}, nil
+		removed = append(removed, unmatched...)
+		sort.Strings(removed)
+		return mappingPlan{schemaFor: schemaFor, schemaRemoved: removed}, nil
 
 	default: // case 4
 		return mappingPlan{}, &mappingRefusal{

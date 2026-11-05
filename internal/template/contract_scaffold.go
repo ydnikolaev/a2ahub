@@ -57,10 +57,11 @@ const contractScaffoldSlugToken = "<slug>"
 // package never imports internal/validate (§9 "Coupling: soft") and only
 // fills and returns bytes.
 //
-// D-E's valid-fixture->schema mapping matches by base name
-// (fixtures/valid/<stem>.json -> schema/<stem>.schema.json); callers are
-// expected to name both returned files after slug so the mapping is
-// unambiguous the moment the contract publishes.
+// D-E's valid-fixture->schema mapping follows a fixture's declared
+// conforms_to first and falls back to the base name
+// (fixtures/valid/<stem>.json -> schema/<stem>.schema.json) for a fixture
+// without one; callers name both returned files after slug so the fallback
+// is unambiguous too the moment the contract publishes.
 func ContractScaffold(slug string) (schema, validFixture, invalidFixture []byte) {
 	token := []byte(contractScaffoldSlugToken)
 	schema = bytes.ReplaceAll(contractScaffoldSchemaRaw, token, []byte(slug))

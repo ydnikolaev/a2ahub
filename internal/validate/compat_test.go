@@ -3,6 +3,7 @@ package validate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -413,6 +414,138 @@ func TestCheckComputedCompatibility_Deterministic(t *testing.T) {
 	for i, w := range want {
 		if first.Failures[i].Fixture != w {
 			t.Fatalf("failures not sorted: got %v, want fixture order %v", first.Failures, want)
+		}
+	}
+}
+
+// multiSchemaConformsToInput is the shape of fb-20261104-32440f: two
+// schemas, fixtures named `<schema>--<case>.json` so no file stem matches a
+// schema, each fixture's conforms_to naming its schema. The new version adds
+// an optional property to both schemas (an additive minor).
+func multiSchemaConformsToInput() CompatInput {
+	return CompatInput{
+		DeclaredBump: "minor",
+		PriorVersion: "1.0.0",
+		NewVersion:   "1.1.0",
+		NewSchemas: map[string][]byte{
+			"schema/order.schema.json":   []byte(`{"type":"object","properties":{"id":{"type":"string"},"note":{"type":"string"}},"required":["id"]}`),
+			"schema/invoice.schema.json": []byte(`{"type":"object","properties":{"total":{"type":"number"},"memo":{"type":"string"}},"required":["total"]}`),
+		},
+		PriorFixtures: map[string][]byte{
+			"fixtures/valid/order--minimal.json":   []byte(`{"id":"o-1"}`),
+			"fixtures/valid/invoice--minimal.json": []byte(`{"total":12.5}`),
+		},
+		PriorConformsTo: map[string]string{
+			"fixtures/valid/order--minimal.json":   "schema/order.schema.json",
+			"fixtures/valid/invoice--minimal.json": "schema/invoice.schema.json",
+		},
+	}
+}
+
+func TestCheckComputedCompatibility_ConformsToMapsMultiSchemaMinor(t *testing.T) {
+	t.Parallel()
+
+	res := CheckComputedCompatibility(multiSchemaConformsToInput())
+
+	if res.Violation != nil {
+		t.Fatalf("a conforms_to-mapped additive minor must be compatible; got %s: %s", res.Violation.Code, res.Violation.Message)
+	}
+	if !res.Computed || len(res.Failures) != 0 {
+		t.Fatalf("expected Computed=true with no failures, got Computed=%v Reason=%q failures=%+v", res.Computed, res.Reason, res.Failures)
+	}
+}
+
+func TestCheckComputedCompatibility_ConformsToIsValidatedAgainstItsOwnSchema(t *testing.T) {
+	t.Parallel()
+
+	in := multiSchemaConformsToInput()
+	// Break ONLY the invoice schema: the order fixture must stay green and the
+	// invoice fixture must be judged against invoice, not order.
+	in.NewSchemas["schema/invoice.schema.json"] = []byte(`{"type":"object","required":["total","currency"]}`)
+	res := CheckComputedCompatibility(in)
+
+	if res.Violation == nil || res.Violation.Code != "POL-007" {
+		t.Fatalf("a fixture its declared schema now rejects must be POL-007; got %+v", res.Violation)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].Fixture != "fixtures/valid/invoice--minimal.json" || res.Failures[0].Schema != "schema/invoice.schema.json" {
+		t.Fatalf("want exactly the invoice fixture against schema/invoice.schema.json, got %+v", res.Failures)
+	}
+}
+
+func TestCheckComputedCompatibility_ConformsToRemovedSchemaIsPOL007NamingIt(t *testing.T) {
+	t.Parallel()
+
+	in := multiSchemaConformsToInput()
+	delete(in.NewSchemas, "schema/invoice.schema.json")
+	res := CheckComputedCompatibility(in)
+
+	if !res.Computed {
+		t.Fatalf("a removed schema is a verdict, not an unevaluatable baseline; got Reason=%q", res.Reason)
+	}
+	if res.Violation == nil || res.Violation.Code != "POL-007" {
+		t.Fatalf("dropping a conforms_to schema in a minor must be POL-007; got %+v", res.Violation)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].Fixture != "fixtures/valid/invoice--minimal.json" {
+		t.Fatalf("want exactly the invoice fixture to fail, got %+v", res.Failures)
+	}
+	if !strings.Contains(res.Violation.Message, "schema/invoice.schema.json") {
+		t.Fatalf("POL-007 message %q must name the removed schema schema/invoice.schema.json", res.Violation.Message)
+	}
+	if !strings.Contains(res.Failures[0].Detail, "schema/invoice.schema.json") {
+		t.Fatalf("failure detail %q must name the removed schema schema/invoice.schema.json", res.Failures[0].Detail)
+	}
+}
+
+// TestCheckComputedCompatibility_ConformsToRescuesPartialStemMatch is the
+// latent second defect: when SOME fixtures match by stem, case 3 used to
+// classify every other fixture as "schema removed", including ones whose
+// descriptor names a schema that is still published.
+func TestCheckComputedCompatibility_ConformsToRescuesPartialStemMatch(t *testing.T) {
+	t.Parallel()
+
+	in := multiSchemaConformsToInput()
+	in.PriorFixtures["fixtures/valid/order.json"] = []byte(`{"id":"o-2"}`) // stem match, no declaration
+	res := CheckComputedCompatibility(in)
+
+	if res.Violation != nil {
+		t.Fatalf("conforms_to-mapped fixtures must not be pushed into 'schema removed' by a partial stem match; got %s: %s", res.Violation.Code, res.Violation.Message)
+	}
+	if !res.Computed || len(res.Failures) != 0 {
+		t.Fatalf("expected Computed=true with no failures, got Computed=%v Reason=%q failures=%+v", res.Computed, res.Reason, res.Failures)
+	}
+}
+
+// TestCheckComputedCompatibility_UndeclaredFixturesKeepTheStemRule: with
+// conforms_to present for some fixtures, the rest still follow case 3 — a
+// stem-convention fixture whose schema is gone is POL-007.
+func TestCheckComputedCompatibility_UndeclaredFixturesKeepTheStemRule(t *testing.T) {
+	t.Parallel()
+
+	in := multiSchemaConformsToInput()
+	in.PriorFixtures["fixtures/valid/order.json"] = []byte(`{"id":"o-2"}`)  // stem match
+	in.PriorFixtures["fixtures/valid/gadget.json"] = []byte(`{"id":"g-1"}`) // no declaration, no schema
+	res := CheckComputedCompatibility(in)
+
+	if res.Violation == nil || res.Violation.Code != "POL-007" {
+		t.Fatalf("an undeclared fixture with no schema is still a removed schema; got %+v", res.Violation)
+	}
+	if len(res.Failures) != 1 || res.Failures[0].Fixture != "fixtures/valid/gadget.json" {
+		t.Fatalf("want exactly gadget.json to fail, got %+v", res.Failures)
+	}
+}
+
+// TestCheckComputedCompatibility_NoConformsToKeepsAmbiguityRefusal pins that
+// the multi-schema POL-008 refusal is untouched when nothing declares
+// conforms_to (the exact input conforms_to resolves), nil and empty alike.
+func TestCheckComputedCompatibility_NoConformsToKeepsAmbiguityRefusal(t *testing.T) {
+	t.Parallel()
+
+	for name, conformsTo := range map[string]map[string]string{"nil": nil, "empty": {}, "blank-value": {"fixtures/valid/order--minimal.json": ""}} {
+		in := multiSchemaConformsToInput()
+		in.PriorConformsTo = conformsTo
+		res := CheckComputedCompatibility(in)
+		if res.Computed || res.Violation == nil || res.Violation.Code != "POL-008" {
+			t.Errorf("%s: without conforms_to the stem rule alone must refuse with POL-008; got Computed=%v %+v", name, res.Computed, res.Violation)
 		}
 	}
 }

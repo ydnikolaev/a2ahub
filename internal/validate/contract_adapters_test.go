@@ -133,3 +133,38 @@ func TestContractInstanceAdapterCannotMakeUnevaluatedInvalidFixturePass(t *testi
 		t.Fatalf("suite has no unevaluated result: %+v", result.Results)
 	}
 }
+
+func TestContractCompatibilityAdapterMapsFixturesByConformsTo(t *testing.T) {
+	t.Parallel()
+	adapter := ContractCompatibilityAdapter{}
+	input := contract.CompatibilityCheckInput{
+		DeclaredBump: "minor", PriorVersion: "1.0.0", NewVersion: "1.1.0",
+		NewEntries: []contract.Entry{
+			{Path: "schema/order.schema.json", Role: contract.RoleSchema, Normative: true},
+			{Path: "schema/invoice.schema.json", Role: contract.RoleSchema, Normative: true},
+		},
+		BaselineEntries: []contract.Entry{
+			{Path: "fixtures/valid/order--minimal.json", Role: contract.RoleValidFixture, Normative: true, ConformsTo: "schema/order.schema.json"},
+			{Path: "fixtures/valid/invoice--minimal.json", Role: contract.RoleValidFixture, Normative: true, ConformsTo: "schema/invoice.schema.json"},
+		},
+		NewBytes: map[string][]byte{
+			"schema/order.schema.json":   []byte(`{"type":"object","required":["id"]}`),
+			"schema/invoice.schema.json": []byte(`{"type":"object","required":["total"]}`),
+		},
+		BaselineBytes: map[string][]byte{
+			"fixtures/valid/order--minimal.json":   []byte(`{"id":"o-1"}`),
+			"fixtures/valid/invoice--minimal.json": []byte(`{"total":1}`),
+		},
+	}
+	result := adapter.CheckCompatibility(input)
+	if result.Verdict != contract.CompatibilityCompatible || result.PolicyViolation != nil {
+		t.Fatalf("conforms_to-mapped multi-schema minor must be compatible, got %+v", result)
+	}
+
+	// Dropping a schema the baseline declared conformance to is breaking.
+	input.NewEntries = input.NewEntries[:1]
+	result = adapter.CheckCompatibility(input)
+	if result.Verdict != contract.CompatibilityBreaking || result.PolicyViolation == nil || result.PolicyViolation.Code != "POL-007" || len(result.Failures) != 1 {
+		t.Fatalf("removed conforms_to schema must be breaking POL-007, got %+v", result)
+	}
+}

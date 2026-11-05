@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -1310,7 +1311,7 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 			return &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read prior fixtures at base %s: %v", id, base, terr)}, false
 		}
 
-		priorVersion, priorTree, checked, report := ciCompatibilityBaseline(ctx, root, base, id, relPath, relDir, probe.Version, priorTree, stderr)
+		priorVersion, priorTree, priorConformsTo, checked, report := ciCompatibilityBaseline(ctx, root, base, id, relPath, relDir, probe.Version, priorTree, stderr)
 		switch {
 		case report != nil:
 			return report, false
@@ -1325,11 +1326,12 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 			}
 
 			result := validate.CheckComputedCompatibility(validate.CompatInput{
-				DeclaredBump:  contractInferBumpKind(priorSemver, newSemver),
-				PriorVersion:  priorVersion,
-				NewVersion:    probe.Version,
-				NewSchemas:    schemasNew,
-				PriorFixtures: contractFixturesValidOnly(priorTree),
+				DeclaredBump:    contractInferBumpKind(priorSemver, newSemver),
+				PriorVersion:    priorVersion,
+				NewVersion:      probe.Version,
+				NewSchemas:      schemasNew,
+				PriorFixtures:   contractFixturesValidOnly(priorTree),
+				PriorConformsTo: priorConformsTo,
 			})
 			if !result.Computed {
 				// Computed==false with no Violation (major bump, or a
@@ -1380,10 +1382,18 @@ func validateCIContract(ctx context.Context, root, base, id, descriptorPath, spa
 // contract with no version-bearing publish event, a candidate that never
 // published) the baseline is the descriptor at base and base's own fixtures
 // (baseTree), as before.
-func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDir, newVersion string, baseTree map[string][]byte, stderr io.Writer) (priorVersion string, priorTree map[string][]byte, checked bool, report *validateReport) {
+//
+// priorConformsTo is the baseline descriptor's fixture -> schema declaration
+// (artifacts[].conforms_to, keyed like priorTree), read from the descriptor AT
+// THE BASELINE COMMIT. A descriptor that is absent there, or that declares no
+// artifacts (a legacy fixed-tree contract), yields nil; one that cannot be
+// read or parsed is an error report, never nil, because nil would silently
+// hand the fixtures back to the stem rule and could turn a declared mapping
+// into a refusal or a false removed-schema verdict.
+func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDir, newVersion string, baseTree map[string][]byte, stderr io.Writer) (priorVersion string, priorTree map[string][]byte, priorConformsTo map[string]string, checked bool, report *validateReport) {
 	published, err := space.PublishedContractVersionsAt(ctx, root, base, id)
 	if err != nil {
-		return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read its publication history at base %s: %v", id, base, err)}
+		return "", nil, nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read its publication history at base %s: %v", id, base, err)}
 	}
 	if len(published) > 0 {
 		versions := make([]string, 0, len(published))
@@ -1394,7 +1404,7 @@ func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDi
 		}
 		baseline, found, berr := version.Baseline(versions, newVersion)
 		if berr != nil {
-			return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: version %q cannot be compared with its published versions: %v", id, newVersion, berr)}
+			return "", nil, nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: version %q cannot be compared with its published versions: %v", id, newVersion, berr)}
 		}
 		// An edit at an already-published version publishes nothing; it is
 		// judged against that version's own publication, never read as a bump
@@ -1405,9 +1415,13 @@ func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDi
 		if found {
 			tree, terr := contractReadTreeAtSHA(ctx, root, commits[baseline], relDir, []string{"fixtures"})
 			if terr != nil {
-				return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read the fixtures published with %s: %v", id, baseline, terr)}
+				return "", nil, nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read the fixtures published with %s: %v", id, baseline, terr)}
 			}
-			return baseline, tree, true, nil
+			conformsTo, cerr := ciPriorConformsToAt(ctx, root, commits[baseline], relPath)
+			if cerr != nil {
+				return "", nil, nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: cannot read the conforms_to declarations published with %s: %v", id, baseline, cerr)}
+			}
+			return baseline, tree, conformsTo, true, nil
 		}
 	}
 
@@ -1420,7 +1434,7 @@ func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDi
 		// and say so (never silence — "a CI log that says nothing reads as it
 		// passed").
 		_, _ = fmt.Fprintf(stderr, "validate --ci: contract %s: no descriptor found at base %s — first publish in this PR, computed compatibility not checked\n", id, base)
-		return "", nil, false, nil
+		return "", nil, nil, false, nil
 	}
 	priorFM, ferr := artifact.ParseFrontmatter(priorRaw)
 	var priorProbe contractDescriptorProbe
@@ -1428,9 +1442,60 @@ func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDi
 		ferr = yaml.Unmarshal(priorFM.YAML, &priorProbe)
 	}
 	if ferr != nil {
-		return "", nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior descriptor at base %s is not parseable: %v", id, base, ferr)}
+		return "", nil, nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior descriptor at base %s is not parseable: %v", id, base, ferr)}
 	}
-	return priorProbe.Version, baseTree, true, nil
+	conformsTo, cerr := ciConformsToFromDescriptor(priorFM.YAML)
+	if cerr != nil {
+		return "", nil, nil, false, &validateReport{Path: relPath, Error: fmt.Sprintf("contract %s: prior descriptor at base %s has unreadable artifacts: %v", id, base, cerr)}
+	}
+	return priorProbe.Version, baseTree, conformsTo, true, nil
+}
+
+// ciPriorConformsToAt reads the contract descriptor at relPath in commit sha
+// and returns its fixture -> schema declarations. A descriptor absent from
+// that commit is nil with no error (the stem rule is then the only mapping
+// there is); one that exists but cannot be read or parsed is an error.
+func ciPriorConformsToAt(ctx context.Context, root, sha, relPath string) (map[string]string, error) {
+	listing, err := contractGitBounded(ctx, root, maxMirrorEventBytes, "ls-tree", "--name-only", sha, "--", relPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot look up the descriptor at %s: %w", sha, err)
+	}
+	if len(bytes.TrimSpace(listing)) == 0 {
+		return nil, nil
+	}
+	raw, err := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", sha+":"+relPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the descriptor at %s: %w", sha, err)
+	}
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		return nil, fmt.Errorf("the descriptor at %s is not parseable: %w", sha, err)
+	}
+	return ciConformsToFromDescriptor(fm.YAML)
+}
+
+// ciConformsToFromDescriptor decodes a descriptor's artifacts[] and returns
+// each entry's path -> conforms_to, or nil when none declares one. Entry paths
+// and conforms_to values are contract-relative, the key space
+// contractReadTreeAtSHA and contractWorkingTreeFiles already use.
+func ciConformsToFromDescriptor(frontmatterYAML []byte) (map[string]string, error) {
+	var decoded struct {
+		Artifacts []contract.Entry `yaml:"artifacts"`
+	}
+	if err := yaml.Unmarshal(frontmatterYAML, &decoded); err != nil {
+		return nil, err
+	}
+	var out map[string]string
+	for _, entry := range decoded.Artifacts {
+		if entry.ConformsTo == "" {
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[entry.Path] = entry.ConformsTo
+	}
+	return out, nil
 }
 
 // ciDescriptorReader is the checkout-side half of space.ClassifyCarried's
