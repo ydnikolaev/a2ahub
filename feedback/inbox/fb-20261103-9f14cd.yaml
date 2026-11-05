@@ -26,4 +26,14 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: >-
+    Accepted. Confirmed by reading the source at 4c6831c7: publicationHistoryAt
+    resolves each published version through its own full visitContractVersionsAt
+    walk although that function already takes a slice of versions, and Publish
+    re-reads the whole history from ResolveContractPublicationTarget,
+    LookupContractPublicationIntent, every probed head's ResolvedInMain and
+    plan. Each walk also spawns rev-list, rev-parse and diff-tree per event
+    commit for paths the first git log already printed. The space is the local
+    draftmedia space (operator-confirmed); its merge gate runs in-process in the
+    local binary, so the fix reaches it without a public release.
+status: accepted

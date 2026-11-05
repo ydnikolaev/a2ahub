@@ -113,3 +113,9 @@ rows below are the release flip, not a re-triage.
 ## 2026-10-30 Triage
 
 - fb-20261030-ed79b2 (friction -> accepted): a2a wait spends an agent turn on every timeout
+
+## 2026-11-05 Triage
+
+- fb-20261103-9f14cd (friction -> accepted): contract preflight and publish re-walk the space history per published version
+- fb-20261104-32440f (bug -> accepted): minor bump refused POL-008: compat check ignores conforms_to on multi-schema
+- fb-20261105-7d8808 (friction -> duplicate): contract publish took 62 min: git calls grow as events times versions

@@ -25,4 +25,13 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: >-
+    Accepted. Confirmed: planMapping maps a prior fixture to a schema by file
+    stem only and never reads conforms_to; with no stem match and several
+    schemas it refuses POL-008. A partial stem match is a second, latent defect:
+    the unmatched fixtures are treated as dropped schemas and read as POL-007.
+    Both callers need the prior conforms_to: the local adapter has it on the
+    baseline entries; the V3 check (internal/cli/cmd_validate_ci.go, also the local land
+    check) must read the prior descriptor at base. Reported from the local
+    draftmedia space (operator-confirmed).
+status: accepted

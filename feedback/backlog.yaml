@@ -29,3 +29,25 @@ items:
         - skill/a2ahub/loops/watch.md
         - internal/cli/cmd_wait.go
       date: "2026-10-30"
+    - id: fb-20261103-9f14cd
+      kind: friction
+      severity: major
+      title: contract preflight and publish re-walk the space history per published version
+      verdict: accepted
+      route: backlog
+      refs:
+        - internal/space/contract_operation_repository.go
+        - internal/space/contract_history.go
+        - internal/space/contract_publication.go
+      date: "2026-11-05"
+    - id: fb-20261104-32440f
+      kind: bug
+      severity: major
+      title: 'minor bump refused POL-008: compat check ignores conforms_to on multi-schema'
+      verdict: accepted
+      route: backlog
+      refs:
+        - internal/validate/compat.go
+        - internal/validate/contract_adapters.go
+        - internal/cli/cmd_validate_ci.go
+      date: "2026-11-05"

@@ -25,4 +25,10 @@ checks:
     not_space_specific: true
     no_sensitive_content: true
     duplicates_checked: true
-status: new
+resolution: >-
+    Duplicate of fb-20261103-9f14cd, kept for its numbers: 41,208 git calls and
+    1,222 s for one preflight, and 62 min for a publish, at about 440 event
+    commits and 14 versions on the local draftmedia space. Its asks (one walk,
+    cheap refusals first, a long-lived cat-file --batch) are carried into the
+    fix for fb-20261103-9f14cd.
+status: duplicate
