@@ -51,3 +51,54 @@ changes:
     visibility: omit
     why: >
       An advisory for agents already using the tool; it changes no plan.
+- id: RN-02702-2
+  kind: fix
+  impact: high
+  subject: contract preflight and publish no longer slow down as a space's history grows
+  detail: >
+    Reading a contract's publication history started several git processes for
+    every event commit in the space, and repeated the whole walk once for each
+    published version and again for each step of a publish. On a local space
+    with about 440 event commits and 14 versions, `a2a contract preflight` took
+    about 20 minutes and `a2a contract publish` about an hour.
+
+    The history is now read with one `git log` and one long-lived
+    `git cat-file --batch`, plus a few reads per published version, and a
+    publish reads it once. The number of git processes no longer depends on how
+    many events the space holds. A walk over 10,000 event commits takes about a
+    second. The walk also no longer misses a publish event that git would have
+    reported as a rename of a deleted file.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. The verbs and their answers are unchanged; only their
+      cost is.
+  roadmap:
+    visibility: omit
+    why: >
+      A cost fix to existing verbs; it changes no plan.
+- id: RN-02702-3
+  kind: fix
+  impact: normal
+  subject: a minor bump of a contract with several schemas is judged by conforms_to
+  detail: >
+    The compatibility check mapped each prior valid fixture to a schema by file
+    name only (`<stem>.json` to `<stem>.schema.json`). A contract with several
+    schemas and fixtures named another way could never publish a minor or patch:
+    the check refused it as an ambiguous mapping. When only some names matched,
+    the rest read as removed schemas and the bump was refused as breaking.
+
+    The check now follows each prior fixture's declared `conforms_to` first, in
+    `a2a contract publish` and in `a2a validate --ci` (which also gates a local
+    space's land). The name rule applies only to fixtures that declare none. A
+    fixture whose declared schema the new version no longer publishes is still a
+    breaking change, and the message names that schema.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. A contract whose fixtures declare no `conforms_to` is
+      judged exactly as before.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction to an existing check; it changes no plan.
