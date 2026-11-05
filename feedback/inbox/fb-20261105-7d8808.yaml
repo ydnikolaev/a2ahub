@@ -1,0 +1,28 @@
+
+feedback: v1
+id: fb-20261105-7d8808
+kind: friction
+severity: major
+title: 'contract publish took 62 min: git calls grow as events times versions'
+summary: |
+  Same cause as fb-20261103-9f14cd (status still new), with new numbers: it has reached the point where a person cannot wait for it. `a2a contract publish` of an empty bump took 62 minutes on a small local space (about 440 event commits, about 3,900 objects, 701 KB pack), on a contract with 14 published versions. One `a2a contract preflight` through a counting shim logged 41,208 git calls in 1,222 s: cat-file 14,520, rev-parse 6,784, ls-tree 6,748, rev-list 6,583, diff-tree 6,555. Two days earlier the same measure gave 21,526 calls at about 250 events and about 12 versions. Events times versions grew 2.0x and calls 1.9x, so the formula predicts the growth: every note and every version makes the next publish slower. Wall clock went from 10-11 min to 62 min, about 6x; the machine was busy with other work in the second run, so not all of that is growth. Preflight then refused the bump for a reason knowable at the start (empty bump, no flag). A running publish prints nothing, so it cannot be told from a hang.
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+evidence:
+    steps:
+        - "Put a shim named git first on PATH that logs each call, then execs the real git."
+        - "Run a2a contract preflight --bump minor --staging <dir> on a contract with 14 published versions, in a local space with about 440 event commits."
+        - "Time a real a2a contract publish --allow-empty-bump --approve on the same contract: the process start against the space's merge commit."
+    expected: "Publish planning reads the event history once, so its calls grow with events, not events times versions; a publish of an empty bump takes seconds on a 701 KB space."
+    actual: "41,208 git calls and 1,222 s in preflight; publish 62 min. Not sleeps or locks (100 ms lock polls only). contract_operation_repository.go:278 resolves each version by a full walk (:352, :543) of 4-5 spawns per event commit. Not counted: how many plans publish repeats (call sites :74, :95, :143, contract_operation_recovery.go:333)."
+proposal: |
+  Pass all versions to one visitContractVersionsAt call, which already takes a slice, so a plan is O(events + versions). First step, one line each: install space.WithContractGitCache (internal/space/contract_git_memo.go:55) around preflight and publish, as internal/html/assemble.go:66 does for a2a html, whose comment records 2,197 spawns against 481 distinct commands. Run the cheap refusals, such as an empty bump with no flag, before the walk. Print a progress line while it runs. One long-lived git cat-file --batch would remove most of the spawns.
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
