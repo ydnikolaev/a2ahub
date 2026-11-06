@@ -1,0 +1,19 @@
+
+feedback: v1
+id: fb-20261106-96837b
+kind: feature
+severity: major
+title: flag an item whose owed party writes only notes
+summary: "Two agent systems worked one space for a week through notes only. A requirement carried 393 notes and work requests 27-60 notes each, while the owed party never made the transition (respond, verify, close, activate). The fold kept them in_progress or accepted, which is correct, but nothing told either side that the owed party was active on the item and still not moving it. The statusline showed urgent 9 and stale 6 all week; both agents read the notes and kept writing more. The cost: an operator audit and nine manual transitions after the fact, and work requests that read as open for days after the work landed."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+proposal: "When the party in waiting_on has written N notes (or any note after the last transition) on an item it owes a move on, surface the item as notes-without-move: a distinct statusline and inbox --actionable reason, and a one-line hint on a2a note itself (you owe <transition> on this item; a note does not move it). Optional: a space policy that refuses a note from the owed party after N notes without a transition."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
