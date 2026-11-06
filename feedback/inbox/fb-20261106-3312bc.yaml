@@ -1,0 +1,28 @@
+
+feedback: v1
+id: fb-20261106-3312bc
+kind: bug
+severity: minor
+title: inbox --actionable and statusline urgent count a settled contract
+summary: "A published contract whose fold says outcome settled, waiting_on empty and no expected_transition still appears in `a2a inbox --actionable` and is counted in `a2a statusline --json` urgent. Two sibling contracts in the same space with the same operational_items (endpoint absent, credential-channel absent, registration undeclared) fold to outcome open, waiting_on [owner], expected_transition activate. So one of the two folds is wrong: either the settled one owes activate too, or the actionable filter ignores outcome. The urgent count users see is inflated by an item nobody can move."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a inbox --actionable --json"
+evidence:
+    steps:
+        - "In a space with three contracts published by the same owner (p1), each with x_operational endpoint and credential-channel absent and a registered consumer."
+        - "Run a2a outbox --json: contracts A and B show outcome open, waiting_on [owner], expected_transition activate; contract C shows outcome settled, waiting_on null, expected_transition null."
+        - "Run a2a inbox --actionable --json: C is listed with outcome settled and the same operational_items as A and B."
+        - "Run a2a statusline --json: urgent counts C."
+    expected: "An item whose outcome is settled and that waits on nobody is neither actionable nor urgent. Or, if C still owes activation like A and B, its fold says open, waiting_on [owner], expected_transition activate. Both views agree."
+    actual: "C is settled in outbox and actionable/urgent at the same time; urgent is 9 where 8 items can be moved. Seen on 0.27.1 (local build a91426e3)."
+proposal: "Derive actionable and urgent from the same fold field (outcome open and waiting_on non-empty), and add a test that no settled item is ever counted urgent."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
