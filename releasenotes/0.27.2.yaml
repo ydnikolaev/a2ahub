@@ -146,10 +146,17 @@ changes:
     and that the space is intact. On Windows the two-minute rule still applies.
     A lock file that cannot be read at the moment it is reclaimed is reported
     as an error rather than skipped.
+
+    git's own lock files in a mirror (such as `.git/index.lock`) are a
+    different case: they carry no pid and nothing reclaims them, so one left
+    by a crashed git blocks the mirror until it is deleted. `a2a doctor` now
+    names each such file and its age and says to delete it when no git
+    process is running in that mirror, instead of saying it clears by itself.
   action:
     scope: none
     why: >
-      Nothing is owed. The lock clears by itself in every case.
+      Nothing is owed by upgrading. The a2a lock clears by itself; a leftover
+      git lock file, if one exists, is named by `a2a doctor` with what to do.
   roadmap:
     visibility: omit
     why: >
