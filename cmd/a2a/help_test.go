@@ -82,6 +82,43 @@ func TestDataSubverbHelpNeedsNoConfig(t *testing.T) {
 
 // TestHelpRequested covers the token grammar: the three spellings Go's own
 // flag package accepts, and the `--` terminator after which a token is data.
+// TestTopLevelHelp pins `a2a --help`, `-h`, `-help` and `a2a help`: each prints
+// the same verb list bare `a2a` prints, to stdout, exit 0 (feedback
+// fb-20261107-37ce55: they answered `unknown command`).
+func TestTopLevelHelp(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	var want bytes.Buffer
+	printUsage(&want)
+
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"-help"}, {"help"}} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("a2a %v exit = %d, want 0; stderr=%q", args, code, stderr.String())
+		}
+		if stdout.String() != want.String() {
+			t.Errorf("a2a %v stdout = %q, want the bare usage %q", args, stdout.String(), want.String())
+		}
+		if stderr.Len() != 0 {
+			t.Errorf("a2a %v wrote to stderr: %q", args, stderr.String())
+		}
+	}
+
+	var viaHelp, direct, stderr bytes.Buffer
+	if code := run([]string{"help", "show"}, &viaHelp, &stderr); code != 0 {
+		t.Fatalf("a2a help show exit = %d; stderr=%q", code, stderr.String())
+	}
+	run([]string{"show", "--help"}, &direct, &stderr)
+	if viaHelp.String() != direct.String() {
+		t.Errorf("`a2a help show` differs from `a2a show --help`:\n%q\n%q", viaHelp.String(), direct.String())
+	}
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"help", "nosuchverb"}, &out, &errb); code != 2 {
+		t.Errorf("a2a help nosuchverb exit = %d, want 2", code)
+	}
+}
+
 func TestHelpRequested(t *testing.T) {
 	t.Parallel()
 

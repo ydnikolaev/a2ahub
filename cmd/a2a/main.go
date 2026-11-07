@@ -56,6 +56,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// easy to ask. They are ALIASES, not a second implementation: the same
 	// dispatch entry runs, so the two spellings cannot drift.
 	name := args[0]
+	// Top-level help: the same verb list bare `a2a` prints, but as the
+	// REQUESTED output (stdout, exit 0). `a2a help <verb>` is `a2a <verb> --help`.
+	if helpFlags[name] || name == "help" {
+		if name == "help" && len(args) > 1 {
+			verb := args[1]
+			if _, ok := buildCommands()[verb]; !ok {
+				_, _ = fmt.Fprintf(stderr, "unknown command %q\n", verb)
+				return 2
+			}
+			return runVerbHelp(verb, []string{"--help"}, stdout)
+		}
+		printUsage(stdout)
+		return 0
+	}
 	if name == "--version" || name == "-v" {
 		name = "version"
 		args = append([]string{"version"}, args[1:]...)
