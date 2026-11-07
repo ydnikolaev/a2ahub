@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 )
 
@@ -233,11 +234,21 @@ func urgencyLabel(priority string, blocking bool, reasons []string) string {
 // urgency to cover a missed deadline would change what `a2a statusline`
 // returns on a corpus nobody re-verified. That is a protocol change and
 // belongs in the surfaced-diff flow, not here.
+//
+// A settled item is never urgent, whatever its priority says
+// (fb-20261106-3312bc): it waits on nobody, so there is no move to hurry.
+// The statusline reaches the same answer by construction — it grades only
+// items carrying an actionable reason, and the p1-or-blocking reason no
+// longer fires on a settled outcome — while plain `a2a inbox`/`a2a outbox`
+// list settled items too and need the check here.
 func SeverityOf(items []Item) Severity {
 	if len(items) == 0 {
 		return SeverityQuiet
 	}
 	for _, it := range items {
+		if it.Outcome == fold.OutcomeSettled {
+			continue
+		}
 		if urgencyLabel(it.Priority, it.Blocking, it.Reasons) != "" {
 			return SeverityUrgent
 		}

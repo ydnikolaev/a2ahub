@@ -358,7 +358,18 @@ func actionableReasonsFromVerdict(fa foldedArtifact, me string, verdict pendency
 	// into pendency would delete the one case it exists for. It keeps
 	// computing over isOpen (never pendency), unchanged from before this
 	// wave.
-	if (env.Priority == "p1" || env.Blocking) && isOpen(kind, state) &&
+	//
+	// The one exclusion is an item whose OUTCOME is settled
+	// (fb-20261106-3312bc): liveness says every published contract is open,
+	// but a contract whose latest version is activated, or that no consumer
+	// registered against, waits on nobody — "the other side's move" does not
+	// exist, so there is nothing for this condition to keep visible. The
+	// outcome is the same projection threadview.go's buildOpenItems makes from
+	// the verdict already in hand, not a second fold. Only `settled` is
+	// excluded, never "anything but open": handoff/rejected is refused AND
+	// live, because its producer still owes the resubmission.
+	settled := fold.OutcomeOfDocument(kind, state, len(verdict.Owners) > 0) == fold.OutcomeSettled
+	if (env.Priority == "p1" || env.Blocking) && isOpen(kind, state) && !settled &&
 		(env.From == me || addressedToMe(fa, me)) {
 		reasons = append(reasons, string(ReasonP1OrBlockingOpen))
 	}

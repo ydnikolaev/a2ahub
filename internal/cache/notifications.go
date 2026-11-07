@@ -3,6 +3,8 @@ package cache
 import (
 	"context"
 	"sort"
+
+	"github.com/ydnikolaev/a2ahub/internal/fold"
 )
 
 // NotificationSnapshot is the cursor-neutral canonical input for local
@@ -91,7 +93,10 @@ func (s *Store) NotificationSnapshot(ctx context.Context) (NotificationSnapshot,
 				break
 			}
 		}
-		if urgencyLabel(item.Priority, item.Blocking, item.Reasons) != "" {
+		// A settled item can still qualify here through stale-sla, but it
+		// waits on nobody, so it is never urgent (fb-20261106-3312bc) —
+		// the same rule SeverityOf applies.
+		if item.Outcome != fold.OutcomeSettled && urgencyLabel(item.Priority, item.Blocking, item.Reasons) != "" {
 			result.Urgent++
 			if result.UrgentID == "" {
 				result.UrgentKind = urgencyLabel(item.Priority, item.Blocking, item.Reasons)
