@@ -202,12 +202,12 @@ func TestFunnelReturnsLastProvenBoundaryOnFailure(t *testing.T) {
 			configure: func(fake *host.FakeHost) {
 				fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
 					return host.PRInfo{
-						Number: 42, URL: "https://example.invalid/pr/42", State: "open",
-						MergeMethod: host.MergeMethodSquash,
-					}, &host.PartialWriteError{
-						Stage: host.PartialWriteStagePRCreated, Operation: host.PartialWriteOperationEnableAutoMerge,
-						Err: partialFailure,
-					}
+							Number: 42, URL: "https://example.invalid/pr/42", State: "open",
+							MergeMethod: host.MergeMethodSquash,
+						}, &host.PartialWriteError{
+							Stage: host.PartialWriteStagePRCreated, Operation: host.PartialWriteOperationEnableAutoMerge,
+							Err: partialFailure,
+						}
 				}
 			},
 			wantErr: partialFailure, wantStage: WriteStagePRCreated,
@@ -219,12 +219,12 @@ func TestFunnelReturnsLastProvenBoundaryOnFailure(t *testing.T) {
 			configure: func(fake *host.FakeHost) {
 				fake.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
 					return host.PRInfo{
-						Number: 43, URL: "https://example.invalid/pr/43", State: "open",
-						MergeMethod: host.MergeMethodRebase,
-					}, &host.PartialWriteError{
-						Stage: host.PartialWriteStagePRCreated, Operation: host.PartialWriteOperationEnableAutoMerge,
-						Err: host.ErrTransient,
-					}
+							Number: 43, URL: "https://example.invalid/pr/43", State: "open",
+							MergeMethod: host.MergeMethodRebase,
+						}, &host.PartialWriteError{
+							Stage: host.PartialWriteStagePRCreated, Operation: host.PartialWriteOperationEnableAutoMerge,
+							Err: host.ErrTransient,
+						}
 				}
 			},
 			wantErr: host.ErrTransient, wantStage: WriteStagePRCreated,
