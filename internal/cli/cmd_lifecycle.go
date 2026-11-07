@@ -3387,8 +3387,53 @@ func (c *NoteCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		files = append(files, space.FileWrite{Path: layout.EventFile(now.UTC().Format("2006"), eventID.String()), Content: raw})
 	}
 
+	// Asked BEFORE the write and printed only after it succeeds: a note is
+	// transition-free, so who owes what is the same on either side of it.
+	owed := lifecycleOwedMoves(ctx, c.deps, ids, actor.System)
 	req := c.deps.buildRequest(ids, files, "note", false)
-	return c.deps.submit(ctx, req, "note", ids, stdio)
+	code := c.deps.submit(ctx, req, "note", ids, stdio)
+	if code != 0 {
+		return code
+	}
+	for _, id := range ids {
+		if transition := owed[id]; transition != "" {
+			_, _ = fmt.Fprintf(stdio.Stderr, "note recorded; you owe %s on %s — a note does not move it\n", transition, id)
+		}
+	}
+	return code
+}
+
+// lifecycleOwedMoves returns, per id, the transition the pendency verdict
+// says system owes on it ("" when system owes nothing) — the fact `a2a
+// note`'s hint reports (fb-20261106-96837b): the owed party writing notes
+// instead of the move is the pattern notes-without-move flags afterwards.
+//
+// It reads the verdict through cache.BuildNotifyIndex, the package's one
+// exported directory-shaped fold with a perspective-free verdict, rather
+// than a second pendency.Resolve call site. Advisory only: a mirror that
+// cannot be indexed yields no hint and never changes the verb's exit code.
+func lifecycleOwedMoves(ctx context.Context, deps lifecycleDeps, ids []string, system string) map[string]string {
+	idx, _, err := cache.BuildNotifyIndex(ctx, deps.spaceID, deps.mirrorDir, deps.manifest, deps.now())
+	if err != nil {
+		return nil
+	}
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	owed := map[string]string{}
+	for _, a := range idx {
+		if !wanted[a.ID] || a.Verdict.Expected == "" {
+			continue
+		}
+		for _, owner := range a.Verdict.Owners {
+			if owner == system {
+				owed[a.ID] = a.Verdict.Expected
+				break
+			}
+		}
+	}
+	return owed
 }
 
 var _ Command = (*NoteCommand)(nil)

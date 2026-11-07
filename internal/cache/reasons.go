@@ -15,6 +15,7 @@ const (
 	ReasonP1OrBlockingOpen             ReasonCode = "p1-or-blocking-open"
 	ReasonGatePendingOnMe              ReasonCode = "gate-pending-on-me"
 	ReasonActivationOwed               ReasonCode = "activation-owed"
+	ReasonNotesWithoutMove             ReasonCode = "notes-without-move"
 	ReasonStateChangedSinceCursor      ReasonCode = "state-changed-since-cursor"
 	ReasonDeclined                     ReasonCode = "declined"
 	ReasonDisputed                     ReasonCode = "disputed"
@@ -33,6 +34,7 @@ func ReasonCodes() []ReasonCode {
 		ReasonP1OrBlockingOpen,
 		ReasonGatePendingOnMe,
 		ReasonActivationOwed,
+		ReasonNotesWithoutMove,
 		ReasonStateChangedSinceCursor,
 		ReasonDeclined,
 		ReasonDisputed,

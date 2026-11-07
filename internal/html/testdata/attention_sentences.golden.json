@@ -30,6 +30,11 @@
     "en": "A consumer already uses the published version; atlas and checkout must attest readiness with respond."
   },
   {
+    "reason": "notes-without-move",
+    "ru": "atlas и checkout пишут заметки, но не делают ход respond; заметка состояние не меняет.",
+    "en": "atlas and checkout keep writing notes without performing respond; a note does not change the state."
+  },
+  {
     "reason": "state-changed-since-cursor",
     "ru": "Документ изменился после последнего чтения входящих; следующий ход respond ждут от atlas и checkout.",
     "en": "This item changed since the last inbox read; atlas and checkout are expected to perform respond."

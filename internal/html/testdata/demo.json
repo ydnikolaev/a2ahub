@@ -835,7 +835,8 @@
       "new": false,
       "severity": "blocking",
       "reasons": [
-        "p1-or-blocking-open"
+        "p1-or-blocking-open",
+        "notes-without-move"
       ],
       "pendingMerge": false,
       "syncStale": true,

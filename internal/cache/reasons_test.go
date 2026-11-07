@@ -11,7 +11,7 @@ import (
 
 // TestReasonCodeDeclarationAndSites derives the vocabulary from the typed
 // declarations themselves. It guards both directions without copying the
-// twelve string values into a second test list: every enumerated value is
+// thirteen string values into a second test list: every enumerated value is
 // declared, every declaration is used, and no production site writes or reads
 // one of the values as a bare string literal.
 func TestReasonCodeDeclarationAndSites(t *testing.T) {
@@ -59,8 +59,8 @@ func TestReasonCodeDeclarationAndSites(t *testing.T) {
 			declared[code] = spec.Names[0].Name
 		}
 	}
-	if len(declared) != 12 {
-		t.Fatalf("declared %d typed reason codes, want the twelve production codes", len(declared))
+	if len(declared) != 13 {
+		t.Fatalf("declared %d typed reason codes, want the thirteen production codes", len(declared))
 	}
 
 	enumerated := map[ReasonCode]bool{}

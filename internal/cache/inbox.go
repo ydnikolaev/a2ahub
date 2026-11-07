@@ -400,7 +400,69 @@ func actionableReasonsFromVerdict(fa foldedArtifact, me string, verdict pendency
 		reasons = append(reasons, string(ReasonActivationOwed))
 	}
 
+	// 7: {the owed party writes notes and does not move} —
+	// fb-20261106-96837b. A note is transition-free (D-025), so the fold is
+	// right to leave the state alone, and the staleness clock (outbox.go)
+	// measures from the latest event of ANY kind, so every note also hides
+	// the item from `stale`. Two agent systems wrote hundreds of notes on
+	// items they owed a move on, and nothing told either side.
+	//
+	// The count runs on the STATE clock: only notes after the event that
+	// produced the current state (StateEventID, mirror.go's stateOrigin)
+	// and only by the systems the verdict names as owing the move. A
+	// transition resets it; the waiting party's own notes never count.
+	//
+	// Audience is condition 4's party test (from, or addressed), so the
+	// counterparty waiting on the move sees it as well as the owed party,
+	// plus iOwe explicitly, because an owner can sit outside from/to (a
+	// required approver, a registry-derived addressee).
+	if isOpen(kind, state) && len(verdict.Owners) > 0 && verdict.Expected != "" &&
+		(iOwe || env.From == me || addressedToMe(fa, me)) &&
+		notesSinceStateBy(fa, verdict.Owners) >= notesWithoutMoveThreshold {
+		reasons = append(reasons, string(ReasonNotesWithoutMove))
+	}
+
 	return reasons
+}
+
+// notesWithoutMoveThreshold is how many notes the owed parties may write
+// since the last state transition before condition 7 raises
+// notes-without-move. Three: one note is a status update, two is a
+// conversation, the third without a transition is the pattern
+// fb-20261106-96837b reports.
+const notesWithoutMoveThreshold = 3
+
+// notesSinceStateBy counts the `note` events on fa itself written by any of
+// authors strictly after the event that produced fa's current state, in the
+// same (CommitSeq, ULID) order foldWithReceiptEvidence replays — never by
+// timestamp, which ties at the second. An empty StateEventID (a state no
+// event produced) counts every note.
+func notesSinceStateBy(fa foldedArtifact, authors []string) int {
+	var originSeq int64
+	originULID := fa.StateEventID
+	if originULID != "" {
+		found := false
+		for _, ev := range fa.Events {
+			if ev.ULID == originULID {
+				originSeq, found = ev.CommitSeq, true
+				break
+			}
+		}
+		if !found {
+			originULID = ""
+		}
+	}
+	count := 0
+	for _, ev := range fa.Events {
+		if ev.Subject != fa.Env.ID || ev.Transition != fold.TNote || !containsString(authors, ev.Actor.System) {
+			continue
+		}
+		if originULID != "" && (ev.CommitSeq < originSeq || (ev.CommitSeq == originSeq && ev.ULID <= originULID)) {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 func containsString(list []string, s string) bool {

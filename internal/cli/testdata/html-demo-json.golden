@@ -733,6 +733,16 @@
         "cue": "!"
       },
       {
+        "value": "notes-without-move",
+        "family": "reason",
+        "labelRU": "Заметки вместо хода",
+        "labelEN": "Notes instead of a move",
+        "explanationRU": "Сторона, от которой ждут перехода, пишет заметки, но сам переход не делает; заметка состояние не меняет.",
+        "explanationEN": "The party that owes the transition keeps writing notes without making it; a note does not change the state.",
+        "tone": "needs-you",
+        "cue": "!"
+      },
+      {
         "value": "state-changed-since-cursor",
         "family": "reason",
         "labelRU": "Появилось новое состояние",
@@ -2181,7 +2191,8 @@
       "new": false,
       "severity": "blocking",
       "reasons": [
-        "p1-or-blocking-open"
+        "p1-or-blocking-open",
+        "notes-without-move"
       ],
       "syncStale": true,
       "yourMove": true,
@@ -14257,7 +14268,8 @@
           "new": false,
           "severity": "blocking",
           "reasons": [
-            "p1-or-blocking-open"
+            "p1-or-blocking-open",
+            "notes-without-move"
           ],
           "syncStale": true,
           "yourMove": true,

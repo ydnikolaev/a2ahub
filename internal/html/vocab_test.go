@@ -61,7 +61,7 @@ func TestDashboardVocabularyClosedShape(t *testing.T) {
 		t.Errorf("vocabulary family count = %d, want %d", got, want)
 	}
 	table := DashboardVocabulary()
-	if got, want := len(table.Entries), 96; got != want {
+	if got, want := len(table.Entries), 97; got != want {
 		t.Errorf("vocabulary row count = %d, want %d", got, want)
 	}
 

@@ -286,6 +286,14 @@ func TestSeverityOf(t *testing.T) {
 			[]Item{{ID: "a", NeededBy: "2020-01-01", Reasons: []string{"needed-by-passed"}}},
 			SeverityItemsPending,
 		},
+		{
+			// Same ceiling, same reason: notes-without-move is its own
+			// actionable reason, graded pending rather than urgent so §7.5's
+			// exit-code contract does not move (fb-20261106-96837b).
+			"notes without a move are pending, not urgent",
+			[]Item{{ID: "a", Reasons: []string{"notes-without-move"}}},
+			SeverityItemsPending,
+		},
 	}
 
 	for _, tc := range tests {
@@ -311,6 +319,7 @@ func TestSeverityOfMatchesStatuslineGrading(t *testing.T) {
 		{ID: "blocking", Blocking: true},
 		{ID: "gate", Reasons: []string{"gate-pending-on-me"}},
 		{ID: "acked", Reasons: []string{"addressed-no-ack"}},
+		{ID: "noted", Reasons: []string{"notes-without-move"}},
 	}
 	for _, it := range cases {
 		statuslineSaysUrgent := urgencyLabel(it.Priority, it.Blocking, it.Reasons) != ""

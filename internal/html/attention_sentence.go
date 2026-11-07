@@ -91,6 +91,11 @@ func composeAttentionSentence(reason cache.ReasonCode, item cache.Item) Localize
 			RU: "Опубликованную версию уже использует потребитель; " + ownersRU + " должны подтвердить её готовность ходом " + transitionRU + ".",
 			EN: "A consumer already uses the published version; " + ownersEN + " must attest readiness with " + transitionEN + ".",
 		}
+	case cache.ReasonNotesWithoutMove:
+		return LocalizedText{
+			RU: ownersRU + " пишут заметки, но не делают ход " + transitionRU + "; заметка состояние не меняет.",
+			EN: ownersEN + " keep writing notes without performing " + transitionEN + "; a note does not change the state.",
+		}
 	case cache.ReasonStateChangedSinceCursor:
 		return LocalizedText{
 			RU: "Документ изменился после последнего чтения входящих; следующий ход " + transitionRU + " ждут от " + ownersRU + ".",
