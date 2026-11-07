@@ -163,9 +163,25 @@ func applyBroadcastAck(_ Envelope, result *Result, event Event, membership Membe
 // so; `a2a contract activate` refuses a foreign contract at the CLI too, but
 // the CLI is not where a domain rule may live alone.
 func applyContractActivation(env Envelope, result *Result, event Event, membership MembershipView) {
-	if membership == nil || !legalRole(RoleOwner, env, event.Actor.System, membership(event.Actor.System)) {
+	if membership == nil || !contractActivationPermitted(env, event.Actor.System, membership(event.Actor.System)) {
 		result.Flags = append(result.Flags, Flag{Kind: FlagUnauthorizedActor, EventULID: event.ULID, Subject: event.Subject})
 	}
+}
+
+// contractActivationPermitted is the authorization rule for a contract
+// `activate`, in ONE place because it has two enforcement points: this
+// package's post-write Apply (applyContractActivation) and its pre-write
+// CheckCandidateWithSuccessor. broadcastAckPermitted's doc comment records
+// what happens when such a rule ships twice; fb-20261106-28c7e6 is that
+// defect again — the pre-write side had no branch for activate, so the land
+// refused LFC-001 every activation the fold would have accepted.
+//
+// The rule is the owner's role and nothing else. It reads neither the
+// contract's state nor the activated version: whether an activation
+// DISCHARGES the operational debt is the mirror's question
+// (activation.version against the latest publish), not a legality one.
+func contractActivationPermitted(env Envelope, actorSystem string, status MembershipStatus) bool {
+	return legalRole(RoleOwner, env, actorSystem, status)
 }
 
 // applyPrimaryScoped handles every transition except note/broadcast-ack

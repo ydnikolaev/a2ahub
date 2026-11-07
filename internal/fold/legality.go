@@ -144,6 +144,25 @@ func CheckCandidateWithSuccessor(kind Kind, prior Result, transition, version st
 		}
 		return VerdictLegal
 	}
+	// P5 AC1's transition-free contract `activate`, checked pre-write by
+	// the SAME predicate applyContractActivation applies post-write
+	// (contractActivationPermitted, fold.go). It is the third
+	// transition-free handler and the second to ship without this side:
+	// with no branch here the role-table lookup below found no row and
+	// answered illegal-transition, so every `a2a contract activate` was
+	// refused LFC-001 at land while pendency named activate as the
+	// producer's owed move (fb-20261106-28c7e6). No state or version guard
+	// is added here, because the fold applies none — a stricter pre-write
+	// reading is exactly the split this branch removes.
+	// TestEveryTransitionFreeHandlerAgreesWithCheckCandidate pins the
+	// whole registry against this function, so a fourth handler cannot
+	// repeat it.
+	if kind == KindContract && transition == TActivate {
+		if !contractActivationPermitted(env, actor.System, membership) {
+			return VerdictUnauthorizedActor
+		}
+		return VerdictLegal
+	}
 	// The dynamic transitions used to be two more hand-written guards right
 	// here — `unblock`, and decision `approve` — each re-stating the row's
 	// own From and Role. They are gone, because roleTable (table.go) is
