@@ -1164,6 +1164,11 @@ func buildOpenItemsWithVerdicts(sorted []foldedArtifact, byID map[string]foldedA
 		if fa.kind() == fold.KindAnnouncement && verdict.Expected == fold.TAcknowledge && len(verdict.Owners) > 0 {
 			actions = append(actions, NextAction{Transition: verdict.Expected, By: verdict.Owners})
 		}
+		// Contract activation is transition-free the same way, so the move
+		// the verdict owes had no entry here either (fb-20261106-28c7e6).
+		if fa.kind() == fold.KindContract && verdict.Expected == fold.TActivate && len(verdict.Owners) > 0 {
+			actions = append(actions, NextAction{Transition: verdict.Expected, By: verdict.Owners})
+		}
 
 		if actions == nil {
 			actions = []NextAction{}
