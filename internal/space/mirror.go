@@ -312,17 +312,29 @@ func jitteredPollInterval() time.Duration {
 // comment for why a post-failure check on this alone is not sufficient
 // by itself.
 func gitLockHeld(dir string) bool {
+	return len(HeldGitLocks(dir)) > 0
+}
+
+// HeldGitLocks lists, by full path, the git lock files gitLockHeld looks
+// for that exist right now in dir's git directory. Unlike the a2a mirror
+// lock these carry no holder pid and nothing here reclaims them: git
+// removes its own lock when it finishes, so one that outlives every git
+// process was left by a crash and stays until someone deletes it. A
+// caller that reports a lock refusal names these files for that reason.
+func HeldGitLocks(dir string) []string {
 	gitDir, err := resolveGitDir(dir)
 	if err != nil {
-		return false
+		return nil
 	}
+	var held []string
 	for _, name := range []string{"index.lock", "HEAD.lock", "config.lock"} {
-		if _, err := os.Stat(filepath.Join(gitDir, name)); err == nil {
-			return true
+		path := filepath.Join(gitDir, name)
+		if _, err := os.Stat(path); err == nil {
+			held = append(held, path)
 		}
 	}
 	matches, _ := filepath.Glob(filepath.Join(gitDir, "refs", "heads", "*.lock"))
-	return len(matches) > 0
+	return append(held, matches...)
 }
 
 // resolveGitDir returns the git directory backing the repository at dir.

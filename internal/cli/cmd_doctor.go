@@ -727,8 +727,8 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 		if errors.Is(err, space.ErrMirrorLocked) {
 			// A busy mirror says nothing about the space itself: the space is
 			// intact, and the repair below (restore the directory) would break
-			// in-flight writes. The lock clears by itself.
-			failures = append(failures, fmt.Sprintf("%s: %s", ref.ID, doctorMirrorLockedDetail(err)))
+			// in-flight writes.
+			failures = append(failures, fmt.Sprintf("%s: %s", ref.ID, doctorMirrorLockedDetail(err, dir)))
 			continue
 		}
 		failure := fmt.Sprintf("%s: %v", ref.ID, err)
@@ -747,16 +747,35 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 }
 
 // doctorMirrorLockedDetail words a mirror-lock refusal for the space access
-// row: who holds the lock and for how long when the error carries it, and that
-// the lock clears by itself and the space is intact. It never offers a repair.
-func doctorMirrorLockedDetail(err error) string {
-	const tail = "it clears by itself (a stale lock is reclaimed automatically, at once when its holder is dead) — the space is intact, nothing to restore"
+// row. The a2a mirror lock names its holder and age, and it does clear by
+// itself (a stale one is reclaimed). git's own lock files do not: they carry
+// no pid, and one left by a crashed git stays until someone deletes it, so
+// that case names each file with its age instead of promising it clears
+// (fb-20261107-498d5f follow-up). It never offers to restore the space.
+func doctorMirrorLockedDetail(err error, dir string) string {
+	const intact = "the space is intact, nothing to restore"
 	var locked *space.MirrorLockedError
-	if !errors.As(err, &locked) || locked.PID <= 0 {
-		return "mirror locked by another process; " + tail
+	if errors.As(err, &locked) && locked.PID > 0 {
+		return fmt.Sprintf("mirror locked by pid %d (%s), held for %s; it clears by itself (a stale lock is reclaimed automatically, at once when its holder is dead) — %s",
+			locked.PID, locked.Holder, locked.Held.Round(time.Second), intact)
 	}
-	return fmt.Sprintf("mirror locked by pid %d (%s), held for %s; %s",
-		locked.PID, locked.Holder, locked.Held.Round(time.Second), tail)
+	if errors.As(err, &locked) {
+		return "mirror locked by another a2a process; it clears by itself (a stale lock is reclaimed automatically) — " + intact
+	}
+	held := space.HeldGitLocks(dir)
+	if len(held) == 0 {
+		return "mirror was busy with a git operation that has since finished; re-run doctor — " + intact
+	}
+	files := make([]string, 0, len(held))
+	for _, path := range held {
+		age := "age unknown"
+		if info, statErr := os.Stat(path); statErr == nil {
+			age = "for " + time.Since(info.ModTime()).Round(time.Hour).String()
+		}
+		files = append(files, fmt.Sprintf("%s (%s)", path, age))
+	}
+	return fmt.Sprintf("git lock file %s held; git removes its own lock when it finishes, so if no git process is running in this mirror it was left by a crash — delete it — %s",
+		strings.Join(files, ", "), intact)
 }
 
 // doctorLocalSpaceRepairHint is the space access row's repair for a local space

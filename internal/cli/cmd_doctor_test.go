@@ -3300,6 +3300,49 @@ func TestDoctorSpaceAccessNamesALocalSpacesOwnRepair(t *testing.T) {
 		}
 	})
 
+	// git's own lock files carry no pid and are not a2a's to reclaim: one
+	// left by a crashed git stays until someone deletes it. Seen on a real
+	// mirror (a zero-byte .git/index.lock nine days old) right after the
+	// lock row above learned to say "clears by itself", which is true only
+	// of the a2a lock.
+	t.Run("a leftover git lock file is named, not promised to clear", func(t *testing.T) {
+		t.Parallel()
+		ref, _ := doctorRealLocalSpace(t, "acme")
+		mirror := t.TempDir()
+		lock := filepath.Join(mirror, ".git", "index.lock")
+		if err := os.MkdirAll(filepath.Dir(lock), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(lock, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		old := time.Now().Add(-9 * 24 * time.Hour)
+		if err := os.Chtimes(lock, old, old); err != nil {
+			t.Fatal(err)
+		}
+		cmd := doctorLocalCommand()
+		cmd.resolveCredential = noCredential(t)
+		cmd.resolveMirror = func(string, space.Ref, space.MachineConfig) string { return mirror }
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error {
+			return fmt.Errorf("%w: waited 2s for a git lock file to clear (git [fetch]): %w",
+				space.ErrMirrorLocked, errors.New("fatal: Unable to create '"+lock+"': File exists."))
+		}
+		ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), space.ProjectConfig{Spaces: []space.Ref{ref}}, space.MachineConfig{})
+		if ok {
+			t.Fatalf("a locked mirror must still FAIL the row, got PASS %q", detail)
+		}
+		for _, want := range []string{lock, "216h0m0s", "delete it", "the space is intact"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		for _, banned := range []string{"clears by itself", "missing or unreadable", "restore it"} {
+			if strings.Contains(detail, banned) {
+				t.Errorf("detail %q carries %q", detail, banned)
+			}
+		}
+	})
+
 	t.Run("a local space that cannot be fetched", func(t *testing.T) {
 		t.Parallel()
 		ref, dir := doctorRealLocalSpace(t, "acme")
