@@ -14,7 +14,7 @@
 #   1. the launch line             — the binary's own dispatch table, read
 #                                     via `a2a __catalog` (never a manifest's
 #                                     own idea of what the binary accepts)
-#   2. the skill-tree path         — skill/embed.go's `//go:embed all:`
+#   2. the skill-tree path         — skill/embed.go's `//go:embed`
 #                                     root, checked against each discovered
 #                                     PLUGIN ROOT's own skills/<root> entry
 #                                     (the directory hosts actually scan,
@@ -238,12 +238,14 @@ canonical_credential_prefix() {
 }
 
 # canonical_skill_root: the embed root skill/embed.go declares
-# (`//go:embed all:a2ahub` → "a2ahub").
+# (`//go:embed a2ahub` → "a2ahub"). The optional `all:` prefix is accepted
+# so the root survives either form; the tree dropped it for
+# fb-20261107-3779ff, and a parser that required it read no root at all.
 canonical_skill_root() {
   local embedfile="$GATE_ROOT/skill/embed.go"
   [ -f "$embedfile" ] || return 1
   local root
-  root="$(grep -oE '//go:embed all:[A-Za-z0-9_.-]+' "$embedfile" | sed -n '1p' | sed -E 's#//go:embed all:##')"
+  root="$(grep -oE '^//go:embed (all:)?[A-Za-z0-9_.-]+' "$embedfile" | sed -n '1p' | sed -E 's#^//go:embed (all:)?##')"
   [ -n "$root" ] || return 1
   printf '%s\n' "$root"
 }
