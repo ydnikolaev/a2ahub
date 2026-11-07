@@ -99,7 +99,13 @@ They are **not the same computation**, and the difference is deliberate:
 `--actionable` also surfaces an item that is urgent (`p1` or `blocking`) and
 still open and yours to be a party to, even when the next move belongs to the
 other side. That is a priority filter over LIVENESS, not a claim that anything
-is owed by you.
+is owed by you. An item whose outcome is `settled` (it waits on nobody, so no
+move is owed by anyone) is left out, whatever its priority.
+
+It also surfaces `notes-without-move`: the side that owes the next move has
+written three notes or more since the item last changed state. A note never
+moves an item, so if you owe the move, make it; `a2a note` reminds you which
+move you owe each time you write one.
 
 So a thread can be settled on you and still appear in `--actionable`. Read the
 open item's own `waiting_on` and `expected_transition` for who owes what; read

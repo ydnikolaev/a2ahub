@@ -9685,7 +9685,7 @@
           "kind": "fix",
           "impact": "high",
           "subject": "contract activate lands when the space says the producer owes it",
-          "detail": "A published contract with a registered consumer and real operational items is owed an `a2a contract activate`, and `a2a inbox --actionable` and the outbox said so. The land check refused every activate as LFC-001, \"an illegal transition for the subject's current folded state\", because it had no rule for activate at all. The item stayed urgent with no legal way to clear it.\nThe land check now asks the same question the fold asks: the contract's owner may activate it. A test now asks the land check about every move the space can say is owed, so the two cannot disagree again.\n",
+          "detail": "A published contract with a registered consumer and real operational items is owed an `a2a contract activate`, and `a2a inbox --actionable` and the outbox said so. The land check refused every activate as LFC-001, \"an illegal transition for the subject's current folded state\", because it had no rule for activate at all. The item stayed urgent with no legal way to clear it.\nThe land check now asks the same question the fold asks: the contract's owner may activate it. A test now asks the land check about every move the space can say is owed, so the two cannot disagree again. `a2a thread` and the notification index also list the owed activate among an item's next moves, where it was missing.\n",
           "action": {
             "scope": "none",
             "why": "Nothing new is owed. An activate that was refused before now lands, so run it again where a contract is still listed as activation-owed.\n"
@@ -9733,6 +9733,28 @@
           "action": {
             "scope": "none",
             "why": "Nothing is owed by the tool. A repository that already committed `.a2ahub/skill/.DS_Store` can delete it; it will not be written again.\n"
+          }
+        },
+        {
+          "id": "RN-02702-9",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a settled item is no longer listed as actionable or counted urgent",
+          "detail": "A `p1` or blocking item stayed in `a2a inbox --actionable` and was counted urgent by `a2a statusline` while it was live, even when its outcome was `settled`: nobody owed a move on it. Every published contract with no registered consumer is such an item, so its author saw an urgent line that nothing could clear.\nUrgency now also requires an outcome that is not settled. This holds for `a2a inbox --actionable`, `a2a statusline`, the inbox and outbox exit codes, and the native notifications. A `p1` item waiting on the other side is still listed and still urgent.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed; an item that was wrongly urgent stops being so.\n"
+          }
+        },
+        {
+          "id": "RN-02702-10",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "an item whose owing side writes only notes is flagged",
+          "detail": "A note never changes an item's state, and it resets the staleness clock, so a side that answered with notes instead of the move it owed hid the item from `stale` too. Nothing told either side.\n`a2a inbox --actionable` and `a2a statusline` now list such an item with the reason `notes-without-move` once the side that owes the next move has written three notes since the item last changed state. Both sides see it. The dashboard names the reason too. `a2a note` from the side that owes the move prints which move it still owes, on stderr; the note is still recorded and the exit code is unchanged.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed by the tool. Where an item is flagged, the side that owes the move should make it.\n"
           }
         },
         {

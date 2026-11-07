@@ -116,7 +116,9 @@ changes:
 
     The land check now asks the same question the fold asks: the contract's
     owner may activate it. A test now asks the land check about every move the
-    space can say is owed, so the two cannot disagree again.
+    space can say is owed, so the two cannot disagree again. `a2a thread` and
+    the notification index also list the owed activate among an item's next
+    moves, where it was missing.
   action:
     scope: none
     why: >
@@ -213,3 +215,50 @@ changes:
     visibility: omit
     why: >
       A packaging correction; it changes no plan.
+- id: RN-02702-9
+  kind: fix
+  impact: normal
+  subject: a settled item is no longer listed as actionable or counted urgent
+  detail: >
+    A `p1` or blocking item stayed in `a2a inbox --actionable` and was counted
+    urgent by `a2a statusline` while it was live, even when its outcome was
+    `settled`: nobody owed a move on it. Every published contract with no
+    registered consumer is such an item, so its author saw an urgent line that
+    nothing could clear.
+
+    Urgency now also requires an outcome that is not settled. This holds for
+    `a2a inbox --actionable`, `a2a statusline`, the inbox and outbox exit
+    codes, and the native notifications. A `p1` item waiting on the other side
+    is still listed and still urgent.
+  action:
+    scope: none
+    why: >
+      Nothing is owed; an item that was wrongly urgent stops being so.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction to existing surfaces; it changes no plan.
+- id: RN-02702-10
+  kind: feat
+  impact: normal
+  subject: an item whose owing side writes only notes is flagged
+  detail: >
+    A note never changes an item's state, and it resets the staleness clock,
+    so a side that answered with notes instead of the move it owed hid the
+    item from `stale` too. Nothing told either side.
+
+    `a2a inbox --actionable` and `a2a statusline` now list such an item with
+    the reason `notes-without-move` once the side that owes the next move has
+    written three notes since the item last changed state. Both sides see it.
+    The dashboard names the reason too. `a2a note` from the side that owes the
+    move prints which move it still owes, on stderr; the note is still
+    recorded and the exit code is unchanged.
+  action:
+    scope: none
+    why: >
+      Nothing is owed by the tool. Where an item is flagged, the side that
+      owes the move should make it.
+  roadmap:
+    visibility: omit
+    why: >
+      An attention signal on existing data; it changes no plan.
