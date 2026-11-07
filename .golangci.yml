@@ -128,6 +128,14 @@ linters:
             - $gostd
             - github.com/ydnikolaev/a2ahub/internal/operation$
             - github.com/ydnikolaev/a2ahub/internal/provenance$
+        internal-pendency:
+          files:
+            - "**/internal/pendency/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/ydnikolaev/a2ahub/internal/fold$
         internal-operational:
           files:
             - "**/internal/operational/*.go"
