@@ -354,7 +354,15 @@ func takeOverIfStale(path string) (bool, error) {
 	// reclaimed at once, so contenders now reach this point together rather
 	// than two minutes apart, which is why the check is worth its read. It
 	// narrows the window to the re-read and the remove; it does not close it.
-	if again, err := os.ReadFile(path); err != nil || !bytes.Equal(again, raw) {
+	again, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Already reclaimed; the caller's loop re-races for it.
+			return false, nil
+		}
+		return false, err
+	}
+	if !bytes.Equal(again, raw) {
 		return false, nil
 	}
 
