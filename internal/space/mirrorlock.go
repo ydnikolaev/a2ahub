@@ -1,6 +1,7 @@
 package space
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,15 +30,17 @@ const mirrorLockFileName = "a2a-mirror.lock"
 // Two minutes gives that a wide margin without leaving a crashed holder's
 // mirror unusable for anywhere near "forever".
 //
-// Cost of a crash: every Submit against this mirror from a DIFFERENT
-// process, for up to mirrorLockStaleAfter after the crash, waits out
-// mirrorLockWaitBudget and then fails closed with ErrMirrorLocked (whose
-// own doc already says the safe next move is to re-run) — the write funnel
-// is idempotent by head branch, so a re-run never duplicates work. The
-// FIRST attempt after mirrorLockStaleAfter elapses finds the lock stale,
-// takes it over, and proceeds normally. So the crashed holder's cost to
-// the next writer is bounded by mirrorLockStaleAfter of refused (not
-// silently wrong) attempts, never a deadlock.
+// Cost of a crash: a holder whose pid is dead on this host is reclaimed by
+// the very next attempt (see mirrorLockPayload), so the common crash costs
+// nothing. Where the pid cannot be judged dead (windows, or a reused pid),
+// every Submit against this mirror from a DIFFERENT process, for up to
+// mirrorLockStaleAfter after the crash, waits out mirrorLockWaitBudget and
+// then fails closed with ErrMirrorLocked (whose own doc already says the safe
+// next move is to re-run) — the write funnel is idempotent by head branch,
+// so a re-run never duplicates work. The FIRST attempt after
+// mirrorLockStaleAfter elapses finds the lock stale, takes it over, and
+// proceeds normally. So the cost is bounded by mirrorLockStaleAfter of
+// refused (not silently wrong) attempts, never a deadlock.
 const mirrorLockStaleAfter = 2 * time.Minute
 
 // mirrorLockWaitBudget bounds how long AcquireMirrorLock waits for a LIVE
@@ -61,14 +64,83 @@ const mirrorLockStaleAfter = 2 * time.Minute
 const mirrorLockWaitBudget = 5 * time.Second
 
 // mirrorLockPayload is the lock file's content: who holds it and when they
-// acquired it. This is enough to recognise a stale holder (crash recovery)
-// without relying on pid liveness — pids are reused, and checking a pid's
-// liveness portably across darwin/linux/windows is a can of worms this
-// project does not need to open for what is, in the end, a "is this
-// timestamp old" check.
+// acquired it. A lock is stale in two cases:
+//
+//   - its holder's pid is not alive on this host: reclaimed at once. The
+//     mirror is machine-local (under the user cache), so the pid was written
+//     on the machine that reads it and a same-host liveness check is valid;
+//   - it is older than mirrorLockStaleAfter, whatever the pid says.
+//
+// Pids are reused, so a live pid proves nothing about WHO holds the lock: it
+// keeps the age rule, which means reuse can only delay a reclaim, never steal
+// a live holder's lock. Where liveness cannot be asked (windows, pid <= 0, an
+// unreadable payload) the age rule alone applies, as it always did.
 type mirrorLockPayload struct {
 	PID        int       `json:"pid"`
 	AcquiredAt time.Time `json:"acquired_at"`
+}
+
+// mirrorLockHolder is what is known about a lock holder's process.
+type mirrorLockHolder int
+
+const (
+	mirrorLockHolderUnknown mirrorLockHolder = iota
+	mirrorLockHolderAlive
+	mirrorLockHolderDead
+)
+
+func (h mirrorLockHolder) String() string {
+	switch h {
+	case mirrorLockHolderAlive:
+		return "alive"
+	case mirrorLockHolderDead:
+		return "dead"
+	default:
+		return "unknown"
+	}
+}
+
+// MirrorLockedError is the refusal AcquireMirrorLock returns when a holder
+// outlasts the wait budget. It names the holder so the operator can tell a
+// write in flight from a crashed one; errors.Is(err, ErrMirrorLocked) holds.
+// PID is 0 and Holder is "unknown" when the payload was unreadable.
+type MirrorLockedError struct {
+	Path       string
+	PID        int
+	Holder     string // "alive", "dead" or "unknown"
+	Held       time.Duration
+	Waited     time.Duration
+	StaleAfter time.Duration
+}
+
+func (e *MirrorLockedError) Unwrap() error { return ErrMirrorLocked }
+
+func (e *MirrorLockedError) Error() string {
+	holder := "an unreadable holder"
+	if e.PID > 0 {
+		holder = fmt.Sprintf("pid %d (%s)", e.PID, e.Holder)
+	}
+	return fmt.Sprintf("%v: waited %s for the mirror lock at %s, held by %s for %s; "+
+		"it is reclaimed automatically after %s, or at once when the holder is dead",
+		ErrMirrorLocked, e.Waited, e.Path, holder, e.Held.Round(time.Second), e.StaleAfter)
+}
+
+// newMirrorLockedError reads the lock's payload for the refusal. An unreadable
+// payload degrades to a holder-less error rather than hiding the refusal.
+func newMirrorLockedError(path string, waited time.Duration) *MirrorLockedError {
+	e := &MirrorLockedError{Path: path, Holder: mirrorLockHolderUnknown.String(), Waited: waited, StaleAfter: mirrorLockStaleAfter}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return e
+	}
+	var payload mirrorLockPayload
+	if json.Unmarshal(raw, &payload) != nil {
+		return e
+	}
+	e.PID = payload.PID
+	e.Holder = mirrorLockHolderState(payload.PID).String()
+	e.Held = time.Since(payload.AcquiredAt)
+	return e
 }
 
 // MirrorLock is a held advisory lock on one mirror directory, returned by
@@ -169,8 +241,7 @@ func acquireMirrorLockWithin(ctx context.Context, dir string, budget time.Durati
 		}
 
 		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("%w: waited %s for the mirror lock at %s to release",
-				ErrMirrorLocked, mirrorLockWaitBudget, lockPath)
+			return nil, newMirrorLockedError(lockPath, budget)
 		}
 		select {
 		case <-ctx.Done():
@@ -248,7 +319,8 @@ func tryCreateMirrorLock(path string) (*MirrorLock, bool, error) {
 }
 
 // takeOverIfStale reports whether the lock file at path was stale (its
-// recorded AcquiredAt older than mirrorLockStaleAfter, or its payload
+// recorded AcquiredAt older than mirrorLockStaleAfter, its holder's pid dead
+// on this host, or its payload
 // unreadable — a holder that crashed mid-write of its own lock file can
 // never release it, which is exactly the crash case this exists to
 // recover) and, if so, removes it. It does NOT create a new lock in its
@@ -269,9 +341,20 @@ func takeOverIfStale(path string) (bool, error) {
 	var payload mirrorLockPayload
 	stale := true
 	if unmarshalErr := json.Unmarshal(raw, &payload); unmarshalErr == nil {
-		stale = time.Since(payload.AcquiredAt) > mirrorLockStaleAfter
+		stale = time.Since(payload.AcquiredAt) > mirrorLockStaleAfter ||
+			mirrorLockHolderState(payload.PID) == mirrorLockHolderDead
 	}
 	if !stale {
+		return false, nil
+	}
+
+	// Re-read before removing: a contender that judged the same stale
+	// payload may already have reclaimed it and linked its own fresh lock
+	// here. Removing that one would leave two holders. A dead-pid holder is
+	// reclaimed at once, so contenders now reach this point together rather
+	// than two minutes apart, which is why the check is worth its read. It
+	// narrows the window to the re-read and the remove; it does not close it.
+	if again, err := os.ReadFile(path); err != nil || !bytes.Equal(again, raw) {
 		return false, nil
 	}
 

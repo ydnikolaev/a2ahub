@@ -724,6 +724,13 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 			continue
 		}
 		ok = false
+		if errors.Is(err, space.ErrMirrorLocked) {
+			// A busy mirror says nothing about the space itself: the space is
+			// intact, and the repair below (restore the directory) would break
+			// in-flight writes. The lock clears by itself.
+			failures = append(failures, fmt.Sprintf("%s: %s", ref.ID, doctorMirrorLockedDetail(err)))
+			continue
+		}
 		failure := fmt.Sprintf("%s: %v", ref.ID, err)
 		if onThisMachine {
 			// The same fetch, against a path. The hint is the local space's
@@ -737,6 +744,19 @@ func (c *DoctorCommand) doctorCheckSpaceAccess(ctx context.Context, cfg space.Pr
 		failures = append(failures, failure)
 	}
 	return ok, strings.Join(failures, "; ")
+}
+
+// doctorMirrorLockedDetail words a mirror-lock refusal for the space access
+// row: who holds the lock and for how long when the error carries it, and that
+// the lock clears by itself and the space is intact. It never offers a repair.
+func doctorMirrorLockedDetail(err error) string {
+	const tail = "it clears by itself (a stale lock is reclaimed automatically, at once when its holder is dead) — the space is intact, nothing to restore"
+	var locked *space.MirrorLockedError
+	if !errors.As(err, &locked) || locked.PID <= 0 {
+		return "mirror locked by another process; " + tail
+	}
+	return fmt.Sprintf("mirror locked by pid %d (%s), held for %s; %s",
+		locked.PID, locked.Holder, locked.Held.Round(time.Second), tail)
 }
 
 // doctorLocalSpaceRepairHint is the space access row's repair for a local space

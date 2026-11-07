@@ -1671,8 +1671,9 @@ func TestFunnelSequentialSubmitsOneMirrorNoInheritedFiles(t *testing.T) {
 // TestFunnelWithoutForkFallbackReportsTheRefusal already covers
 // behaviourally) must not leave the mirror's advisory lock file behind. A
 // refused write that leaks the lock would poison every later Submit
-// against the same mirror with ErrMirrorLocked until mirrorLockStaleAfter
-// elapses — this is what proves it does not.
+// against the same mirror with ErrMirrorLocked for as long as the leaking
+// process lives (a dead holder is reclaimed at once, but a live one keeps the
+// lock until mirrorLockStaleAfter elapses) — this is what proves it does not.
 func TestFunnelReleasesMirrorLockOnPushErrorPath(t *testing.T) {
 	t.Parallel()
 

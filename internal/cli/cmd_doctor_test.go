@@ -3231,7 +3231,8 @@ func TestDoctorLocalRowsUnverifiedAndSilentCases(t *testing.T) {
 // (host.NewOpener over a real, marked local space), so every state it judges is
 // one production can reach. A local space whose directory was moved FAILs with
 // the local repair (spec 03 §T1.4) and no fetch or credential; a local space
-// that exists but cannot be fetched gets the same repair and no GitHub hint.
+// that exists but cannot be fetched gets the same repair and no GitHub hint; a
+// mirror merely locked by another process gets a lock line and no repair.
 func TestDoctorSpaceAccessNamesALocalSpacesOwnRepair(t *testing.T) {
 	t.Parallel()
 
@@ -3272,6 +3273,30 @@ func TestDoctorSpaceAccessNamesALocalSpacesOwnRepair(t *testing.T) {
 		assertLocalRepair(t, ok, detail, dir)
 		if !strings.Contains(detail, "does not exist") {
 			t.Errorf("detail %q does not say the path is gone", detail)
+		}
+	})
+
+	t.Run("a mirror locked by a holder is not a missing space", func(t *testing.T) {
+		t.Parallel()
+		ref, _ := doctorRealLocalSpace(t, "acme")
+		cmd := doctorLocalCommand()
+		cmd.resolveCredential = noCredential(t)
+		cmd.cloneOrFetch = func(context.Context, string, string, host.Credential) error {
+			return fmt.Errorf("fetch: %w", &space.MirrorLockedError{PID: 4242, Holder: "dead", Held: 187 * time.Second, StaleAfter: 2 * time.Minute})
+		}
+		ok, detail := cmd.doctorCheckSpaceAccess(context.Background(), space.ProjectConfig{Spaces: []space.Ref{ref}}, space.MachineConfig{})
+		if ok {
+			t.Fatalf("a locked mirror must still FAIL the row, got PASS %q", detail)
+		}
+		for _, want := range []string{"acme: mirror locked by pid 4242 (dead), held for 3m7s", "clears by itself", "the space is intact"} {
+			if !strings.Contains(detail, want) {
+				t.Errorf("detail %q lacks %q", detail, want)
+			}
+		}
+		for _, banned := range []string{"missing or unreadable", "restore it", "write journals"} {
+			if strings.Contains(detail, banned) {
+				t.Errorf("detail %q carries the repair hint %q", detail, banned)
+			}
 		}
 	})
 
