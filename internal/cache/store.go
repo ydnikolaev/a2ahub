@@ -820,6 +820,7 @@ func (s *Store) buildShowResult(fa foldedArtifact, spaceID string, all []foldedA
 		From: fa.Env.From, To: normalizeTo(fa.Env.To), State: string(fa.Result.State),
 		Body: string(fm.Body), Thread: fa.Env.Thread, Digest: fa.Digest, Events: events, Flags: flags, Refs: refs,
 		SyncStale: syncStale, SyncAge: age.String(), Envelope: envelope, Attachments: attachments,
+		AcceptanceCriteria: acceptanceCriteriaFromEnvelope(envelope), ExpectedResponse: expectedResponseFromEnvelope(envelope),
 		// The same fa.moveOwed toItem reads, carried so the detail projection
 		// can ask fold.OutcomeOfDocument instead of guessing without it.
 		MoveOwed: fa.moveOwed,
@@ -869,6 +870,46 @@ func attachmentEntriesFromEnvelope(envelope map[string]any) []datapackage.Attach
 		})
 	}
 	return out
+}
+
+// acceptanceCriteriaFromEnvelope reads the base schema's acceptance_criteria[]
+// (homogeneous: all plain strings, or all {id, text}) off the generic
+// frontmatter projection. Unreadable entries are skipped, never invented.
+func acceptanceCriteriaFromEnvelope(envelope map[string]any) []AcceptanceCriterion {
+	list, ok := envelope["acceptance_criteria"].([]any)
+	if !ok {
+		return nil
+	}
+	var out []AcceptanceCriterion
+	for _, item := range list {
+		switch v := item.(type) {
+		case string:
+			out = append(out, AcceptanceCriterion{Text: v})
+		case map[string]any:
+			out = append(out, AcceptanceCriterion{ID: attachmentStringField(v, "id"), Text: attachmentStringField(v, "text")})
+		}
+	}
+	return out
+}
+
+// expectedResponseFromEnvelope reads the base schema's expected_response.
+// YAML dates may decode as time.Time, so `by` is rendered if it is one.
+func expectedResponseFromEnvelope(envelope map[string]any) *ExpectedResponse {
+	m, ok := envelope["expected_response"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	er := &ExpectedResponse{Shape: attachmentStringField(m, "shape")}
+	switch by := m["by"].(type) {
+	case string:
+		er.By = by
+	case time.Time:
+		er.By = by.Format("2006-01-02")
+	}
+	if er.Shape == "" && er.By == "" {
+		return nil
+	}
+	return er
 }
 
 func attachmentStringField(m map[string]any, key string) string {

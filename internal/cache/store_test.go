@@ -155,3 +155,52 @@ func TestShow_AttachmentsJSONOmitsKeyWhenThereAreNone(t *testing.T) {
 		t.Fatalf("marshaled ShowResult %s carries an \"attachments\" key for an artifact with none", encoded)
 	}
 }
+
+// TestShow_CarriesAcceptanceCriteriaAndExpectedResponse: a responder composes
+// verdicts per criterion id, so `a2a show` must expose the artifact's own
+// acceptance_criteria[] (id-addressed and ordinal forms) and expected_response
+// (fb-20261107-37ce55).
+func TestShow_CarriesAcceptanceCriteriaAndExpectedResponse(t *testing.T) {
+	t.Parallel()
+	fx := newFixtureSpace(t, fixtureParticipant{System: "axon"}, fixtureParticipant{System: "seomatrix"})
+	base := time.Date(2026, 8, 1, 8, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		id       string
+		criteria any
+		want     []AcceptanceCriterion
+	}{
+		{"XW-axon-20260801-ids", []map[string]any{{"id": "c1", "text": "first"}, {"id": "c2", "text": "second"}}, []AcceptanceCriterion{{ID: "c1", Text: "first"}, {ID: "c2", Text: "second"}}},
+		{"XW-axon-20260801-ord", []string{"plain one"}, []AcceptanceCriterion{{Text: "plain one"}}},
+	} {
+		fields := map[string]any{
+			"schema": "envelope/v2", "id": tc.id, "type": "work_request", "title": "t",
+			"space": "fixture-space", "from": "axon", "to": []string{"seomatrix"},
+			"actor": map[string]any{"kind": "agent", "name": "axon-bot"}, "created": fxAt(base),
+			"priority": "p2", "blocking": false, "classification": "internal",
+			"category": "data", "acceptance_criteria": tc.criteria,
+			"expected_response": map[string]any{"shape": "verdict", "by": "2026-09-01"},
+		}
+		fx.commitArtifact("axon/exchanges/"+tc.id+".md", fields, "body")
+		fx.commitEvent("axon", fxULID(910), evt(tc.id, "publish", "axon", base))
+	}
+	store := NewStore("axon", t.TempDir(), []SpaceMirror{{SpaceID: "sp1", Dir: fx.dir, Manifest: mustManifest(t, fx)}}, func() time.Time { return base.Add(time.Hour) }, 0)
+
+	for _, id := range []string{"XW-axon-20260801-ids", "XW-axon-20260801-ord"} {
+		res, err := store.Show(context.Background(), id)
+		if err != nil {
+			t.Fatalf("Show %s: %v", id, err)
+		}
+		if res.ExpectedResponse == nil || res.ExpectedResponse.Shape != "verdict" || res.ExpectedResponse.By != "2026-09-01" {
+			t.Fatalf("%s ExpectedResponse = %+v", id, res.ExpectedResponse)
+		}
+		if len(res.AcceptanceCriteria) == 0 {
+			t.Fatalf("%s: no acceptance criteria", id)
+		}
+		if id == "XW-axon-20260801-ids" && (len(res.AcceptanceCriteria) != 2 || res.AcceptanceCriteria[1] != (AcceptanceCriterion{ID: "c2", Text: "second"})) {
+			t.Fatalf("ids criteria = %+v", res.AcceptanceCriteria)
+		}
+		if id == "XW-axon-20260801-ord" && res.AcceptanceCriteria[0] != (AcceptanceCriterion{Text: "plain one"}) {
+			t.Fatalf("ordinal criteria = %+v", res.AcceptanceCriteria)
+		}
+	}
+}

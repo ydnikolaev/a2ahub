@@ -343,11 +343,33 @@ type ShowResult struct {
 	// produces byte-identical `a2a show --json` output to before this field
 	// existed.
 	Attachments []datapackage.AttachmentClaim `json:"attachments,omitempty"`
+	// AcceptanceCriteria is the artifact's own committed acceptance_criteria[]
+	// (schemas/envelope/v2/base.schema.json, required on work_request): what a
+	// responder composes its per-criterion verdicts against. An id-addressed
+	// entry carries ID+Text; an ordinal-only (plain string) entry carries Text
+	// alone. omitempty, so an artifact without criteria is byte-identical to
+	// before this field existed.
+	AcceptanceCriteria []AcceptanceCriterion `json:"acceptance_criteria,omitempty"`
+	// ExpectedResponse is the committed expected_response (shape + optional by).
+	ExpectedResponse *ExpectedResponse `json:"expected_response,omitempty"`
 	// Envelope is the heterogeneous, schema-owned frontmatter projection the
 	// HTML detail panel needs. It remains outside `a2a show --json` so that
 	// command's established output contract stays byte-compatible. Values are
 	// untrusted presentation data; renderers must treat them as text only.
 	Envelope map[string]any `json:"-"`
+}
+
+// AcceptanceCriterion is one acceptance_criteria[] entry as `a2a show` reports
+// it. ID is empty for the ordinal-addressed (plain string) form.
+type AcceptanceCriterion struct {
+	ID   string `json:"id,omitempty"`
+	Text string `json:"text"`
+}
+
+// ExpectedResponse mirrors the envelope's expected_response object.
+type ExpectedResponse struct {
+	Shape string `json:"shape"`
+	By    string `json:"by,omitempty"`
 }
 
 // ContractInfo is one entry in `a2a contracts`' listing (OP-221 second

@@ -113,6 +113,9 @@ func (c *ShowCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintf(stdio.Stdout, "thread: %s (a2a thread %s)\n", result.Thread, result.Thread)
 	}
 	_, _ = fmt.Fprintln(stdio.Stdout, result.Body)
+	for _, line := range ShowCriteriaLines(result.AcceptanceCriteria, result.ExpectedResponse) {
+		_, _ = fmt.Fprintln(stdio.Stdout, line)
+	}
 	for _, w := range out.Warnings {
 		code := w.Code
 		if code == "" {
@@ -128,6 +131,34 @@ func (c *ShowCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		_, _ = fmt.Fprintln(stdio.Stdout, line)
 	}
 	return 0
+}
+
+// ShowCriteriaLines renders the artifact's own acceptance_criteria[] and
+// expected_response for `a2a show`'s human text, so a responder can compose
+// its per-criterion verdicts (REF-023) without reading the mirror by hand.
+// Nothing is returned when neither is present. An ordinal-only criterion
+// (no id) is addressed by its 0-based index, the form a response's
+// criterion_index uses.
+func ShowCriteriaLines(criteria []cache.AcceptanceCriterion, expected *cache.ExpectedResponse) []string {
+	var lines []string
+	if len(criteria) > 0 {
+		lines = append(lines, "Acceptance criteria:")
+		for i, c := range criteria {
+			id := c.ID
+			if id == "" {
+				id = fmt.Sprintf("#%d", i)
+			}
+			lines = append(lines, fmt.Sprintf("  %s: %s", id, c.Text))
+		}
+	}
+	if expected != nil {
+		line := "Expected response: shape=" + expected.Shape
+		if expected.By != "" {
+			line += " by=" + expected.By
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 // ShowAttachmentLines renders each attachment's ALREADY-DERIVED claim
