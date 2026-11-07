@@ -1,0 +1,35 @@
+
+feedback: v1
+id: fb-20261107-3779ff
+kind: bug
+severity: minor
+title: "a2a skill install writes a macOS .DS_Store into .a2ahub/skill"
+summary: "a2a 0.27.1 (local build a91426e3) embeds a .DS_Store from the build tree in its skill manual; `a2a skill install` writes it to .a2ahub/skill/.DS_Store in every consumer repo, and doctor counts it among the verified files. A consumer that tracks .a2ahub/skill (as the onboarding suggests) commits a Finder metadata file, or a global gitignore hides a file the manual check still expects."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: skill
+    command: "a2a skill install"
+evidence:
+    steps:
+        - "mkdir probe && cd probe && git init -q"
+        - "a2a skill install   (prints: installed 38 files to .a2ahub/skill)"
+        - "find . -name .DS_Store   (prints ./.a2ahub/skill/.DS_Store)"
+    expected: "The installed manual holds only the documentation tree; no OS metadata files."
+    actual: ".a2ahub/skill/.DS_Store is written, with the same mtime as the other installed files."
+proposal: "Exclude dotfiles such as .DS_Store from the embedded skill tree (and from the drift check), plus a test that the embed holds no .DS_Store."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted. Confirmed: skill/embed.go embeds with go:embed all:a2ahub, and the
+    all: prefix includes dotfiles, so an untracked Finder .DS_Store in the build
+    checkout ships in a locally built binary. The tree tracks no dotfile, so the
+    prefix buys nothing. Released binaries are built from a clean checkout and
+    are not affected; local make deliver builds are. Fix: drop all: (or filter
+    dotfiles at install and in the drift check) and add a test that the embed
+    holds no dotfile.
+status: accepted

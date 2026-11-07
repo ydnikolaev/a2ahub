@@ -1,0 +1,28 @@
+
+feedback: v1
+id: fb-20261107-94ae3c
+kind: friction
+severity: minor
+title: contract preflight before first submit says path is not safely contained
+summary: "Publishing a brand-new contract (XC-devkit-secrets-layout, space devkit, local, flow express) with `a2a contract preflight <id> --version 1.0.0 --staging .a2a/staging/devkit/provides/secrets-layout` (and `contract publish`) before the 0.0.0 draft was submitted refused with: space: contract path is not safely contained: inspect \"devkit/provides/secrets-layout\". The real cause was that the contract did not exist in the space yet; `a2a submit .a2a/staging/XC-...md` first, then preflight and publish, worked. The message points at path safety (a security-sounding refusal) instead of naming the missing first submit. Read in the source: internal/contractwiring/candidate.go:54 opens the mirror contract dir unconditionally."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a contract preflight XC-devkit-secrets-layout --version 1.0.0 --staging .a2a/staging/devkit/provides/secrets-layout"
+proposal: "When the contract dir is absent from the mirror, refuse with a message naming the next step (submit the draft first: a2a submit <draft>), or let preflight treat an absent dir as a first publish."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted. Confirmed: openContractDirectory in
+    internal/space/contract_paths.go wraps every Lstat error, ENOENT included,
+    as ErrContractUnsafePath, and internal/contractwiring/candidate.go opens the
+    mirror contract directory before anything checks that the contract exists. A
+    missing directory is not a containment fault. The materializer already has
+    the typed shape to copy (ErrContractDestinationParentMissing). Fix: a typed
+    not-in-space refusal naming the first step, a2a submit of the 0.0.0 draft.
+status: accepted

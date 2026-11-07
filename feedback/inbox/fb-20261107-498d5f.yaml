@@ -1,0 +1,37 @@
+feedback: v1
+id: fb-20261107-498d5f
+kind: bug
+severity: major
+title: "Dead-pid mirror lock blocks every verb; doctor calls it a missing space"
+summary: "On a host with several projects on one local space, the mirror lock at ~/.cache/a2a/mirrors/<space>/.git/a2a-mirror.lock was left by a process that had already exited (its pid was not alive, no process had the mirror open, no git .lock files). For about three minutes every verb on that space failed after its 5s wait: submit, sync, and the waits of every session. a2a doctor's space access row added 'the local space's directory is missing or unreadable; restore it', which was false (the bare repo was intact) and points an operator at moving or restoring a healthy space, the one act the same message warns breaks in-flight writes. The lock then cleared by itself. Asks: reclaim a lock whose recorded pid is dead at once, name the holder pid and its liveness in the refusal, and have doctor say 'mirror locked by pid N (dead|alive)' instead of 'missing'."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a submit / a2a sync / a2a doctor"
+evidence:
+    steps:
+        - "several sessions run `a2a wait --timeout 30m` loops and a status bar runs `a2a statusline` on the same local space"
+        - "a2a submit .a2a/staging/<XW>.md  -> mirror is locked by a concurrent git process; waited 5s"
+        - "cat ~/.cache/a2a/mirrors/<space>/.git/a2a-mirror.lock -> {pid: N, acquired_at: T}; ps -p N -> no such process; lsof shows nothing open under the mirror"
+        - "a2a doctor -> space access FAIL ... the local space's directory is missing or unreadable; restore it at <space>.git"
+        - "about 3 minutes after T the lock file is gone and the same submit lands"
+    expected: "A lock whose recorded pid is not alive is reclaimed at once; the refusal and doctor name the holder pid and whether it lives; doctor does not call an intact space missing."
+    actual: "Every verb on the space failed for about 3 minutes behind a dead holder; doctor told the operator to restore a space that was intact."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted, both halves. Lock: internal/space/mirrorlock.go reclaims a holder
+    by age only (mirrorLockStaleAfter, 2 minutes) and never checks the recorded
+    pid; its comment rejects pid liveness for pid reuse and portability, but the
+    mirror is machine-local, so a dead pid plus age bounds reuse. The refusal
+    never reads the payload, so it cannot name the holder. Doctor:
+    internal/cli/cmd_doctor.go appends the missing-or-unreadable repair hint to
+    every fetch error on a local space, ErrMirrorLocked included, and a test
+    pins that breadth; that advice points at the one act that breaks in-flight
+    writes.
+status: accepted

@@ -1,0 +1,49 @@
+feedback: v1
+id: fb-20261107-37ce55
+kind: bug
+severity: major
+title: a2a show omits acceptance_criteria and expected_response, human and --json
+summary: >-
+  `a2a show <work_request-id>` prints title, body, state, thread, digest and events, but not the artifact's
+  acceptance_criteria[] or expected_response, in either the human output or --json. The docs send agents to
+  `a2a show` for exactly these fields (resolutions.md, REF-019 row: "Re-read the parent's own
+  acceptance_criteria[] (a2a show <parent-id>)"), and a responder must compose verdicts per criterion id
+  (REF-023). With no CLI path to the criteria, the receiving agent fell back to reading the space mirror's git
+  tree directly, which AGENTS.md steers away from. Also: `a2a --help` and `a2a help` both answer
+  "unknown command", so there is no discoverable flag to try next; only `show -json` exists.
+context:
+  a2a_version: 0.27.1
+  os_arch: darwin/arm64
+  surface: cli
+  command: a2a show --json <work_request-id>
+evidence:
+  steps:
+    - "Receive a work_request whose frontmatter declares acceptance_criteria: [{id: ac1, text: ...}, ... ac5] and an expected_response.shape."
+    - "Run `a2a show <id>`: the human output shows the body and events; no criteria, no expected_response."
+    - "Run `a2a show --json <id>`: keys are space, id, type, title, from, to, state, body, thread, digest, events, sync_stale, sync_age; no acceptance_criteria, no expected_response."
+    - "Run `a2a --help` and `a2a help`: both print 'unknown command'."
+    - "Read the artifact file from the space mirror's git tree: acceptance_criteria and expected_response are present in its frontmatter."
+  expected: >-
+    `a2a show` (human and --json) prints every frontmatter field a counterpart must act on, at least
+    acceptance_criteria[] with ids and expected_response, as the REF-019 resolution text promises.
+  actual: >-
+    Both outputs drop acceptance_criteria[] and expected_response; the agent cannot see the criteria it must
+    give verdicts on without reading space files by hand.
+proposal: >-
+  Include all declared frontmatter fields in `show --json` (or a `frontmatter` object), and render
+  acceptance_criteria as "id: text" lines plus expected_response.shape in the human output. Make `a2a --help` /
+  `a2a help` print the verb list from commands.md.
+checks:
+  docs_consulted: true
+  grounded_in_real_work: true
+  not_space_specific: true
+  no_sensitive_content: true
+  duplicates_checked: true
+resolution: >-
+    Accepted. Confirmed: cache.ShowResult (internal/cache/types.go) carries no
+    acceptance_criteria or expected_response, so a2a show drops both in human
+    and --json output while skill/a2ahub/resolutions.md (REF-019 row) sends the
+    agent to a2a show for them. Second half confirmed by running it: a2a --help
+    and a2a help print unknown command; cmd/a2a/help.go answers help flags only
+    after a verb, and bare a2a prints the verb list.
+status: accepted

@@ -129,3 +129,13 @@ release, as v0.27.1's records did.
 
 - fb-20261103-9f14cd (friction, still accepted): fixed in 6481be94 (RN-02702-2); preflight on draftmedia 1,222 s -> 2 s
 - fb-20261104-32440f (bug, still accepted): fixed in 63d1d0c2 (RN-02702-3)
+
+## 2026-11-07 Triage
+
+- fb-20261107-3779ff (bug -> accepted): a2a skill install writes a macOS .DS_Store into .a2ahub/skill
+- fb-20261107-94ae3c (friction -> accepted): contract preflight before first submit says path is not safely contained
+- fb-20261107-37ce55 (bug -> accepted): a2a show omits acceptance_criteria and expected_response, human and --json
+- fb-20261107-498d5f (bug -> accepted): Dead-pid mirror lock blocks every verb; doctor calls it a missing space
+- fb-20261106-28c7e6 (bug -> accepted): contract activate refused LFC-001 while the fold says activate is owed
+- fb-20261106-3312bc (bug -> accepted): inbox --actionable and statusline urgent count a settled contract
+- fb-20261106-96837b (feature -> accepted): flag an item whose owed party writes only notes

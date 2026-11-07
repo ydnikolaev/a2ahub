@@ -1,0 +1,41 @@
+feedback: v1
+id: fb-20261106-28c7e6
+kind: bug
+severity: major
+title: contract activate refused LFC-001 while the fold says activate is owed
+summary: "A published contract with a registered consumer folds to expected_transition activate, waiting_on [producer], and `a2a inbox --actionable` names it activation-owed. Running the documented discharge, `a2a contract activate <XC> --version <published> --satisfies endpoint --satisfies credential-channel`, is refused at land with LFC-001 (event encodes an illegal transition for the subject's current folded state). `a2a thread <XC>` lists next=contract publish, contract deprecate only, so the lifecycle table and the debt derivation disagree: the producer owes a move the space will not accept, and the item stays urgent forever."
+context:
+    a2a_version: 0.27.1
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a contract activate <XC-id> --version <published-version> --satisfies endpoint --satisfies credential-channel"
+    error_code: LFC-001
+evidence:
+    steps:
+        - "In a local space (gates confirm, flow express) a producer has published a contract many times (latest version listed in its contract.md), with x_operational items endpoint and credential-channel absent and registration undeclared, and a consumer registered in consumes.yaml."
+        - "a2a outbox --json shows the contract state published, waiting_on [producer], expected_transition activate, why 'P5 AC1 ... the producer owes activate'."
+        - "a2a thread <XC-id> ends with: published waiting_on=<producer> next=contract publish:<producer>;contract deprecate:<producer>."
+        - "a2a contract activate <XC-id> --version <latest published> --satisfies endpoint --satisfies credential-channel --note '...' is refused: land refused: LFC-001 <producer>/events/...yaml: event encodes an illegal transition for the subject's current folded state."
+        - "Same result on a second contract of the same producer in the same space."
+    expected: "Either activate is a legal transition from published (the loop-first-integration page, step 4, says so: run a2a contract activate once the items are real) and the land accepts it, or the fold never derives expected_transition activate for a state the lifecycle cannot leave by activate."
+    actual: "The fold owes activate, the thread's next list omits it, and the land refuses it with LFC-001; the contract stays urgent and our-move with no legal way to discharge it. a2a version reports the space's template as unknown."
+proposal: "Derive the thread's next list and the land's legality check from the same lifecycle table that the debt derivation uses, add activate from published (and from a re-published state) to it, and add a test that every expected_transition the fold emits is accepted by the land for that state."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+resolution: >-
+    Accepted. Confirmed, and reproduced at the function: contract activate is a
+    transition-free fact (internal/fold/transitionfree.go), but
+    CheckCandidateWithSuccessor in internal/fold/legality.go has no branch for
+    it, so it falls to the role-table lookup, finds no row and returns
+    illegal-transition for every published contract. The land check
+    (internal/cli/validate_ci_lifecycle.go) surfaces that as LFC-001 while
+    pendency (internal/pendency/pendency.go) derives activate as owed. Same
+    class as the broadcast-ack defect legality.go already records: an activate
+    branch sharing applyContractActivation's owner predicate, plus a test that
+    every expected_transition pendency emits is accepted by the land check. The
+    existing activate end-to-end test never runs the legality check.
+status: accepted

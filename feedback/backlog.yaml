@@ -51,3 +51,79 @@ items:
         - internal/validate/contract_adapters.go
         - internal/cli/cmd_validate_ci.go
       date: "2026-11-05"
+    - id: fb-20261107-3779ff
+      kind: bug
+      severity: minor
+      title: a2a skill install writes a macOS .DS_Store into .a2ahub/skill
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - skill/embed.go
+      date: "2026-11-07"
+    - id: fb-20261107-94ae3c
+      kind: friction
+      severity: minor
+      title: contract preflight before first submit says path is not safely contained
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - internal/space/contract_paths.go
+        - internal/contractwiring/candidate.go
+      date: "2026-11-07"
+    - id: fb-20261107-37ce55
+      kind: bug
+      severity: major
+      title: a2a show omits acceptance_criteria and expected_response, human and --json
+      verdict: accepted
+      route: backlog
+      refs:
+        - internal/cache/types.go
+        - internal/cli/cmd_show.go
+        - cmd/a2a/help.go
+      date: "2026-11-07"
+    - id: fb-20261107-498d5f
+      kind: bug
+      severity: major
+      title: Dead-pid mirror lock blocks every verb; doctor calls it a missing space
+      verdict: accepted
+      route: backlog
+      refs:
+        - internal/space/mirrorlock.go
+        - internal/space/errors.go
+        - internal/cli/cmd_doctor.go
+      date: "2026-11-07"
+    - id: fb-20261106-28c7e6
+      kind: bug
+      severity: major
+      title: contract activate refused LFC-001 while the fold says activate is owed
+      verdict: accepted
+      route: quick-fix
+      refs:
+        - internal/fold/legality.go
+        - internal/fold/transitionfree.go
+        - internal/pendency/pendency.go
+        - internal/cli/validate_ci_lifecycle.go
+      date: "2026-11-07"
+    - id: fb-20261106-3312bc
+      kind: bug
+      severity: minor
+      title: inbox --actionable and statusline urgent count a settled contract
+      verdict: accepted
+      route: backlog
+      refs:
+        - internal/cache/inbox.go
+        - internal/cache/statusline.go
+        - internal/cache/types.go
+      date: "2026-11-07"
+    - id: fb-20261106-96837b
+      kind: feature
+      severity: major
+      title: flag an item whose owed party writes only notes
+      verdict: accepted
+      route: backlog
+      refs:
+        - internal/cache/inbox.go
+        - internal/cache/reasons.go
+        - internal/cache/outbox.go
+        - internal/cache/mirror.go
+      date: "2026-11-07"
