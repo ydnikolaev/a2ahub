@@ -107,6 +107,16 @@ open item's own `waiting_on` and `expected_transition` for who owes what; read
 page called them one computation, and that sentence was the model defect in one
 line.
 
+To act on one open item, open it with `a2a show <id>`. Besides the body and
+its events it prints what a counterpart must answer against: the item's
+`acceptance_criteria[]`, each as `<id>: <text>` (an entry without an id is
+addressed by its 0-based position, shown as `#0`, `#1`, …; `--verdict` takes
+the bare number),
+and its `expected_response`, as `shape` (what a good answer looks like) and
+`by` (the date it is wanted by). `--json` carries the same two fields. A
+verify or close composes one verdict per criterion, so read them there rather
+than in the space's files.
+
 ## What a state means, and which event produced it
 
 `a2a thread --json` carries the derived-state fields on every artifact —

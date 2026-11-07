@@ -285,10 +285,12 @@ covered:
   #    schema-declared envelope properties (work_request.schema.json /
   #    handoff.schema.json) — see the field:cli-inbox comment above.
   field:cli-show:actor_kind: "reference/actor-identity.md#Two identities, and only one of them is written"
+  field:cli-show:by: "reference/threads.md#Reading one"
   field:cli-show:actor_system: "reference/actor-identity.md#Two identities, and only one of them is written"
   field:cli-show:cause_owner: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
   field:cli-show:expires_at: "reference/data-exchange-refusals.md#What each refusal means, and what to do"
   field:cli-show:reason_code: "loops.md#Condensed §0/§3 semantics"
+  field:cli-show:shape: "reference/threads.md#Reading one"
   field:cli-show:state: "loops.md#Condensed §0/§3 semantics"
   field:cli-show:transition_free: "loops.md#§8.1 Session-start checklist — the guaranteed floor (D-021)"
   field:cli-show:verdict: "loops/send.md#§8.2 Send loop — \"I need something from another system\""
@@ -412,6 +414,7 @@ declared_classes:
       - field:cli-show:lapsed_on
       - field:cli-show:note
       - field:cli-show:subject
+      - field:cli-show:text
       - field:cli-show:ulid
       - field:cli-thread:at
       - field:cli-thread:note
