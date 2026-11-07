@@ -144,6 +144,8 @@ changes:
     at once. The refusal names the holder's pid, whether it is still running,
     and how long it has held the lock. `a2a doctor` says the mirror is locked
     and that the space is intact. On Windows the two-minute rule still applies.
+    A lock file that cannot be read at the moment it is reclaimed is reported
+    as an error rather than skipped.
   action:
     scope: none
     why: >
