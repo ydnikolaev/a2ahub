@@ -67,6 +67,10 @@ type NextMove struct {
 //     A caller presenting "whose move is it" for an announcement must add
 //     that case itself, the same way CheckLegality's dedicated branch
 //     does — never by inventing a row here.
+//     Contract `activate` (P5 AC1) is the same shape: transition-free, no
+//     row, answered by its own CheckCandidateWithSuccessor branch, and
+//     therefore never reported here. Whether it is OWED is pendency's
+//     question (OperationalDebtOwed), which this function cannot see.
 //
 // Rows that share one (Kind, From, Transition) key but differ only in
 // Scenario (unblock's per-pre-block-state documentation rows; decision

@@ -173,6 +173,7 @@ func TestT3ContractActivateThroughRealBinary(t *testing.T) {
 	gitRun(t, arrange, "add", "-A")
 	gitRun(t, arrange, "commit", "-m", "seed: "+contractID+"@1.0.0 publish (wave 37 B33 fixture)")
 	gitRun(t, arrange, "push", "origin", "main")
+	landBase := strings.TrimSpace(gitOutput(t, arrange, "rev-parse", "HEAD"))
 
 	axon.mustRun("sync")
 	mirrorDir := hostRigMirrorDir(axon)
@@ -218,6 +219,33 @@ func TestT3ContractActivateThroughRealBinary(t *testing.T) {
 	}
 	if len(result.Flags) != 0 {
 		t.Fatalf("thread carries %d flags after activate, want 0 (fold refused/flagged the event): %+v", len(result.Flags), result.Flags)
+	}
+
+	// The land's own verdict (fb-20261106-28c7e6). The fold accepting the
+	// event was never the whole question: the merge-time V3 check judges it
+	// pre-write through fold.CheckCandidateWithSuccessor, and that check
+	// had no activate branch, so every activation was refused LFC-001
+	// while this test stayed green on the fold half alone. Run the real
+	// binary's `validate --ci --mode=v3-pr` over exactly the activate
+	// commit, the gate a space's required check runs.
+	landCheckout := filepath.Join(t.TempDir(), "land")
+	gitRun(t, filepath.Dir(landCheckout), "clone", axon.fx.RemoteURL(), landCheckout)
+	// `axon-bot` is the owner login testkit/spacefixture records for axon.
+	code, report, landStderr := ac5RunValidateCI(t, landCheckout, "v3-pr", landBase, "axon-bot")
+	if code != 0 || !report.Valid || ac5CIHasViolation(report, eventPath, "LFC-001") {
+		var refusals []string
+		for _, a := range report.Artifacts {
+			if a.Error != "" {
+				refusals = append(refusals, a.Path+": "+a.Error)
+			}
+			if a.Result != nil {
+				for _, v := range a.Result.Violations {
+					refusals = append(refusals, a.Path+": "+v.Code)
+				}
+			}
+		}
+		t.Fatalf("land refused the owner's activate (exit %d, valid=%v) — the fold owes it, so V3 must accept it\nrefusals: %v\nstderr: %s",
+			code, report.Valid, refusals, landStderr)
 	}
 }
 

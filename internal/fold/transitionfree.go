@@ -46,10 +46,11 @@ func lookupTransitionFree(kind Kind, transition string) (transitionFreeHandler, 
 // Derived from the same handler set Apply itself dispatches on, so the
 // predicate and the behaviour cannot drift apart.
 //
-// Today this is `note` (D-025) and broadcast-acknowledge. The second is
-// why the signature takes a Kind: acknowledge is state-moving on a
-// requirement and transition-free on an announcement, so a name-only
-// answer is wrong for one of the two.
+// Today this is `note` (D-025), broadcast-acknowledge and contract
+// `activate` (P5 AC1). The last two are why the signature takes a Kind:
+// acknowledge is state-moving on a requirement and transition-free on an
+// announcement, so a name-only answer is wrong for one of the two, and
+// activate is modelled on a contract only.
 func TransitionFree(kind Kind, transition string) bool {
 	_, ok := lookupTransitionFree(kind, transition)
 	return ok
