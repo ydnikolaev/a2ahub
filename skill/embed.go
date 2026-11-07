@@ -12,5 +12,9 @@ import "embed"
 // Files is the embedded a2ahub skill tree, rooted at "a2ahub/" (a2ahub/SKILL.md,
 // a2ahub/loops.md, a2ahub/reference/**, …). Consumers walk it via io/fs.
 //
-//go:embed all:a2ahub
+// No `all:` prefix: the tree tracks no dot- or underscore-file, and `all:`
+// would ship whatever the build machine left untracked in it — a Finder
+// .DS_Store reached every consumer repo that way (fb-20261107-3779ff).
+//
+//go:embed a2ahub
 var Files embed.FS

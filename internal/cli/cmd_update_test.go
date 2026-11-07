@@ -104,6 +104,15 @@ func assertSkillTreeMatchesRepo(t *testing.T, repoRoot, target string) {
 		if walkErr != nil {
 			return walkErr
 		}
+		// go:embed without `all:` skips names starting with "." or "_", so
+		// an untracked .DS_Store on the build machine is not part of the
+		// corpus and must not be expected in the install (fb-20261107-3779ff).
+		if p != "." && (strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			return nil
 		}
