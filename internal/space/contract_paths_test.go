@@ -36,6 +36,43 @@ func TestOpenContractCandidateReaderRefusesUnsafeLocations(t *testing.T) {
 	}
 }
 
+func TestOpenContractCandidateReaderMirrorAbsentIsNotInSpace(t *testing.T) {
+	t.Parallel()
+
+	mirror := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(mirror, "devkit", "provides"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loc := ContractCandidateLocation{Path: "devkit/provides/secrets-layout", Source: ContractCandidateSourceMirror}
+	reader, err := OpenContractCandidateReader(mirror, loc)
+	if err == nil {
+		_ = reader.Close()
+		t.Fatal("OpenContractCandidateReader succeeded for an absent contract")
+	}
+	if !errors.Is(err, ErrContractNotInSpace) || errors.Is(err, ErrContractUnsafePath) {
+		t.Fatalf("error = %v, want ErrContractNotInSpace and not ErrContractUnsafePath", err)
+	}
+
+	// A missing staging directory is not a "submit first" case.
+	loc.Source = ContractCandidateSourceStaging
+	if reader, err = OpenContractCandidateReader(mirror, loc); err == nil {
+		_ = reader.Close()
+		t.Fatal("staging open succeeded")
+	}
+	if errors.Is(err, ErrContractNotInSpace) || !errors.Is(err, ErrContractUnsafePath) {
+		t.Fatalf("staging error = %v, want ErrContractUnsafePath only", err)
+	}
+
+	// A symlinked mirror contract stays unsafe.
+	if err := os.Symlink(t.TempDir(), filepath.Join(mirror, "devkit", "provides", "linked")); err != nil {
+		t.Fatal(err)
+	}
+	loc = ContractCandidateLocation{Path: "devkit/provides/linked", Source: ContractCandidateSourceMirror}
+	if _, err = OpenContractCandidateReader(mirror, loc); !errors.Is(err, ErrContractUnsafePath) || errors.Is(err, ErrContractNotInSpace) {
+		t.Fatalf("symlink error = %v, want ErrContractUnsafePath only", err)
+	}
+}
+
 func TestContractCandidateReaderRefusesConfiguredPathReplacement(t *testing.T) {
 	t.Parallel()
 

@@ -3,6 +3,7 @@ package contractwiring
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"path"
 
@@ -53,6 +54,9 @@ func FreezePublicationCandidate(ctx context.Context, ownSystem, projectRoot, mir
 	}
 	mirrorReader, err := space.OpenContractCandidateReader(mirrorDir, space.ContractCandidateLocation{Path: contractRoot, Source: space.ContractCandidateSourceMirror})
 	if err != nil {
+		if errors.Is(err, space.ErrContractNotInSpace) {
+			return nil, contract.CandidateSource{}, fmt.Errorf("contract %s is not in the space yet: submit its draft first (a2a submit <path-to-draft>)", contractID)
+		}
 		return nil, contract.CandidateSource{}, err
 	}
 	mirrorFrozen, freezeErr := space.NewFrozenContractPublicationCandidate(ctx, mirrorReader, space.ContractPublicationMirrorTree{

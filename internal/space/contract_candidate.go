@@ -181,6 +181,9 @@ func OpenContractCandidateReader(configuredRoot string, location ContractCandida
 		display := path.Join(components[:index+1]...)
 		child, info, openErr := openContractDirectory(parent, component, display, nil)
 		if openErr != nil {
+			if location.Source == ContractCandidateSourceMirror && errors.Is(openErr, os.ErrNotExist) {
+				openErr = fmt.Errorf("%w: no directory at %q", ErrContractNotInSpace, display)
+			}
 			if parent != configured {
 				_ = parent.Close() // reason: preserve the unsafe-component error
 			}

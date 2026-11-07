@@ -16,6 +16,13 @@ var (
 	// ErrContractUnsafePath is part of the public package API.
 	ErrContractUnsafePath = errors.New("space: contract path is not safely contained")
 
+	// ErrContractNotInSpace means the mirror holds no directory at a contract's
+	// location: the contract was never submitted to the space. It is returned
+	// only for the mirror source; an absent staging directory stays
+	// ErrContractUnsafePath because "submit first" would be the wrong advice.
+	// ErrContractNotInSpace is part of the public package API.
+	ErrContractNotInSpace = errors.New("space: contract is not in the space")
+
 	// ErrContractUnsafeEntry means a candidate or historical carried leaf is
 	// a symlink, submodule, device, socket, pipe, or otherwise non-regular.
 	// ErrContractUnsafeEntry is part of the public package API.

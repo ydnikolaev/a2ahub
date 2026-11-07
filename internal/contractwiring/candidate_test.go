@@ -12,6 +12,27 @@ import (
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
+func TestFreezePublicationCandidateNamesSubmitWhenContractNotInSpace(t *testing.T) {
+	t.Parallel()
+
+	mirrorDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mirrorDir, "README.md"), []byte("space\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	runFixtureGit(t, mirrorDir, "init", "-q")
+	runFixtureGit(t, mirrorDir, "add", "-A")
+	runFixtureGit(t, mirrorDir, "commit", "-q", "-m", "seed")
+
+	_, _, err := FreezePublicationCandidate(context.Background(), "devkit", "", mirrorDir, "XC-devkit-secrets-layout", "")
+	if err == nil {
+		t.Fatal("FreezePublicationCandidate succeeded for a contract absent from the space")
+	}
+	want := "contract XC-devkit-secrets-layout is not in the space yet: submit its draft first (a2a submit <path-to-draft>)"
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
+
 // TestFreezePublicationCandidateFreezesMirrorCandidate exercises
 // FreezePublicationCandidate's no-staging branch against a real one-commit
 // git mirror — the same production path cmd/a2a's contractP6Core.publish
