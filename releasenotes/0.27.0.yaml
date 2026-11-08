@@ -151,7 +151,7 @@ changes:
       A GitHub space picks the fix up with `a2a space update` after this
       release, which moves its workflow pin. A pull request already refused
       this way can be re-run once the pin moves; nothing in it needs an edit.
-    detect: ["a2a space update --dry-run"]
+    detect: ["a2a space update --check"]
     run: ["a2a space update"]
   roadmap:
     visibility: omit
@@ -182,7 +182,7 @@ changes:
     why: >
       A GitHub space picks the fix up with `a2a space update` after this
       release. No artifact already merged is judged again.
-    detect: ["a2a space update --dry-run"]
+    detect: ["a2a space update --check"]
     run: ["a2a space update"]
   roadmap:
     visibility: omit

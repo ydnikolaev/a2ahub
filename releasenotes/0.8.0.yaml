@@ -142,7 +142,7 @@ changes:
     action:
       scope: space
       why: "your space's CI resolves the validator through the workflow it pins; re-pin to this release"
-      detect: ["a2a space update --dry-run"]
+      detect: ["a2a space update --check"]
       run: ["a2a space update"]
 
   - id: RN-0800-6b

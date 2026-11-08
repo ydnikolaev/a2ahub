@@ -60,7 +60,7 @@ changes:
     action:
       scope: space
       why: "the merge-time half of the check only reaches your space once its reusable-workflow ref points at 0.7.0 or later"
-      detect: ["a2a space update --dry-run"]
+      detect: ["a2a space update --check"]
       run: ["a2a space update"]
 
   - id: RN-0700-4
@@ -189,7 +189,7 @@ changes:
     action:
       scope: space
       why: "the floor only reaches a space when its space.yaml is updated; every participant must be on 0.7.0 first"
-      detect: ["a2a doctor", "a2a space update --dry-run"]
+      detect: ["a2a doctor", "a2a space update --check"]
       run: ["a2a update", "a2a space update"]
 
   - id: RN-0700-11

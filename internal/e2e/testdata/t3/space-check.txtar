@@ -1,0 +1,31 @@
+# `a2a space update --check` is the detect the release notes run for "is the
+# space current". A dry run exits 0 with a diff pending, and with no --space
+# it refused a project connected to two spaces, so the detect could neither
+# pass there nor ever catch a space that was behind (fucktory, 2026-11-08).
+# --check judges every connected space when none is named; the write keeps
+# refusing an ambiguous project.
+exec a2a space init one --local --dir spaces/one.git
+exec a2a space init two --local --dir spaces/two.git
+rm -r .a2a
+exec a2a init --system axon --space $WORK/spaces/one.git --no-skill --no-skill-link --no-agents-pointer
+exec a2a connect spaces/two.git
+
+# Both spaces were scaffolded at this harness binary's floor, which is below
+# the embedded template's, so both are behind and --check names each one.
+! exec a2a space update --check
+stderr 'space update: one is behind the embedded template'
+stderr 'space update: two is behind the embedded template'
+
+# Bring one up to date: --check on it now clears, and the bare check still
+# fails, on two alone.
+exec a2a space update --space one --approve
+exec a2a space update --check --space one
+stdout 'space update: one is already current'
+! exec a2a space update --check
+stdout 'space update: one is already current'
+stderr 'space update: two is behind the embedded template'
+! stderr 'space update: one is behind'
+
+# The write itself still refuses to pick a space.
+! exec a2a space update --dry-run
+stderr '2 connected spaces — name one with --space <id>'

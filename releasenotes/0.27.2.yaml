@@ -309,3 +309,28 @@ changes:
     visibility: omit
     why: >
       An advisory on an existing mechanism; it changes no plan.
+- id: RN-02702-12
+  kind: fix
+  impact: normal
+  subject: adapt's "is the space current" check works, and works with two spaces
+  detail: >
+    Nine release notes check whether a space is current with `a2a space
+    update --dry-run`, and a detect passes when its command exits 0. A dry
+    run exits 0 even with a diff pending, so the check passed for a space
+    that was behind and fired only on an error. In a repository connected to
+    two spaces it always exited 1 ("name one with --space"), so `a2a adapt
+    --done` refused there however current the spaces were.
+
+    `a2a space update --check` is a dry run that exits 1 while the space is
+    behind and names it on stderr. With no `--space` it checks every
+    connected space. Those nine notes now use it. The write still refuses a
+    project with two spaces until you name one.
+  action:
+    scope: none
+    why: >
+      Nothing to do. If `a2a adapt --done` refused before because of this
+      check, run it again.
+  roadmap:
+    visibility: omit
+    why: >
+      A fix to an existing check; it changes no plan.

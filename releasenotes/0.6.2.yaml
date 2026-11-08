@@ -19,7 +19,7 @@ changes:
     action:
       scope: space
       why: "every participant in a space you own must be on 0.6.2+ before the floor lands, or their writes will be refused"
-      detect: ["a2a doctor", "a2a space update --dry-run"]
+      detect: ["a2a doctor", "a2a space update --check"]
       run: ["a2a update", "a2a space update"]
   - id: RN-0602-2
     kind: fix

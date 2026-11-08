@@ -763,6 +763,41 @@ func TestSpaceUpdateAlreadyCurrentIsNoop(t *testing.T) {
 	if !strings.Contains(out.String(), "already current") {
 		t.Errorf("stdout = %q, want it to say the space is already current", out.String())
 	}
+
+	// --check over a current space is the detect that clears.
+	io, out, errOut = newSpaceIO()
+	if code := cmd.Run(context.Background(), []string{"update", "--check"}, io); code != 0 {
+		t.Fatalf("--check over a current space: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+}
+
+// A dry run exits 0 with a diff pending, so a detect built on it passed for a
+// space that was behind. --check is the same read-only plan whose exit code
+// says the space is behind, and it still writes nothing.
+func TestSpaceUpdateCheckFailsWhileBehind(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	spaceUpdateSeedMirror(t, mirrorDir)
+	funnel := &fakeSubmitFunnel{}
+	cmd := spaceUpdateFullyWiredCommand(spaceUpdateTemplateFS(), mirrorDir, funnel, "9.9.9")
+
+	io, out, errOut := newSpaceIO()
+	code := cmd.Run(context.Background(), []string{"update", "--check"}, io)
+	if code != 1 {
+		t.Fatalf("--check over a behind space: code = %d, want 1; stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if len(funnel.calls) != 0 {
+		t.Errorf("funnel.calls = %d, want 0 for --check", len(funnel.calls))
+	}
+	if !strings.Contains(out.String(), "add .github/workflows/a2a-validate.yml") {
+		t.Errorf("--check must still print the plan; stdout=%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "is behind the embedded template") {
+		t.Errorf("stderr = %q, want it to say the space is behind", errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(mirrorDir, ".github", "workflows", "a2a-validate.yml")); err == nil {
+		t.Error("--check wrote the workflow file")
+	}
 }
 
 // TestSpaceUpdateFloorIsBinaryVersionIndependent pins the convergence

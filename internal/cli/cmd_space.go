@@ -158,7 +158,7 @@ func (c *SpaceCommand) Name() string { return "space" }
 
 // Synopsis implements cli.Command.
 func (c *SpaceCommand) Synopsis() string {
-	return "space scaffolding: init <space-id> [--local] [--gates <confirm|autonomous>] [--flow <full|express>] [--dir <path>] | update [--space <id>] [--dry-run] [--wait] [--approve] | join [--space <id>] [--approve] [--json] | set <gates|flow> <value> [--space <id>] [--approve] | delete --local <space-id> [--dir <path>] [--approve] — write/migrate a space tree from the embedded template, or create a local space, join it, set its policy and delete it"
+	return "space scaffolding: init <space-id> [--local] [--gates <confirm|autonomous>] [--flow <full|express>] [--dir <path>] | update [--space <id>] [--dry-run|--check] [--wait] [--approve] | join [--space <id>] [--approve] [--json] | set <gates|flow> <value> [--space <id>] [--approve] | delete --local <space-id> [--dir <path>] [--approve] — write/migrate a space tree from the embedded template, or create a local space, join it, set its policy and delete it"
 }
 
 // Run implements cli.Command.
@@ -980,25 +980,35 @@ func spaceUpdatePRBody(owner, name, baseBranch string) string {
 	return b.String()
 }
 
-// runUpdate implements `a2a space update [--space <id>] [--dry-run] [--wait]` (spec
+// runUpdate implements `a2a space update [--space <id>] [--dry-run|--check] [--wait]` (spec
 // 35): diff the connected space's scaffolding against the embedded
 // template, print it, and (without --dry-run) submit it through the
 // existing write funnel with AllowSpaceInfrastructure set. Exit codes:
 // 2 = usage error; 1 = not wired / version guard / diff error / funnel
-// error; 0 = success (including the idempotent already-current no-op).
+// error, or under --check a space that is behind; 0 = success (including
+// the idempotent already-current no-op).
+//
+// --check is --dry-run whose exit code answers "is this space current?".
+// A dry run exits 0 with a diff pending, so the release notes' detect
+// `a2a space update --dry-run` passed for a space that was behind and fired
+// only on an error; --check is what those detects run instead.
 func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) int {
 	fset := flag.NewFlagSet("space update", flag.ContinueOnError)
 	fset.SetOutput(stdio.Stderr)
 	spaceFlag := fset.String("space", "", "space id (defaults to the connected space)")
 	dryRun := fset.Bool("dry-run", false, "print the scaffolding diff without writing or pushing")
+	check := fset.Bool("check", false, "like --dry-run, and exit 1 while the space is behind the embedded template")
 	wait := fset.Bool("wait", false, "after opening the PR, poll until it merges and then refresh the local mirror")
 	approve := fset.Bool("approve", false, "approve the manifest change (G4) this update makes (confirm spaces)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
 	if fset.NArg() > 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space update [--space <id>] [--dry-run] [--wait] [--approve]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space update [--space <id>] [--dry-run|--check] [--wait] [--approve]")
 		return 2
+	}
+	if *check {
+		*dryRun = true
 	}
 	if code, refused := gateApproveHasNoEffect(stdio, "space update", *approve, c.Caps.ReviewsWrites); refused {
 		return code
@@ -1097,6 +1107,10 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 			_, _ = fmt.Fprintf(stdio.Stdout, "space update: WOULD BE REFUSED — %s\n", scopeRefusal)
 		}
 		_, _ = fmt.Fprintln(stdio.Stdout, "space update: --dry-run — no files written, nothing pushed")
+		if *check {
+			_, _ = fmt.Fprintf(stdio.Stderr, "space update: %s is behind the embedded template — run `a2a space update --space %s`\n", c.SpaceID, c.SpaceID)
+			return 1
+		}
 		return 0
 	}
 

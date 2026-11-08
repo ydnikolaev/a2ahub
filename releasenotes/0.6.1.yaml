@@ -23,5 +23,5 @@ changes:
     action:
       scope: local
       why: "if you ran `a2a space update` on 0.6.0 and it offered to add a root CODEOWNERS, drop that file from the PR — or re-run the dry-run on 0.6.1"
-      detect: ["a2a space update --dry-run"]
+      detect: ["a2a space update --check"]
       run: ["a2a update"]

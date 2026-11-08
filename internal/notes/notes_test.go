@@ -666,3 +666,25 @@ func TestParseReleaseNotesRefusesAMalformedReleasedValue(t *testing.T) {
 		})
 	}
 }
+
+// A detect passes when its command exits 0. `a2a space update --dry-run`
+// exits 0 with a diff pending and refuses a project connected to two spaces,
+// so as a detect it never caught a space that was behind and could never
+// clear in a multi-space repository (fucktory, 2026-11-08). `--check` is the
+// spelling whose exit code answers the question.
+func TestNoDetectRunsASpaceUpdateDryRun(t *testing.T) {
+	t.Parallel()
+	all, err := Load(releasenotes.FS)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, rn := range all {
+		for _, ch := range rn.Changes {
+			for _, cmd := range ch.Action.Detect {
+				if strings.Contains(cmd, "space update") && strings.Contains(cmd, "--dry-run") {
+					t.Errorf("%s %s: detect %q exits 0 while the space is behind; use `a2a space update --check`", rn.Version, ch.ID, cmd)
+				}
+			}
+		}
+	}
+}

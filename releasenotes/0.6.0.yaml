@@ -42,7 +42,7 @@ changes:
     action:
       scope: space
       why: "if you own a space created before the reusable-workflow CI, this is now the supported way to migrate it"
-      detect: ["a2a space update --dry-run"]
+      detect: ["a2a space update --check"]
       run: ["a2a space update"]
   - id: RN-0600-3
     kind: fix

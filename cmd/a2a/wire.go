@@ -183,6 +183,13 @@ func buildCommands() map[string]command {
 	// to THIS binary's release, so a scaffolded space can never reference a
 	// version that predates the workflow.
 	m["space"] = func(args []string, stdout, stderr io.Writer) int {
+		// `space update --check` with no --space judges every connected space:
+		// it is read-only, and it is what the release notes' detects run, so
+		// a repository connected to two spaces must not fail it for being
+		// ambiguous. The write keeps refusing an ambiguous project.
+		if ids := spacesToCheck(args); len(ids) > 1 {
+			return checkEverySpace(m["space"], ids, args, stdout, stderr)
+		}
 		cmd := cli.NewSpaceCommand(spacetemplate.Files, version)
 		// `space init` is config-free by design (it scaffolds a tree that
 		// does not exist yet). `space update` reconciles a CONNECTED space,
@@ -1953,6 +1960,57 @@ func wireSpaceWrite(ctx context.Context, cmd *cli.SpaceCommand, verb string, arg
 		})
 	}
 	return nil
+}
+
+// spacesToCheck returns the connected space ids `space update --check` must
+// judge one by one: all of them, when the call names no --space. Anything
+// else, including a config that will not load, returns nil and the call
+// takes the single-space path, which reports the real error.
+func spacesToCheck(args []string) []string {
+	if len(args) == 0 || args[0] != "update" || !boolFlagSet(args[1:], "check") || spaceFlagValue(args[1:]) != "" {
+		return nil
+	}
+	p, err := resolvePaths()
+	if err != nil {
+		return nil
+	}
+	cfg, err := space.LoadProjectConfig(p.projectConfig)
+	if err != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(cfg.Spaces))
+	for _, ref := range cfg.Spaces {
+		ids = append(ids, ref.ID)
+	}
+	return ids
+}
+
+// checkEverySpace runs the same call once per space with --space added and
+// returns the worst exit code, so one space behind fails the check.
+func checkEverySpace(run func([]string, io.Writer, io.Writer) int, ids, args []string, stdout, stderr io.Writer) int {
+	worst := 0
+	for _, id := range ids {
+		call := append(append([]string{}, args...), "--space", id)
+		if code := run(call, stdout, stderr); code > worst {
+			worst = code
+		}
+	}
+	return worst
+}
+
+// boolFlagSet reports whether a boolean flag is set true in args, in any of
+// the spellings flag.FlagSet accepts.
+func boolFlagSet(args []string, name string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		switch a {
+		case "-" + name, "--" + name, "-" + name + "=true", "--" + name + "=true":
+			return true
+		}
+	}
+	return false
 }
 
 // spaceFlagValue peeks `--space <id>` / `--space=<id>` out of the sub-verb's

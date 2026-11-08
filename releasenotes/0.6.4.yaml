@@ -25,5 +25,5 @@ changes:
     action:
       scope: space
       why: "your space CI keeps checking the wrong identity until its reusable-workflow ref points at 0.6.4 or later"
-      detect: ["a2a space update --dry-run"]
+      detect: ["a2a space update --check"]
       run: ["a2a space update"]
