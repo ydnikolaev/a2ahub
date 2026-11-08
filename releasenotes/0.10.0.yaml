@@ -80,6 +80,7 @@ changes:
       scope: space
       why: "the check arrives per-space when the space re-pins the reusable workflow — until then its manifest is still unchecked at merge"
       run: ["a2a space update"]
+      detect: ["a2a space update --check"]
 
   - id: RN-01000-3
     kind: fix
@@ -237,6 +238,7 @@ changes:
       scope: space
       why: "until the space raises min_binary_version to 0.10.0 nothing stamps and nothing is required — one `a2a space update` re-pins the validator and raises the floor together"
       run: ["a2a update", "a2a space update"]
+      detect: ["a2a space update --check"]
 
   - id: RN-01000-8
     kind: fix
@@ -315,6 +317,7 @@ changes:
       scope: space
       why: "the check arrives per-space when the space re-pins the reusable workflow"
       run: ["a2a space update"]
+      detect: ["a2a space update --check"]
   - id: RN-01000-11
     kind: fix
     impact: normal

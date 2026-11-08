@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -76,8 +77,10 @@ func TestPending_RealCorpusMeasurement(t *testing.T) {
 	if space != 12 {
 		t.Errorf("space obligations = %d, want 12", space)
 	}
-	if withDetect != 4 {
-		t.Errorf("obligations carrying a detect: = %d, want 4", withDetect)
+	// 4 at the measurement; the 2026-11-08 detect retrofit added a probe to
+	// RN-01906-3 and RN-01908-2 and removed RN-02506-5's non-probe.
+	if withDetect != 5 {
+		t.Errorf("obligations carrying a detect: = %d, want 5", withDetect)
 	}
 	if withRun != 8 {
 		t.Errorf("obligations carrying a runnable run: = %d, want 8 (spec's own count; a lead recount during this phase reported 6 — this test's own count, driven through Pending, is 8)", withRun)
@@ -521,6 +524,63 @@ func TestNoNewTemplateDetects(t *testing.T) {
 	for _, id := range legacyTemplateDetects {
 		if !found[id] {
 			t.Errorf("%s no longer carries a template detect: delete it from legacyTemplateDetects", id)
+		}
+	}
+}
+
+// mutatingDetect matches a detect that invokes an a2a verb which writes
+// (to the repository, the mirror, the space, or the read cursor: `inbox`
+// advances it) or which never exits on its own (`mcp` serves stdio until
+// its client hangs up). `a2a adapt --done` runs every detect in the reader's tree,
+// so such a command would perform the step it claims to probe, or a
+// different one, and report the obligation as met. A read-only form
+// (`a2a space update --check`) is a different command: invokesWriter
+// exempts it.
+var mutatingDetect = regexp.MustCompile(`(^|[;&|(!]\s*|\s)a2a\s+(init|new|submit|respond|update|sync|connect|inbox|close|verify|dispute|land|mcp|html|notifications|skill\s+(install|link)|contract\s+(publish|adopt|retire|deprecate|new)|space\s+update)($|[\s;&|)])`)
+
+// TestNoDetectInvokesAWriter is the forward gate for the side-effect class:
+// no runnable detect: in the embedded corpus may call a writing verb. A
+// template is exempt because it is never run (TestNoNewTemplateDetects
+// guards that class).
+func TestNoDetectInvokesAWriter(t *testing.T) {
+	t.Parallel()
+	all, err := Load(releasenotes.FS)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, rn := range all {
+		for _, ch := range rn.Changes {
+			for _, cmd := range ch.Action.Detect {
+				if IsTemplateDetect(cmd) || !invokesWriter(cmd) {
+					continue
+				}
+				t.Errorf("%s (%s): detect %q invokes an a2a verb that writes or never exits: `a2a adapt --done` would run it in the reader's tree. Write a read-only probe, or remove the detect and add an exemption row to scripts/lib/release-note-detect-budget.txt.", ch.ID, rn.Version, cmd)
+			}
+		}
+	}
+}
+
+func invokesWriter(cmd string) bool {
+	return mutatingDetect.MatchString(strings.ReplaceAll(cmd, "space update --check", "space check"))
+}
+
+func TestInvokesWriter(t *testing.T) {
+	t.Parallel()
+	for cmd, want := range map[string]bool{
+		"a2a init":                       true,
+		"a2a inbox --json | grep -q x":   true,
+		"a2a sync && a2a inbox":          true,
+		"a2a skill install":              true,
+		"a2a contract publish x":         true,
+		"a2a space update":               true,
+		"a2a validate --all":             false,
+		"a2a doctor":                     false,
+		"! a2a --version | grep -q 0.26": false,
+		"grep -q 'a2a sync' Makefile":    false,
+		"a2a show RN-1":                  false,
+	} {
+		if got := invokesWriter(cmd); got != want {
+			t.Errorf("invokesWriter(%q) = %v, want %v", cmd, got, want)
 		}
 	}
 }

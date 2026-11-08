@@ -218,7 +218,6 @@ changes:
     action:
       scope: none
       why: "nothing to run — prefer the CLI for reads and for `contract publish`; the MCP write tools are fine"
-      detect: ["a2a inbox"]
 
   - id: RN-0800-9
     kind: policy

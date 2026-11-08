@@ -119,3 +119,4 @@ changes:
         Re-run `a2a skill install` (or `a2a skill link`) so the installed manual
         carries the corrected contract page and the new authoring section.
       run: ["a2a skill install"]
+      detect: ["! a2a doctor 2>/dev/null | grep -q '^skill manual current: FAIL'"]

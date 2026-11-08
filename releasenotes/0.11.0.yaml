@@ -200,7 +200,7 @@ changes:
         counterparty on an older binary can still merge what your side
         would refuse. Bumping the pin is the whole remedy.
       detect:
-        - "grep a2a-validate-reusable .github/workflows/a2a-validate.yml   # in the SPACE repo"
+        - "a2a space update --check"
       run:
         - "a2a space update"
         - "a2a doctor"
@@ -244,8 +244,6 @@ changes:
         compatibility shim: a surface that answers to two different sets of
         names depending on connection state is worse than a named break,
         and this product is pre-1.0.
-      detect:
-        - "a2a mcp   # tools/list in a repo with no connected space"
 
   - id: RN-01100-8
     kind: known-issue

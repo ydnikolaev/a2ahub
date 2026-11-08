@@ -112,8 +112,6 @@ changes:
         Both steps are yours to apply, once per participating repo. Skipping
         them is the commonest reason a space goes quiet while both sides
         believe they are waiting on the other.
-      detect:
-        - "a2a init   # the closing advice names both steps"
 
   - id: RN-01200-4
     kind: fix

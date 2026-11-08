@@ -49,6 +49,6 @@ changes:
       because the cohort manifest that binds them is not attached to either
       release. Everything else about both releases is intact.
     detect:
-    - a2a --version | grep -qE '0\.26\.(0|1)'
+    - "! a2a --version 2>/dev/null | grep -qE '^a2a 0\\.26\\.[01]( |$)'"
     run:
     - a2a update

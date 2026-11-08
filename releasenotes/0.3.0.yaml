@@ -17,7 +17,7 @@ changes:
     action:
       scope: space
       why: "anything you tried to publish before and could not can now be re-submitted"
-      detect: ["a2a validate --ci"]
+      detect: ["a2a validate --all"]
       run: ["a2a submit <path>"]
   - id: RN-0300-2
     kind: feat
@@ -46,7 +46,7 @@ changes:
     action:
       scope: space
       why: "your space's consumes.yaml files must be schema-shaped or V3 reds them"
-      detect: ["a2a validate --ci"]
+      detect: ["for s in $(sed -n 's/^ *- id: *//p' .a2a/config.yaml); do a2a validate --ci --mode=v3-full-repo --space \"$s\" >/dev/null 2>&1 || exit 1; done"]
       run: ["a2a contract adopt <XC-id>"]
   - id: RN-0300-4
     kind: fix

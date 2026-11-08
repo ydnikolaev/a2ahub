@@ -39,7 +39,7 @@ changes:
       that release carries no cohort manifest, so the companion cannot be
       resolved or verified from it. Everything else about v0.26.0 is intact.
     detect:
-    - a2a --version | grep -q '0\.26\.0'
+    - "! a2a --version 2>/dev/null | grep -qE '^a2a 0\\.26\\.0( |$)'"
     run:
     - a2a update
 - id: RN-02601-1

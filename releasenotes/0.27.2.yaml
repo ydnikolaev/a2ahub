@@ -403,3 +403,34 @@ changes:
     visibility: omit
     why: >
       A correction to the adoption verb's refusal; it changes no plan.
+- id: RN-02702-15
+  kind: fix
+  impact: high
+  subject: a2a adapt --done no longer runs released detects that were inverted, that write, or that never exit
+  detail: >
+    A detect exits 0 once its step is done, and `--done` runs it in your
+    tree. Fourteen released detects broke that. Five were inverted, passing
+    only in the state they warn about: RN-02507-0, RN-02507-1, RN-02507-7,
+    RN-02601-0 and RN-02602-0. Four checked something else, or a file in the
+    space repository rather than yours: RN-02506-2, RN-0300-1, RN-0300-3 and
+    RN-01100-6. Five ran a verb that is no probe at all. `a2a init` in
+    RN-01200-3 rewrites the project, `a2a inbox` in RN-0400-2 and RN-02507-2
+    moves your read cursor, `a2a mcp` in RN-01100-7 serves stdio and never
+    returns, and `tools/list` in RN-02506-5 is not a command. So `--done`
+    refused a repository that owed nothing, or hung.
+
+    Each now carries a read-only probe of the right polarity, or none where
+    no honest probe exists, and its obligation is then recorded on the
+    agent's word. Seven obligations that had no detect gained one: `a2a space
+    update --check` for a space's re-pinned workflow, and the doctor's
+    `skill manual current` row for a re-installed skill. A test now refuses
+    any new detect that runs a writing or long-running `a2a` verb.
+  action:
+    scope: none
+    why: >
+      Nothing to run. A `--done` that refused or hung on one of these ids
+      completes on the next run.
+  roadmap:
+    visibility: omit
+    why: >
+      Corrected probes inside released notes; no verb or flag changes.

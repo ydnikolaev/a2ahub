@@ -85,7 +85,7 @@ changes:
       few systems, will now be refused at submit where it previously passed. Fix
       the field the refusal names.
     detect:
-    - a2a validate
+    - a2a validate --all
 - id: RN-02506-3
   kind: fix
   impact: normal
@@ -163,8 +163,6 @@ changes:
       naming the field. That is the point of the change, but it is a behaviour
       change: a new field must ship in the binary before a client may send it,
       so client rollout couples to `min_binary_version`.
-    detect:
-    - tools/list
 - id: RN-02506-6
   kind: feat
   impact: normal

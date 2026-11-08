@@ -46,7 +46,7 @@ changes:
       the oldest release this binary carries and says so. Run it once, do the
       work it names, and record it.
     detect:
-    - test -f .a2a/config.yaml && ! grep -q '^adapted_through:' .a2a/config.yaml
+    - "! test -f .a2a/config.yaml || grep -q '^adapted_through:' .a2a/config.yaml"
     run:
     - a2a adapt
 - id: RN-02507-1
@@ -76,7 +76,7 @@ changes:
       `--version` without `--staging` will now be refused wherever a staging
       tree exists. The refusal names the flag to add.
     detect:
-    - grep -rn 'contract publish' --include=Makefile --include=*.sh . 2>/dev/null | grep -v -- '--staging' | grep -q .
+    - "! grep -rnE 'a2a +contract +publish' --include=Makefile --include=*.sh . 2>/dev/null | grep -v -- '--staging' | grep -q ."
     run:
     - a2a contract publish <id> --bump minor --staging .a2a/staging/<system>/provides/<slug>
 - id: RN-02507-2
@@ -109,8 +109,6 @@ changes:
       A thread whose response was filed before this release may already be
       stranded — the response exists, the parent never moved. Repair it once
       per affected thread; nothing repairs itself.
-    detect:
-    - a2a inbox --json | grep -q '"kind":"response"'
     run:
     - a2a respond --response <RS-id>
 - id: RN-02507-3
@@ -281,7 +279,7 @@ changes:
       verb resolves the layout, the versions and every connected space itself,
       and the three things such scripts get wrong are the three it fixes.
     detect:
-    - grep -rl 'verify-export' --include='*.sh' --include='Makefile' . 2>/dev/null | head -1 | grep -q .
+    - "! grep -rl 'verify-export' --include='*.sh' --include='Makefile' . 2>/dev/null | grep -q ."
     run:
     - a2a contract verify-published
 - id: RN-02507-8

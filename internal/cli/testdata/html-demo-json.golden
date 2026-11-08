@@ -3227,7 +3227,7 @@
             "scope": "space",
             "why": "anything you tried to publish before and could not can now be re-submitted",
             "detect": [
-              "a2a validate --ci"
+              "a2a validate --all"
             ],
             "run": [
               "a2a submit \u003cpath\u003e"
@@ -3261,7 +3261,7 @@
             "scope": "space",
             "why": "your space's consumes.yaml files must be schema-shaped or V3 reds them",
             "detect": [
-              "a2a validate --ci"
+              "for s in $(sed -n 's/^ *- id: *//p' .a2a/config.yaml); do a2a validate --ci --mode=v3-full-repo --space \"$s\" \u003e/dev/null 2\u003e\u00261 || exit 1; done"
             ],
             "run": [
               "a2a contract adopt \u003cXC-id\u003e"
@@ -3330,9 +3330,6 @@
           "action": {
             "scope": "local",
             "why": "re-run sync once on 0.4.0 to finally see everything other systems published since your clone",
-            "detect": [
-              "a2a inbox"
-            ],
             "run": [
               "a2a sync"
             ]
@@ -3963,10 +3960,7 @@
           ],
           "action": {
             "scope": "none",
-            "why": "nothing to run — prefer the CLI for reads and for `contract publish`; the MCP write tools are fine",
-            "detect": [
-              "a2a inbox"
-            ]
+            "why": "nothing to run — prefer the CLI for reads and for `contract publish`; the MCP write tools are fine"
           }
         },
         {
@@ -4219,6 +4213,9 @@
           "action": {
             "scope": "space",
             "why": "the check arrives per-space when the space re-pins the reusable workflow — until then its manifest is still unchecked at merge",
+            "detect": [
+              "a2a space update --check"
+            ],
             "run": [
               "a2a space update"
             ]
@@ -4306,6 +4303,9 @@
           "action": {
             "scope": "space",
             "why": "until the space raises min_binary_version to 0.10.0 nothing stamps and nothing is required — one `a2a space update` re-pins the validator and raises the floor together",
+            "detect": [
+              "a2a space update --check"
+            ],
             "run": [
               "a2a update",
               "a2a space update"
@@ -4356,6 +4356,9 @@
           "action": {
             "scope": "space",
             "why": "the check arrives per-space when the space re-pins the reusable workflow",
+            "detect": [
+              "a2a space update --check"
+            ],
             "run": [
               "a2a space update"
             ]
@@ -4582,7 +4585,7 @@
             "scope": "space",
             "why": "A space pinned to a tag before v0.11.0 keeps running that tag's `a2a-ref` default until its workflow pin moves. Until it does, your gate is not enforcing the rules this binary refuses locally — so a counterparty on an older binary can still merge what your side would refuse. Bumping the pin is the whole remedy.\n",
             "detect": [
-              "grep a2a-validate-reusable .github/workflows/a2a-validate.yml   # in the SPACE repo"
+              "a2a space update --check"
             ],
             "run": [
               "a2a space update",
@@ -4603,10 +4606,7 @@
           ],
           "action": {
             "scope": "local",
-            "why": "If you called `a2a_inbox` (or the other five) against a session with no connected space, use `a2a_read` with `view: \"inbox\"` — the same call you already make once a space IS connected. There is no compatibility shim: a surface that answers to two different sets of names depending on connection state is worse than a named break, and this product is pre-1.0.\n",
-            "detect": [
-              "a2a mcp   # tools/list in a repo with no connected space"
-            ]
+            "why": "If you called `a2a_inbox` (or the other five) against a session with no connected space, use `a2a_read` with `view: \"inbox\"` — the same call you already make once a space IS connected. There is no compatibility shim: a surface that answers to two different sets of names depending on connection state is worse than a named break, and this product is pre-1.0.\n"
           }
         },
         {
@@ -4679,10 +4679,7 @@
           ],
           "action": {
             "scope": "local",
-            "why": "Both steps are yours to apply, once per participating repo. Skipping them is the commonest reason a space goes quiet while both sides believe they are waiting on the other.\n",
-            "detect": [
-              "a2a init   # the closing advice names both steps"
-            ]
+            "why": "Both steps are yours to apply, once per participating repo. Skipping them is the commonest reason a space goes quiet while both sides believe they are waiting on the other.\n"
           }
         },
         {
@@ -5014,6 +5011,9 @@
           "action": {
             "scope": "space",
             "why": "Spaces receive this protection after updating their reusable validation workflow pin to this release.\n",
+            "detect": [
+              "a2a space update --check"
+            ],
             "run": [
               "a2a space update"
             ]
@@ -5377,6 +5377,9 @@
           "action": {
             "scope": "local",
             "why": "Refresh the installed skill. MCP agents may keep using typed reads for decision-bearing loops; react only when the server reports a failed pre-call refresh.\n",
+            "detect": [
+              "! a2a doctor 2\u003e/dev/null | grep -q '^skill manual current: FAIL'"
+            ],
             "run": [
               "a2a skill install"
             ]
@@ -6668,6 +6671,9 @@
           "action": {
             "scope": "local",
             "why": "Re-run `a2a skill install` (or `a2a skill link`) so the installed manual carries the corrected contract page and the new authoring section.\n",
+            "detect": [
+              "! a2a doctor 2\u003e/dev/null | grep -q '^skill manual current: FAIL'"
+            ],
             "run": [
               "a2a skill install"
             ]
@@ -6814,6 +6820,9 @@
           "action": {
             "scope": "local",
             "why": "Re-run `a2a skill install` (or `a2a skill link`) to pick up the roots table and the export-source-v1 definition.\n",
+            "detect": [
+              "! a2a doctor 2\u003e/dev/null | grep -q '^skill manual current: FAIL'"
+            ],
             "run": [
               "a2a skill install"
             ]
@@ -8965,7 +8974,7 @@
             "scope": "local",
             "why": "A draft carrying a malformed date, or a restricted artifact addressing too few systems, will now be refused at submit where it previously passed. Fix the field the refusal names.\n",
             "detect": [
-              "a2a validate"
+              "a2a validate --all"
             ]
           }
         },
@@ -9012,10 +9021,7 @@
           ],
           "action": {
             "scope": "local",
-            "why": "A harness that relied on extra fields being ignored now gets an error naming the field. That is the point of the change, but it is a behaviour change: a new field must ship in the binary before a client may send it, so client rollout couples to `min_binary_version`.\n",
-            "detect": [
-              "tools/list"
-            ]
+            "why": "A harness that relied on extra fields being ignored now gets an error naming the field. That is the point of the change, but it is a behaviour change: a new field must ship in the binary before a client may send it, so client rollout couples to `min_binary_version`.\n"
           }
         },
         {
@@ -9055,7 +9061,7 @@
             "scope": "local",
             "why": "Your repository has no `adapted_through` yet, so the first run walks from the oldest release this binary carries and says so. Run it once, do the work it names, and record it.\n",
             "detect": [
-              "test -f .a2a/config.yaml \u0026\u0026 ! grep -q '^adapted_through:' .a2a/config.yaml"
+              "! test -f .a2a/config.yaml || grep -q '^adapted_through:' .a2a/config.yaml"
             ],
             "run": [
               "a2a adapt"
@@ -9076,7 +9082,7 @@
             "scope": "local",
             "why": "A publish command in your own scripts or CI that passes `--bump` or `--version` without `--staging` will now be refused wherever a staging tree exists. The refusal names the flag to add.\n",
             "detect": [
-              "grep -rn 'contract publish' --include=Makefile --include=*.sh . 2\u003e/dev/null | grep -v -- '--staging' | grep -q ."
+              "! grep -rnE 'a2a +contract +publish' --include=Makefile --include=*.sh . 2\u003e/dev/null | grep -v -- '--staging' | grep -q ."
             ],
             "run": [
               "a2a contract publish \u003cid\u003e --bump minor --staging .a2a/staging/\u003csystem\u003e/provides/\u003cslug\u003e"
@@ -9096,9 +9102,6 @@
           "action": {
             "scope": "local",
             "why": "A thread whose response was filed before this release may already be stranded — the response exists, the parent never moved. Repair it once per affected thread; nothing repairs itself.\n",
-            "detect": [
-              "a2a inbox --json | grep -q '\"kind\":\"response\"'"
-            ],
             "run": [
               "a2a respond --response \u003cRS-id\u003e"
             ]
@@ -9176,7 +9179,7 @@
             "scope": "local",
             "why": "If you gate on a hand-rolled published-contract check, replace it: the verb resolves the layout, the versions and every connected space itself, and the three things such scripts get wrong are the three it fixes.\n",
             "detect": [
-              "grep -rl 'verify-export' --include='*.sh' --include='Makefile' . 2\u003e/dev/null | head -1 | grep -q ."
+              "! grep -rl 'verify-export' --include='*.sh' --include='Makefile' . 2\u003e/dev/null | grep -q ."
             ],
             "run": [
               "a2a contract verify-published"
@@ -9365,7 +9368,7 @@
             "scope": "local",
             "why": "If you are on v0.26.0 and use the macOS or VS Code companion, upgrade: that release carries no cohort manifest, so the companion cannot be resolved or verified from it. Everything else about v0.26.0 is intact.\n",
             "detect": [
-              "a2a --version | grep -q '0\\.26\\.0'"
+              "! a2a --version 2\u003e/dev/null | grep -qE '^a2a 0\\.26\\.0( |$)'"
             ],
             "run": [
               "a2a update"
@@ -9411,7 +9414,7 @@
             "scope": "local",
             "why": "v0.26.0 and v0.26.1 cannot resolve the macOS or VS Code companion, because the cohort manifest that binds them is not attached to either release. Everything else about both releases is intact.\n",
             "detect": [
-              "a2a --version | grep -qE '0\\.26\\.(0|1)'"
+              "! a2a --version 2\u003e/dev/null | grep -qE '^a2a 0\\.26\\.[01]( |$)'"
             ],
             "run": [
               "a2a update"
@@ -9802,6 +9805,17 @@
           "action": {
             "scope": "none",
             "why": "Nothing is owed. A repository that already set its clock by hand used the procedure the refusal now prints.\n"
+          }
+        },
+        {
+          "id": "RN-02702-15",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a2a adapt --done no longer runs released detects that were inverted, that write, or that never exit",
+          "detail": "A detect exits 0 once its step is done, and `--done` runs it in your tree. Fourteen released detects broke that. Five were inverted, passing only in the state they warn about: RN-02507-0, RN-02507-1, RN-02507-7, RN-02601-0 and RN-02602-0. Four checked something else, or a file in the space repository rather than yours: RN-02506-2, RN-0300-1, RN-0300-3 and RN-01100-6. Five ran a verb that is no probe at all. `a2a init` in RN-01200-3 rewrites the project, `a2a inbox` in RN-0400-2 and RN-02507-2 moves your read cursor, `a2a mcp` in RN-01100-7 serves stdio and never returns, and `tools/list` in RN-02506-5 is not a command. So `--done` refused a repository that owed nothing, or hung.\nEach now carries a read-only probe of the right polarity, or none where no honest probe exists, and its obligation is then recorded on the agent's word. Seven obligations that had no detect gained one: `a2a space update --check` for a space's re-pinned workflow, and the doctor's `skill manual current` row for a re-installed skill. A test now refuses any new detect that runs a writing or long-running `a2a` verb.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing to run. A `--done` that refused or hung on one of these ids completes on the next run.\n"
           }
         },
         {

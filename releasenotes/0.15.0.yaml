@@ -132,6 +132,8 @@ changes:
         workflow pin to this release.
       run:
         - "a2a space update"
+      detect:
+        - "a2a space update --check"
 
   - id: RN-01500-7
     kind: fix
