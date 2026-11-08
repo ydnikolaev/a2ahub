@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 
 	"github.com/ydnikolaev/a2ahub/internal/version"
 )
@@ -292,6 +293,46 @@ func DefaultDetectRunner(ctx context.Context, command string) (bool, error) {
 	return false, err
 }
 
+// templatePlaceholder matches a `<word ...>` placeholder: a value the reader
+// was meant to fill in, as in `a2a submit <id>` or `<XC-id>`. It ends on a
+// non-space before `>`, so `cat <<EOF > out` is not one. A shell reads `<id>` as a
+// redirect from a file named "id", fails, and that failure would read as
+// "still fires" for an obligation nobody can ever discharge.
+var templatePlaceholder = regexp.MustCompile(`<[A-Za-z](?:[^<>]*[^<>\s])?>`)
+
+// IsTemplateDetect reports whether a detect: is a template for the reader
+// to fill in rather than a probe this binary can run. Such a detect proves
+// nothing either way, so CheckDetects never runs it and `a2a adapt --done`
+// records its obligation on the agent's word, the same as an obligation
+// with no detect: at all. TestNoNewTemplateDetects keeps new notes from
+// adding one.
+func IsTemplateDetect(command string) bool {
+	return templatePlaceholder.MatchString(command)
+}
+
+// TemplateOnly returns the ids of items whose every detect: is a template
+// (IsTemplateDetect): obligations that carry detects, none of them runnable.
+func TemplateOnly(items []PendingItem) []string {
+	var ids []string
+	for _, item := range items {
+		detects := item.Change.Action.Detect
+		if len(detects) == 0 {
+			continue
+		}
+		runnable := false
+		for _, cmd := range detects {
+			if !IsTemplateDetect(cmd) {
+				runnable = true
+				break
+			}
+		}
+		if !runnable {
+			ids = append(ids, item.Change.ID)
+		}
+	}
+	return ids
+}
+
 // DetectResult names the first PendingItem whose detect: either still
 // fires or could not be run.
 type DetectResult struct {
@@ -304,6 +345,7 @@ type DetectResult struct {
 }
 
 // CheckDetects runs every Detect command across items, in encounter order,
+// skipping a template (IsTemplateDetect), which is not a probe, and
 // stopping at the first one that either still fires or could not be run —
 // `a2a adapt --done` refuses NAMING the change (P13 AC-7), so there is no
 // reason to keep exec'ing once the answer is already "not clean". Returns
@@ -314,6 +356,9 @@ func CheckDetects(ctx context.Context, items []PendingItem, run DetectRunner) *D
 	}
 	for _, item := range items {
 		for _, cmd := range item.Change.Action.Detect {
+			if IsTemplateDetect(cmd) {
+				continue
+			}
 			fired, err := run(ctx, cmd)
 			if err != nil {
 				return &DetectResult{Item: item, Command: cmd, Err: err}

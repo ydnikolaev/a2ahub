@@ -357,9 +357,12 @@ changes:
     in staging. The flag takes a comma list or repeats.
 
     On `announcement`, `decision`, `contract` and `requirement`, which take a
-    list, `--to a,b` sets the list on one artifact. One target drafts exactly
-    what `--field to=<target>` does. An empty or repeated target, `all`, or
-    `--to` together with `--field to=` is refused by name. The MCP `a2a_new`
+    list, `--to a,b` sets the list on one artifact, and `--to all` drafts the
+    broadcast `to: all`. `--field to=all` used to write `to: [all]`, a system
+    named "all"; it now writes the broadcast too. One target drafts exactly
+    what `--field to=<target>` does. An empty or repeated target, `all` beside
+    a named system or on a type that addresses one system, or `--to` together
+    with `--field to=` is refused by name. The MCP `a2a_new`
     tool already drafted several items on one thread; it is unchanged.
   action:
     scope: none
@@ -371,3 +374,32 @@ changes:
     why: >
       A host agent can hand one task to every repository on its space in one
       command, with each target's done tracked on its own.
+- id: RN-02702-14
+  kind: fix
+  impact: high
+  subject: a2a adapt --done names the first-clock step instead of a misleading change id
+  detail: >
+    A repository that never recorded `adapted_through` could not finish
+    `a2a adapt --done`. Its range reached back to v0.2.0, and the walk
+    refused on the first old detect that failed, for example RN-01100-1's
+    `a2a submit <id>`, a template a shell cannot run, reported as "still
+    fires". Obligations from before a repository was onboarded describe
+    states it never had (D-044).
+
+    `--done` now refuses such a repository before running any detect, and
+    says how to set the first clock: the version that onboarded it, read from
+    the skill's PROVENANCE stamp in the commit that first added it, or the
+    running binary's version for a repository it onboarded. `a2a adapt` prints
+    the same line under its "never recorded" notice. A detect that is a
+    template, such as `<id>`, is no longer run anywhere: its obligation is
+    recorded on the agent's word and named in the `--done` output and in
+    `template_only` under `--json`.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. A repository that already set its clock by hand used
+      the procedure the refusal now prints.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction to the adoption verb's refusal; it changes no plan.

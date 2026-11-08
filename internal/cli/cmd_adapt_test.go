@@ -355,6 +355,71 @@ func TestAdaptDoneUnverifiedWhenNoDetectAtAll(t *testing.T) {
 	}
 }
 
+// TestAdaptDoneRecordsATemplateDetectOnTheAgentsWord: a detect: that is a
+// template (`a2a submit <id>`) fails in a shell on the redirect and read as
+// "still fires", so `--done` could never record past it. A template is
+// never run: it is named, and recorded on the agent's word. axon's clock
+// (0.13.0) still reaches three such notes.
+func TestAdaptDoneRecordsATemplateDetectOnTheAgentsWord(t *testing.T) {
+	t.Parallel()
+	c, get := adaptDoneTestCommand(t, "0.20.0", "system: sys\nspaces: []\nadapted_through: \"0.10.0\"\n")
+	c.load = func() ([]notes.ReleaseNotes, error) {
+		return []notes.ReleaseNotes{{Version: "0.20.0", Changes: []notes.Change{
+			{ID: "TEMPLATED", Kind: "policy", Impact: "high", Subject: "s", Detail: "d",
+				Action: notes.Action{Scope: "local", Why: "w", Detect: []string{"a2a submit <id>   # names every field"}}},
+			{ID: "PROBED", Kind: "fix", Impact: "normal", Subject: "s", Detail: "d",
+				Action: notes.Action{Scope: "local", Why: "w", Detect: []string{"real-probe"}}},
+		}}}, nil
+	}
+	c.detectRun = func(_ context.Context, cmd string) (bool, error) {
+		if cmd != "real-probe" {
+			t.Errorf("ran %q: a template detect must never be executed", cmd)
+		}
+		return false, nil
+	}
+	var out, errOut bytes.Buffer
+	if code := c.Run(context.Background(), []string{"--done"}, IO{Stdout: &out, Stderr: &errOut}); code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s", code, errOut.String())
+	}
+	for _, want := range []string{"1/2 verified", "template detect", "TEMPLATED"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("stdout is missing %q: %s", want, out.String())
+		}
+	}
+	if !strings.Contains(get(), "adapted_through: 0.20.0") {
+		t.Fatalf("config was not stamped at the binary's version: %s", get())
+	}
+}
+
+// TestAdaptDoneRefusesANeverClockedRepository (D-044): with no
+// adapted_through the projection reaches back to the oldest note, whose
+// obligations describe states the repository never had. --done refuses
+// before running any detect:, names the onboarding procedure, and writes
+// nothing; the session sets the first clock.
+func TestAdaptDoneRefusesANeverClockedRepository(t *testing.T) {
+	t.Parallel()
+	const initial = "system: sys\nspaces: []\n"
+	for _, args := range [][]string{{"--done"}, {"--done", "--json"}} {
+		c, get := adaptDoneTestCommand(t, "0.21.0", initial)
+		c.detectRun = func(_ context.Context, cmd string) (bool, error) {
+			t.Errorf("ran %q: a never-clocked --done must run no detect", cmd)
+			return false, nil
+		}
+		var out, errOut bytes.Buffer
+		if code := c.Run(context.Background(), args, IO{Stdout: &out, Stderr: &errOut}); code != 1 {
+			t.Fatalf("%v: exit = %d, want 1; stdout=%s stderr=%s", args, code, out.String(), errOut.String())
+		}
+		for _, want := range []string{"never recorded adapted_through", "D-044", "PROVENANCE", "0.21.0"} {
+			if !strings.Contains(out.String()+errOut.String(), want) {
+				t.Errorf("%v: output is missing %q: stdout=%s stderr=%s", args, want, out.String(), errOut.String())
+			}
+		}
+		if get() != initial {
+			t.Fatalf("%v: a refused --done wrote the config: %s", args, get())
+		}
+	}
+}
+
 func TestAdaptDoneNothingPending(t *testing.T) {
 	t.Parallel()
 	c, get := adaptDoneTestCommand(t, "0.10.0", "system: sys\nspaces: []\nadapted_through: \"0.10.0\"\n")

@@ -437,6 +437,94 @@ func TestCheckDetects_CannotRunIsNotFired(t *testing.T) {
 	}
 }
 
+// TestCheckDetects_SkipsATemplate: a detect: holding a placeholder
+// (`a2a submit <id>`) is not a probe. Run through a shell it fails on the
+// redirect and read as "still fires", so a never-clocked repository could
+// never finish `a2a adapt --done`. It is skipped, and the runnable detect
+// after it still runs.
+func TestCheckDetects_SkipsATemplate(t *testing.T) {
+	t.Parallel()
+	items := []PendingItem{
+		{Change: Change{ID: "A", Action: Action{Detect: []string{"a2a submit <id>   # names every field"}}}},
+		{Change: Change{ID: "B", Action: Action{Detect: []string{"grep -rn x -- <your scripts and CI workflows>", "real-probe"}}}},
+	}
+	var calls []string
+	run := func(_ context.Context, cmd string) (bool, error) {
+		calls = append(calls, cmd)
+		return true, nil
+	}
+	result := CheckDetects(context.Background(), items, run)
+	if result == nil || result.Command != "real-probe" {
+		t.Fatalf("result = %+v, want the runnable detect real-probe to fire", result)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls = %v, want only real-probe run (templates are never executed)", calls)
+	}
+	if got := TemplateOnly(items); !slices.Equal(got, []string{"A"}) {
+		t.Fatalf("TemplateOnly = %v, want [A]: B carries a runnable detect", got)
+	}
+}
+
+// TestIsTemplateDetect keeps the placeholder test away from real shell:
+// a heredoc, a comparison and a redirect from a real path are probes.
+func TestIsTemplateDetect(t *testing.T) {
+	t.Parallel()
+	for cmd, want := range map[string]bool{
+		"a2a validate <path>":                               true,
+		"a2a contract preflight --space <space> --json":     true,
+		"git grep -q 'adapted_through' -- .a2a/config.yaml": false,
+		"test \"$(wc -l < .a2a/config.yaml)\" -gt 0":        false,
+		"cat <<EOF":       false,
+		"cat <<EOF > out": false,
+		"a2a contract preflight <XC-id> --version 1.0.0": true,
+		"a2a show <x>": true,
+		"[ 1 -lt 2 ]":  false,
+	} {
+		if got := IsTemplateDetect(cmd); got != want {
+			t.Errorf("IsTemplateDetect(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
+// legacyTemplateDetects are the released changes whose detect: is a
+// template. They shipped in binaries already, so they stay as written; the
+// list may only shrink. A note authored now writes a runnable probe or,
+// where none exists, an exemption row in
+// scripts/lib/release-note-detect-budget.txt.
+var legacyTemplateDetects = []string{
+	"RN-0700-6", "RN-0900-8", "RN-01100-1", "RN-01900-8", "RN-02600-3", "RN-02600-5",
+}
+
+// TestNoNewTemplateDetects is the forward gate: no change outside
+// legacyTemplateDetects carries a template detect:, and every listed id
+// still does (a fixed one is deleted from the list in the same commit).
+func TestNoNewTemplateDetects(t *testing.T) {
+	t.Parallel()
+	all, err := Load(releasenotes.FS)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	found := map[string]bool{}
+	for _, rn := range all {
+		for _, ch := range rn.Changes {
+			for _, cmd := range ch.Action.Detect {
+				if !IsTemplateDetect(cmd) {
+					continue
+				}
+				found[ch.ID] = true
+				if !slices.Contains(legacyTemplateDetects, ch.ID) {
+					t.Errorf("%s (%s): detect %q is a template, not a probe: `a2a adapt --done` can never run it. Write a command that exits 0 once the step is done.", ch.ID, rn.Version, cmd)
+				}
+			}
+		}
+	}
+	for _, id := range legacyTemplateDetects {
+		if !found[id] {
+			t.Errorf("%s no longer carries a template detect: delete it from legacyTemplateDetects", id)
+		}
+	}
+}
+
 // TestDefaultDetectRunner exercises the real shell-backed runner, not just
 // the fake seam every other test above uses.
 func TestDefaultDetectRunner(t *testing.T) {

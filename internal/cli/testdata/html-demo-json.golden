@@ -9787,10 +9787,21 @@
           "kind": "feat",
           "impact": "normal",
           "subject": "a2a new --to sends the same ask to several systems in one command",
-          "detail": "A `work_request`, `question`, `handoff` or `response` addresses exactly one system, so sending one task to several repositories meant one `a2a new` per target. `a2a new \u003ctype\u003e --to a,b,c` now drafts one artifact per target, all on one shared thread and identical but for `id` and `to`, and ends with the `a2a submit --batch` line that lands them together. Every draft is rendered before the first is written, so a refusal leaves nothing in staging. The flag takes a comma list or repeats.\nOn `announcement`, `decision`, `contract` and `requirement`, which take a list, `--to a,b` sets the list on one artifact. One target drafts exactly what `--field to=\u003ctarget\u003e` does. An empty or repeated target, `all`, or `--to` together with `--field to=` is refused by name. The MCP `a2a_new` tool already drafted several items on one thread; it is unchanged.\n",
+          "detail": "A `work_request`, `question`, `handoff` or `response` addresses exactly one system, so sending one task to several repositories meant one `a2a new` per target. `a2a new \u003ctype\u003e --to a,b,c` now drafts one artifact per target, all on one shared thread and identical but for `id` and `to`, and ends with the `a2a submit --batch` line that lands them together. Every draft is rendered before the first is written, so a refusal leaves nothing in staging. The flag takes a comma list or repeats.\nOn `announcement`, `decision`, `contract` and `requirement`, which take a list, `--to a,b` sets the list on one artifact, and `--to all` drafts the broadcast `to: all`. `--field to=all` used to write `to: [all]`, a system named \"all\"; it now writes the broadcast too. One target drafts exactly what `--field to=\u003ctarget\u003e` does. An empty or repeated target, `all` beside a named system or on a type that addresses one system, or `--to` together with `--field to=` is refused by name. The MCP `a2a_new` tool already drafted several items on one thread; it is unchanged.\n",
           "action": {
             "scope": "none",
             "why": "Nothing is owed. The flag is new and optional, and the manual that describes it is refreshed by RN-02702-1's `a2a skill install`.\n"
+          }
+        },
+        {
+          "id": "RN-02702-14",
+          "kind": "fix",
+          "impact": "high",
+          "subject": "a2a adapt --done names the first-clock step instead of a misleading change id",
+          "detail": "A repository that never recorded `adapted_through` could not finish `a2a adapt --done`. Its range reached back to v0.2.0, and the walk refused on the first old detect that failed, for example RN-01100-1's `a2a submit \u003cid\u003e`, a template a shell cannot run, reported as \"still fires\". Obligations from before a repository was onboarded describe states it never had (D-044).\n`--done` now refuses such a repository before running any detect, and says how to set the first clock: the version that onboarded it, read from the skill's PROVENANCE stamp in the commit that first added it, or the running binary's version for a repository it onboarded. `a2a adapt` prints the same line under its \"never recorded\" notice. A detect that is a template, such as `\u003cid\u003e`, is no longer run anywhere: its obligation is recorded on the agent's word and named in the `--done` output and in `template_only` under `--json`.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed. A repository that already set its clock by hand used the procedure the refusal now prints.\n"
           }
         },
         {

@@ -122,6 +122,10 @@ type adaptDoneJSON struct {
 	Refused       bool     `json:"refused"`
 	Reason        string   `json:"reason,omitempty"`
 	ChangeID      string   `json:"change_id,omitempty"`
+	// TemplateOnly names the recorded obligations whose every detect: is a
+	// template (`a2a submit <id>`), not a probe: never run, so recorded on
+	// the agent's word.
+	TemplateOnly []string `json:"template_only,omitempty"`
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage error; 1 = corpus/
@@ -186,11 +190,21 @@ func (c *AdaptCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if *jsonFlag {
 		return adaptEncodeJSON(proj, stdio)
 	}
-	adaptRenderText(stdio, proj)
+	adaptRenderText(stdio, proj, c.binaryVersion)
 	if len(proj.Items) == 0 {
 		return 0
 	}
 	return 1
+}
+
+// adaptOnboardingProcedure is D-044's first-clock procedure, worded for the
+// repository's session: the evidence to read, where to write the value, and
+// the one case where the running binary is the answer. It names no value it
+// inferred.
+func adaptOnboardingProcedure(binaryVersion string) string {
+	return fmt.Sprintf("set `adapted_through:` in .a2a/config.yaml to the version that onboarded this repository (D-044): "+
+		"the PROVENANCE stamp in the commit that first added the skill, or with no stamp the release before the one current on the day .a2a/config.yaml was first committed; "+
+		"a repository onboarded by this binary takes %s. Then run `a2a adapt`, which lists only what came after it", binaryVersion)
 }
 
 // adaptSortItems orders items by Group (internal/notes' own assignment)
@@ -256,7 +270,7 @@ func adaptBaselineLabel(proj notes.Projection) string {
 // adaptRenderText renders the human digest: the directive (AC-3 opens
 // with it), each obligation in Pending/adaptSortItems' own order, and a
 // closing line naming the outstanding count (AC-3 closes with it).
-func adaptRenderText(stdio IO, proj notes.Projection) {
+func adaptRenderText(stdio IO, proj notes.Projection, binaryVersion string) {
 	if len(proj.Items) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stdout, "a2a adapt: nothing to adapt — every change in range is scope: none.")
 		return
@@ -266,8 +280,8 @@ func adaptRenderText(stdio IO, proj notes.Projection) {
 		len(proj.Items), adaptBaselineLabel(proj), proj.Releases)
 	if proj.StartedFromOldest {
 		_, _ = fmt.Fprintf(stdio.Stdout,
-			"this repository has never recorded adapted_through — walking from the oldest embedded release, v%s.\n\n",
-			proj.Oldest)
+			"this repository has never recorded adapted_through — walking from the oldest embedded release, v%s.\n%s\n\n",
+			proj.Oldest, adaptOnboardingProcedure(binaryVersion))
 	}
 	_, _ = fmt.Fprintln(stdio.Stdout, adaptDirectiveHeader)
 	_, _ = fmt.Fprintln(stdio.Stdout, adaptDirectiveBody)
@@ -306,6 +320,28 @@ func adaptRenderText(stdio IO, proj notes.Projection) {
 // notes.DetectRunner's own doc); otherwise record adapted_through and say,
 // honestly, how much of that record is verified.
 func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio IO, jsonMode bool) int {
+	// A never-clocked repository is refused before any detect: runs (D-044,
+	// amending spec 13's "absent field walks from the oldest note" for
+	// --done; the listing still walks). Its projection reaches back to
+	// v0.2.0, and obligations from before onboarding describe states the
+	// repository never had: measured 2026-11-08 on a clock-less devkit
+	// clone, 11 of those detects fire there for that reason alone. Walking
+	// them can only refuse with a misleading change id. The session sets
+	// the first clock from onboarding evidence; the tool names how, and
+	// never picks the value.
+	if proj.StartedFromOldest && len(proj.Items) > 0 {
+		if jsonMode {
+			return adaptEncodeDoneJSON(stdio, adaptDoneJSON{
+				Total: len(proj.Items), Refused: true,
+				Reason: "this repository has never recorded adapted_through; " + adaptOnboardingProcedure(c.binaryVersion),
+			})
+		}
+		return adaptRefuse(stdio,
+			"adapt --done: record adapted_through at .a2a/config.yaml",
+			"this repository has never recorded adapted_through, so the pending range reaches back to the oldest embedded release",
+			adaptOnboardingProcedure(c.binaryVersion),
+		)
+	}
 	if result := notes.CheckDetects(ctx, proj.Items, c.detectRun); result != nil {
 		if result.Err != nil {
 			if jsonMode {
@@ -331,12 +367,14 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 		return 1
 	}
 
+	templateOnly := notes.TemplateOnly(proj.Items)
 	verified := 0
 	for _, item := range proj.Items {
 		if len(item.Change.Action.Detect) > 0 {
 			verified++
 		}
 	}
+	verified -= len(templateOnly)
 	total := len(proj.Items)
 
 	if err := adaptSaveAdaptedThrough(c.readFile, c.writeFile, c.projectConfigPath, c.binaryVersion, proj.AuthoredAhead); err != nil {
@@ -351,7 +389,7 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 	}
 
 	if jsonMode {
-		return adaptEncodeDoneJSON(stdio, adaptDoneJSON{Recorded: c.binaryVersion, RecordedAhead: proj.AuthoredAhead, Total: total, Verified: verified})
+		return adaptEncodeDoneJSON(stdio, adaptDoneJSON{Recorded: c.binaryVersion, RecordedAhead: proj.AuthoredAhead, Total: total, Verified: verified, TemplateOnly: templateOnly})
 	}
 
 	switch {
@@ -359,12 +397,17 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 		_, _ = fmt.Fprintf(stdio.Stdout, "a2a adapt --done: nothing pending — recorded adapted_through=v%s\n", c.binaryVersion)
 	case verified == 0:
 		_, _ = fmt.Fprintf(stdio.Stdout,
-			"a2a adapt --done: recorded adapted_through=v%s — UNVERIFIED: none of the %d obligations just recorded carry a detect:; this is recorded on the agent's word, not machine-checked\n",
+			"a2a adapt --done: recorded adapted_through=v%s — UNVERIFIED: none of the %d obligations just recorded carry a runnable detect:; this is recorded on the agent's word, not machine-checked\n",
 			c.binaryVersion, total)
 	default:
 		_, _ = fmt.Fprintf(stdio.Stdout,
 			"a2a adapt --done: recorded adapted_through=v%s — %d/%d verified via detect:, %d recorded on the agent's word (no detect:)\n",
 			c.binaryVersion, verified, total, total-verified)
+	}
+	if len(templateOnly) > 0 {
+		_, _ = fmt.Fprintf(stdio.Stdout,
+			"a2a adapt --done: %d of those carry only a template detect: (a placeholder such as <id>, not a probe), so they were not run: %s\n",
+			len(templateOnly), strings.Join(templateOnly, ", "))
 	}
 	if n := len(proj.AuthoredAhead); n > 0 {
 		_, _ = fmt.Fprintf(stdio.Stdout,
