@@ -42,18 +42,38 @@ func newTypeNames() []string {
 	return names
 }
 
+// SingleTarget marks a type whose schema redeclares `to` as exactly one
+// entry (`maxItems: 1`). D-027: such a type addresses one system, and a
+// multi-party need is one artifact per target on a shared thread — so
+// `--to a,b,c` fans out into one draft per target. Every other type takes
+// the whole list on one artifact. TestNewToFanOutFollowsTheSchema reads
+// each type's authoring schema and fails when this column disagrees with it.
 var newTypePrefix = map[string]struct {
-	Prefix string
-	Class  artifact.Class
+	Prefix       string
+	Class        artifact.Class
+	SingleTarget bool
 }{
-	"contract":     {"XC", artifact.ClassStanding},
-	"requirement":  {"XR", artifact.ClassStanding},
-	"question":     {"XQ", artifact.ClassExchangeBroadcast},
-	"work_request": {"XW", artifact.ClassExchangeBroadcast},
-	"decision":     {"XD", artifact.ClassExchangeBroadcast},
-	"response":     {"XS", artifact.ClassExchangeBroadcast},
-	"handoff":      {"XH", artifact.ClassExchangeBroadcast},
-	"announcement": {"XA", artifact.ClassExchangeBroadcast},
+	"contract":     {"XC", artifact.ClassStanding, false},
+	"requirement":  {"XR", artifact.ClassStanding, false},
+	"question":     {"XQ", artifact.ClassExchangeBroadcast, true},
+	"work_request": {"XW", artifact.ClassExchangeBroadcast, true},
+	"decision":     {"XD", artifact.ClassExchangeBroadcast, false},
+	"response":     {"XS", artifact.ClassExchangeBroadcast, true},
+	"handoff":      {"XH", artifact.ClassExchangeBroadcast, true},
+	"announcement": {"XA", artifact.ClassExchangeBroadcast, false},
+}
+
+// newTypesBySingleTarget returns the drafted types whose SingleTarget column
+// equals single, sorted — so the --help line naming which types fan out is
+// read off the table rather than typed a second time.
+func newTypesBySingleTarget(single bool) []string {
+	var out []string
+	for _, name := range newTypeNames() {
+		if newTypePrefix[name].SingleTarget == single {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // NewCommand implements `a2a new <type>`: mints an ID (§3.3), resolves
@@ -112,7 +132,8 @@ func (c *NewCommand) Name() string { return "new" }
 
 // Synopsis implements cli.Command.
 func (c *NewCommand) Synopsis() string {
-	return "draft a new artifact from its canonical template: new <type> [--field k=v | k.nested=v]... [--body-file <path>]"
+	return "draft a new artifact from its canonical template: new <type> [--to <system>[,<system>...]] [--field k=v | k.nested=v]... [--body-file <path>]; --to with several systems drafts one artifact per target on one thread for a type that addresses one system (" +
+		strings.Join(newTypesBySingleTarget(true), ", ") + ")"
 }
 
 // Run implements cli.Command. Exit codes: 2 = usage (missing/unknown
@@ -120,14 +141,16 @@ func (c *NewCommand) Synopsis() string {
 // render/write failure; 0 = success.
 func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a new <type> [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
+		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a new <type> [--to <system>[,<system>...]] [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
 		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-send"))
 		return 2
 	}
 	typ := args[0]
 	if IsHelpArg(typ) {
-		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a new <type> [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
+		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a new <type> [--to <system>[,<system>...]] [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
 		_, _ = fmt.Fprintln(stdio.Stdout, "types: "+strings.Join(newTypeNames(), " | "))
+		_, _ = fmt.Fprintf(stdio.Stdout, "--to: %s address one system, so several targets draft one artifact per target on one shared thread (then a2a submit --batch); %s take the list on one artifact\n",
+			strings.Join(newTypesBySingleTarget(true), ", "), strings.Join(newTypesBySingleTarget(false), ", "))
 		_, _ = fmt.Fprintln(stdio.Stdout, workflowLine("loop-send"))
 		return 0
 	}
@@ -141,6 +164,8 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	fs.SetOutput(stdio.Stderr)
 	var fieldFlags newStringList
 	fs.Var(&fieldFlags, "field", "k=v field override (repeatable); k may be a dotted path into a nested field, e.g. expected_response.shape")
+	var toFlags newStringList
+	fs.Var(&toFlags, "to", "recipient system(s), comma-separated or repeated; a type that addresses one system drafts one artifact per target on one shared thread, any other type takes the list on one artifact")
 	// --acceptance-criterion (P5, one-answer-2026-08 spec 05 T1): repeatable
 	// criterion text, one flag occurrence per criterion, the same
 	// newStringList shape --ref/--verdict already use. This command only
@@ -171,6 +196,29 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "new: %v\n", err)
 		return 2
+	}
+	targets, err := newParseTargets(toFlags)
+	if err != nil {
+		return newRefuse(stdio, 2, "new: read --to", err.Error(), "name each recipient system once, comma-separated or with a repeated flag: --to a,b,c")
+	}
+	if _, has := fields["to"]; has && len(targets) > 0 {
+		_, _ = fmt.Fprintln(stdio.Stderr, "new: --to and --field to= both name the recipients; use one of them")
+		return 2
+	}
+	// draftTo holds the `to` value of each draft this run writes, one entry
+	// per draft. An empty entry leaves `to` to --field or the template. One
+	// target is exactly `--field to=<target>`; several targets on a
+	// SingleTarget type are D-027's one-artifact-per-target fan-out; several
+	// on any other type are one list on one artifact.
+	fanOut := prefixInfo.SingleTarget && len(targets) > 1
+	draftTo := []string{""}
+	switch {
+	case fanOut:
+		draftTo = targets
+	case len(targets) == 1:
+		draftTo = []string{targets[0]}
+	case len(targets) > 1:
+		draftTo = []string{"[" + strings.Join(targets, ", ") + "]"}
 	}
 	if *thread != "" {
 		fields["thread"] = *thread
@@ -209,36 +257,51 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 		fields["thread"] = mintedThread
 	}
 
-	var mintedID string
 	// standingSlug captures the resolved slug for the contract scaffold
 	// step below (D-D) — only the ClassStanding branch computes a slug at
 	// all, and only "contract" (never "requirement") ever reads it back.
 	var standingSlug string
-	switch prefixInfo.Class {
-	case artifact.ClassStanding:
-		s := *slug
-		if s == "" {
-			s = fields["slug"]
+	if prefixInfo.Class == artifact.ClassStanding {
+		standingSlug = *slug
+		if standingSlug == "" {
+			standingSlug = fields["slug"]
 		}
 		delete(fields, "slug")
-		if s == "" {
+		if standingSlug == "" {
 			_, _ = fmt.Fprintln(stdio.Stderr, "new: --slug (or --field slug=<slug>) is required for standing types (contract, requirement)")
 			return 2
 		}
-		id, err := artifact.MintStandingID(prefixInfo.Prefix, c.ownSystem, s)
-		if err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot mint id: %v\n", err)
-			return 1
+	}
+	mintOne := func() (string, error) {
+		if prefixInfo.Class == artifact.ClassStanding {
+			return artifact.MintStandingID(prefixInfo.Prefix, c.ownSystem, standingSlug)
 		}
-		mintedID = id
-		standingSlug = s
-	case artifact.ClassExchangeBroadcast:
-		id, err := artifact.MintExchangeIDAt(prefixInfo.Prefix, c.ownSystem, now, c.entropy)
-		if err != nil {
-			_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot mint id: %v\n", err)
-			return 1
+		return artifact.MintExchangeIDAt(prefixInfo.Prefix, c.ownSystem, now, c.entropy)
+	}
+	// One id per draft, all distinct: an exchange id carries four random
+	// characters, so a fan-out re-mints a repeat instead of letting two
+	// drafts share one staging path, where the second would overwrite the
+	// first. A standing id has no random part and never fans out.
+	const newMintAttempts = 8
+	ids := make([]string, 0, len(draftTo))
+	minted := make(map[string]bool, len(draftTo))
+	for range draftTo {
+		var id string
+		for attempt := 1; ; attempt++ {
+			var merr error
+			if id, merr = mintOne(); merr != nil {
+				return newRefuse(stdio, 1, "new: mint an id", merr.Error(), "check the own system name in .a2a/config.yaml and the --slug value, then re-run")
+			}
+			if !minted[id] {
+				break
+			}
+			if attempt == newMintAttempts {
+				_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot mint %d distinct ids: %s repeated %d times\n", len(draftTo), id, attempt)
+				return 1
+			}
 		}
-		mintedID = id
+		minted[id] = true
+		ids = append(ids, id)
 	}
 
 	var bodyOverride []byte
@@ -257,27 +320,61 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 		return 1
 	}
 
-	draft, err := template.RenderNew(template.Input{
-		Type: typ,
-		ID:   mintedID, Actor: resolvedActor, Created: now, Fields: fields, Body: bodyOverride,
-		AcceptanceCriteria: acceptanceCriteria,
-	}, validate.IsJSONSchemaFormat)
-	if err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "new: render failed: %v\n", err)
-		return 1
+	// Render every draft before the staging directory is touched, so a
+	// refusal of any one of them leaves nothing behind.
+	drafts := make([][]byte, len(draftTo))
+	for i, to := range draftTo {
+		draftFields := fields
+		if to != "" {
+			draftFields = make(map[string]string, len(fields)+1)
+			for k, v := range fields {
+				draftFields[k] = v
+			}
+			draftFields["to"] = to
+		}
+		draft, err := template.RenderNew(template.Input{
+			Type: typ,
+			ID:   ids[i], Actor: resolvedActor, Created: now, Fields: draftFields, Body: bodyOverride,
+			AcceptanceCriteria: acceptanceCriteria,
+		}, validate.IsJSONSchemaFormat)
+		if err != nil {
+			if fanOut {
+				return newRefuse(stdio, 1, "new: render the draft for --to "+to, err.Error()+" (nothing was written)", "fix that target or the --field values it renders with, then re-run the whole fan-out")
+			}
+			_, _ = fmt.Fprintf(stdio.Stderr, "new: render failed: %v\n", err)
+			return 1
+		}
+		drafts[i] = draft
 	}
 
 	if err := os.MkdirAll(c.stagingDir, 0o755); err != nil {
 		_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot create staging directory: %v\n", err)
 		return 1
 	}
-	path := filepath.Join(c.stagingDir, mintedID+".md")
-	if err := c.writeFile(path, draft, 0o644); err != nil {
-		_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot write %s: %v\n", path, err)
-		return 1
+	paths := make([]string, len(ids))
+	for i, id := range ids {
+		paths[i] = filepath.Join(c.stagingDir, id+".md")
+		if err := c.writeFile(paths[i], drafts[i], 0o644); err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr, "new: cannot write %s: %v\n", paths[i], err)
+			// A partial fan-out is worse than none: the caller would submit
+			// some targets and silently miss the rest. Take back what this
+			// run already wrote, and name anything that could not be.
+			for _, written := range paths[:i] {
+				if rerr := os.Remove(written); rerr != nil {
+					newRefuse(stdio, 1, "new: take back the partial draft "+written, rerr.Error(), "delete it by hand before re-running, or submit it on purpose")
+				}
+			}
+			return 1
+		}
 	}
 
-	_, _ = fmt.Fprintf(stdio.Stdout, "new: drafted %s -> %s\n", mintedID, path)
+	for i, id := range ids {
+		_, _ = fmt.Fprintf(stdio.Stdout, "new: drafted %s -> %s\n", id, paths[i])
+	}
+	if fanOut {
+		_, _ = fmt.Fprintf(stdio.Stdout, "new: fan-out %d drafts on thread %s; next: a2a submit --batch %s\n", len(ids), fields["thread"], strings.Join(ids, " "))
+	}
+	draft := drafts[0]
 
 	// D-D: a fresh contract whose schema_format is a JSON-Schema dialect
 	// gets a starter schema/ + fixtures/valid/ scaffold, so §5.4b's
@@ -316,6 +413,49 @@ func newParseFields(raw []string) (map[string]string, error) {
 			return nil, fmt.Errorf("malformed --field %q (want k=v)", kv)
 		}
 		out[k] = v
+	}
+	return out, nil
+}
+
+// newRefuse writes a three-part refusal (attempted, found, next step; spec
+// 04) to stderr and returns code. nextStep is a fixed non-empty literal at
+// every call site, so NewRefusal's own refusal is a structural safety net,
+// the shape adaptRefuse uses.
+func newRefuse(stdio IO, code int, attempted, found, nextStep string) int {
+	refusal, rerr := NewRefusal(attempted, found, nextStep)
+	if rerr != nil {
+		_, _ = fmt.Fprintln(stdio.Stderr, "new: internal error building a refusal (empty next step) — this is a bug in cmd_new.go, file one")
+		return code
+	}
+	_, _ = fmt.Fprintln(stdio.Stderr, refusal)
+	return code
+}
+
+// newParseTargets flattens the --to values (each comma-separated, the flag
+// itself repeatable) into the target list, in the order given. An empty
+// entry or a target named twice is a usage error naming it: the first would
+// draft an artifact to nobody, the second would send one system the same
+// work twice. `all` is refused too: the broadcast sentinel is the bare
+// scalar `to: all`, and the template's `to` is a list, so it would land as
+// `to: [all]`, which every reader takes for a system named "all".
+func newParseTargets(raw []string) ([]string, error) {
+	var out []string
+	seen := make(map[string]bool)
+	for _, value := range raw {
+		for _, part := range strings.Split(value, ",") {
+			target := strings.TrimSpace(part)
+			if target == "" {
+				return nil, fmt.Errorf("--to %q has an empty target (want <system>[,<system>...])", value)
+			}
+			if target == "all" {
+				return nil, fmt.Errorf("--to cannot carry \"all\": a broadcast to the whole space is the bare value `to: all`, which a list cannot hold; draft without --to and set `to: all` in the drafted file")
+			}
+			if seen[target] {
+				return nil, fmt.Errorf("--to names %q twice; each target is named once", target)
+			}
+			seen[target] = true
+			out = append(out, target)
+		}
 	}
 	return out, nil
 }

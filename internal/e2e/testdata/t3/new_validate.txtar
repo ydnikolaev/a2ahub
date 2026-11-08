@@ -50,6 +50,20 @@ cp bad-needed-by.md .a2a/staging/bad-needed-by.md
 ! exec a2a validate --all
 stdout 'SCH-012'
 
+# `--to` fan-out (D-027): a type that addresses one system drafts one
+# artifact per target on one shared thread, and the closing line is the
+# exact batch submit. Placed after the `validate --all` checks above, because
+# these drafts carry template placeholders a whole-staging validate reads.
+exec a2a new work_request --to beta,gamma --field title=t --field space=fixture-space --field category=data
+stdout 'drafted XW-'
+stdout 'fan-out 2 drafts on thread thread:'
+stdout 'next: a2a submit --batch XW-'
+
+# A target named twice is refused by name, before anything is drafted.
+! exec a2a new work_request --to beta,beta --field category=data
+stderr 'twice'
+! stdout 'drafted'
+
 -- anonymous-actor.md --
 ---
 schema: envelope/v1

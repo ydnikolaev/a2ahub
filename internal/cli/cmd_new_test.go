@@ -15,6 +15,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"github.com/ydnikolaev/a2ahub/schemas"
 )
 
 func fixedActorResolver(cli.ActorFlags) (template.Actor, error) {
@@ -875,5 +876,367 @@ func TestTemplateListJSONCarriesTheGeneration(t *testing.T) {
 	}
 	if seen["question"] != "envelope/v1" {
 		t.Fatalf("question authors at %q, want envelope/v1; rows=%+v", seen["question"], rows)
+	}
+}
+
+// stagedDrafts returns every staged .md draft in stagingDir, keyed by its
+// artifact id (the file stem). A missing directory is zero drafts.
+func stagedDrafts(t *testing.T, stagingDir string) map[string][]byte {
+	t.Helper()
+	entries, err := os.ReadDir(stagingDir)
+	if os.IsNotExist(err) {
+		return map[string][]byte{}
+	}
+	if err != nil {
+		t.Fatalf("ReadDir(%s): %v", stagingDir, err)
+	}
+	out := make(map[string][]byte, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(stagingDir, e.Name()))
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		out[strings.TrimSuffix(e.Name(), ".md")] = raw
+	}
+	return out
+}
+
+// frontmatterLine returns the value of the first `key: ` line in raw.
+func frontmatterLine(raw []byte, key string) string {
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, key+": ") {
+			return strings.TrimPrefix(line, key+": ")
+		}
+	}
+	return ""
+}
+
+// draftRecipients decodes a draft's frontmatter and returns its `to` list,
+// whichever YAML style the renderer chose for it.
+func draftRecipients(t *testing.T, raw []byte) []string {
+	t.Helper()
+	fm, err := artifact.ParseFrontmatter(raw)
+	if err != nil {
+		t.Fatalf("ParseFrontmatter: %v", err)
+	}
+	doc, err := schema.DecodeYAMLInstance(fm.YAML)
+	if err != nil {
+		t.Fatalf("DecodeYAMLInstance: %v", err)
+	}
+	fields, ok := doc.(map[string]any)
+	if !ok {
+		t.Fatalf("frontmatter is not a mapping: %T", doc)
+	}
+	list, ok := fields["to"].([]any)
+	if !ok {
+		t.Fatalf("to is not a list: %#v", fields["to"])
+	}
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		s, ok := v.(string)
+		if !ok {
+			t.Fatalf("to entry is not a string: %#v", v)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// TestNewToFansOutOnePerTargetOnOneThread is D-027's prescribed shape for a
+// multi-party need on a type that addresses one system: one artifact per
+// target, all on one shared thread, identical but for id and `to`, and a
+// closing line naming the exact batch submit.
+func TestNewToFansOutOnePerTargetOnOneThread(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+
+	tests := []struct {
+		name   string
+		toArgs []string
+	}{
+		{"one comma list with spaces", []string{"--to", " beta, gamma ,delta"}},
+		{"repeated flag", []string{"--to", "beta", "--to", "gamma,delta"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			stagingDir := filepath.Join(t.TempDir(), "staging")
+			bodyFile := filepath.Join(t.TempDir(), "body.md")
+			if err := os.WriteFile(bodyFile, []byte("the same task for every target\n"), 0o644); err != nil {
+				t.Fatalf("write body file: %v", err)
+			}
+			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+			args := append([]string{"work_request"}, enumFieldArgs("work_request")...)
+			args = append(args, "--body-file", bodyFile, "--acceptance-criterion", "the report names every divergence")
+			args = append(args, tc.toArgs...)
+
+			io, out, errOut := newIO()
+			if code := cmd.Run(context.Background(), args, io); code != 0 {
+				t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+			}
+
+			drafts := stagedDrafts(t, stagingDir)
+			if len(drafts) != 3 {
+				t.Fatalf("want 3 drafts, one per target, got %d: %v", len(drafts), drafts)
+			}
+			threads := map[string]bool{}
+			gotTo := map[string]bool{}
+			for id, raw := range drafts {
+				threads[frontmatterLine(raw, "thread")] = true
+				gotTo[strings.Join(draftRecipients(t, raw), ",")] = true
+				if got := strings.Fields(frontmatterLine(raw, "id")); len(got) == 0 || got[0] != id {
+					t.Fatalf("draft %s carries id %q", id, frontmatterLine(raw, "id"))
+				}
+				for _, want := range []string{"the same task for every target", "the report names every divergence"} {
+					if !bytes.Contains(raw, []byte(want)) {
+						t.Fatalf("draft %s is missing the shared content %q:\n%s", id, want, raw)
+					}
+				}
+				result, err := engine.ValidateDraft(validate.Draft{Path: filepath.Join(stagingDir, id+".md"), Raw: raw})
+				if err != nil {
+					t.Fatalf("ValidateDraft: %v", err)
+				}
+				if !result.Valid {
+					t.Fatalf("draft %s is V1-invalid: %+v\n---\n%s", id, result.Violations, raw)
+				}
+			}
+			if len(threads) != 1 {
+				t.Fatalf("every fanned-out draft must share one thread, got %v", threads)
+			}
+			for _, want := range []string{"beta", "gamma", "delta"} {
+				if !gotTo[want] {
+					t.Fatalf("no draft carries to: [%s] alone; got %v", want, gotTo)
+				}
+			}
+
+			var thread string
+			for th := range threads {
+				thread = th
+			}
+			lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+			if len(lines) != 4 {
+				t.Fatalf("want 3 drafted lines and one fan-out line, got:\n%s", out.String())
+			}
+			var ids []string
+			for _, line := range lines[:3] {
+				fields := strings.Fields(line)
+				if len(fields) != 5 || fields[1] != "drafted" {
+					t.Fatalf("unexpected drafted line %q", line)
+				}
+				ids = append(ids, fields[2])
+			}
+			wantLast := "new: fan-out 3 drafts on thread " + thread + "; next: a2a submit --batch " + strings.Join(ids, " ")
+			if lines[3] != wantLast {
+				t.Fatalf("last line = %q\nwant      %q", lines[3], wantLast)
+			}
+		})
+	}
+}
+
+// TestNewToMatchesTheEquivalentFieldTo pins `--to` to what `--field to=`
+// already drafts: one target is byte-identical to `--field to=<target>` on
+// every type, and a list on a list-addressed type is `--field to=[a, b]`.
+// The id and created lines are the only bytes a second run may change.
+func TestNewToMatchesTheEquivalentFieldTo(t *testing.T) {
+	t.Parallel()
+	const thread = "thread:axon-20260726-a1b2"
+	tests := []struct {
+		name    string
+		typ     string
+		toArgs  []string
+		fieldTo string
+	}{
+		{"one target, exchange type", "work_request", []string{"--to", "beta"}, "to=beta"},
+		{"one target, broadcast type", "announcement", []string{"--to", " beta "}, "to=beta"},
+		{"one target, standing type", "requirement", []string{"--to", "beta"}, "to=beta"},
+		{"list, broadcast type", "announcement", []string{"--to", "beta,gamma"}, "to=[beta, gamma]"},
+		{"list, decision", "decision", []string{"--to", "beta", "--to", "gamma"}, "to=[beta, gamma]"},
+		{"list, standing type", "contract", []string{"--to", "beta,gamma"}, "to=[beta, gamma]"},
+	}
+	draft := func(t *testing.T, typ string, extra ...string) string {
+		t.Helper()
+		stagingDir := filepath.Join(t.TempDir(), "staging")
+		cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+		args := append([]string{typ, "--thread", thread}, enumFieldArgs(typ)...)
+		if typ == "contract" || typ == "requirement" {
+			args = append(args, "--slug", "ingest")
+		}
+		args = append(args, extra...)
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("new %v: code = %d; stdout=%s stderr=%s", args, code, out.String(), errOut.String())
+		}
+		drafts := stagedDrafts(t, stagingDir)
+		if len(drafts) != 1 {
+			t.Fatalf("new %v: want exactly one draft, got %d", args, len(drafts))
+		}
+		var kept []string
+		for id, raw := range drafts {
+			for _, line := range strings.Split(strings.ReplaceAll(string(raw), id, "<id>"), "\n") {
+				if !strings.HasPrefix(line, "created: ") {
+					kept = append(kept, line)
+				}
+			}
+		}
+		return strings.Join(kept, "\n")
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := draft(t, tc.typ, tc.toArgs...)
+			want := draft(t, tc.typ, "--field", tc.fieldTo)
+			if got != want {
+				t.Fatalf("--to %v drafted differently from --field %s\n--- --to ---\n%s\n--- --field ---\n%s", tc.toArgs, tc.fieldTo, got, want)
+			}
+		})
+	}
+}
+
+// TestNewToRefusesBeforeWriting covers the usage refusals: each names what
+// is wrong, exits 2, and leaves staging untouched.
+func TestNewToRefusesBeforeWriting(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"empty entry", []string{"--to", "beta,,gamma"}, []string{"empty target", "beta,,gamma"}},
+		{"trailing comma", []string{"--to", "beta,"}, []string{"empty target"}},
+		{"blank value", []string{"--to", " "}, []string{"empty target"}},
+		{"duplicate in one list", []string{"--to", "beta,gamma, beta"}, []string{`"beta"`, "twice"}},
+		{"duplicate across repeats", []string{"--to", "beta", "--to", "beta"}, []string{`"beta"`, "twice"}},
+		{"the broadcast sentinel", []string{"--to", "beta,all"}, []string{`"all"`, "to: all"}},
+		{"both --to and --field to=", []string{"--to", "beta", "--field", "to=gamma"}, []string{"--to", "--field to="}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			stagingDir := filepath.Join(t.TempDir(), "staging")
+			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+			args := append(append([]string{"work_request"}, enumFieldArgs("work_request")...), tc.args...)
+			io, out, errOut := newIO()
+			if code := cmd.Run(context.Background(), args, io); code != 2 {
+				t.Fatalf("code = %d, want 2; stdout=%s stderr=%s", code, out.String(), errOut.String())
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(errOut.String(), want) {
+					t.Fatalf("stderr is missing %q: %s", want, errOut.String())
+				}
+			}
+			if n := len(stagedDrafts(t, stagingDir)); n != 0 {
+				t.Fatalf("a refused --to left %d drafts in staging", n)
+			}
+		})
+	}
+}
+
+// TestNewToRenderFailureOnALaterTargetWritesNothing: the second target is
+// a mapping, which `to` cannot hold, so its render is refused after the
+// first draft rendered fine. Every draft is rendered before the first is
+// written, so the refusal leaves no partial set to be submitted by mistake.
+func TestNewToRenderFailureOnALaterTargetWritesNothing(t *testing.T) {
+	t.Parallel()
+	stagingDir := filepath.Join(t.TempDir(), "staging")
+	cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+	args := append([]string{"work_request"}, enumFieldArgs("work_request")...)
+	args = append(args, "--to", "beta,{gamma: yes}")
+	io, out, errOut := newIO()
+	if code := cmd.Run(context.Background(), args, io); code != 1 {
+		t.Fatalf("code = %d, want 1 (render refused); stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "{gamma: yes}") || !strings.Contains(errOut.String(), "nothing was written") {
+		t.Fatalf("stderr must name the target and say nothing was written: %s", errOut.String())
+	}
+	if _, err := os.Stat(stagingDir); !os.IsNotExist(err) {
+		t.Fatalf("staging must not even be created when a render is refused (stat err = %v); drafts=%v", err, stagedDrafts(t, stagingDir))
+	}
+	if out.Len() != 0 {
+		t.Fatalf("no drafted line may be printed for a refused set: %s", out.String())
+	}
+}
+
+// TestNewToFanOutFollowsTheSchema keeps newTypePrefix's SingleTarget column
+// honest against the schema itself: for every drafted type, `--to beta,gamma`
+// fans out into two drafts exactly when the type's authoring schema
+// redeclares `to` with `maxItems: 1`, and every draft it writes is V1-valid.
+// A type whose schema changes cardinality reds here, not in a space.
+func TestNewToFanOutFollowsTheSchema(t *testing.T) {
+	t.Parallel()
+	corpus, err := schema.Load()
+	if err != nil {
+		t.Fatalf("schema.Load: %v", err)
+	}
+	engine := validate.New(corpus)
+
+	for _, typ := range schema.EnvelopeTypes() {
+		t.Run(typ, func(t *testing.T) {
+			t.Parallel()
+			generation, err := template.AuthoringEnvelopeSchema(typ, validate.IsJSONSchemaFormat)
+			if err != nil {
+				t.Fatalf("AuthoringEnvelopeSchema: %v", err)
+			}
+			raw, err := schemas.FS.ReadFile(generation + "/" + typ + ".schema.json")
+			if err != nil {
+				t.Fatalf("read %s schema: %v", generation, err)
+			}
+			var doc struct {
+				Properties struct {
+					To *struct {
+						MaxItems *int `json:"maxItems"`
+					} `json:"to"`
+				} `json:"properties"`
+			}
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				t.Fatalf("decode %s/%s schema: %v", generation, typ, err)
+			}
+			singleTarget := doc.Properties.To != nil && doc.Properties.To.MaxItems != nil && *doc.Properties.To.MaxItems == 1
+			wantDrafts := 1
+			if singleTarget {
+				wantDrafts = 2
+			}
+
+			stagingDir := filepath.Join(t.TempDir(), "staging")
+			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+			args := []string{typ, "--to", "beta,gamma"}
+			if typ == "contract" || typ == "requirement" {
+				args = append(args, "--slug", "ingest")
+			}
+			args = append(args, enumFieldArgs(typ)...)
+			io, out, errOut := newIO()
+			if code := cmd.Run(context.Background(), args, io); code != 0 {
+				t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+			}
+			drafts := stagedDrafts(t, stagingDir)
+			if len(drafts) != wantDrafts {
+				t.Fatalf("%s (%s, to.maxItems==1: %v): want %d drafts, got %d", typ, generation, singleTarget, wantDrafts, len(drafts))
+			}
+			for id, draft := range drafts {
+				result, err := engine.ValidateDraft(validate.Draft{Path: filepath.Join(stagingDir, id+".md"), Raw: draft})
+				if err != nil {
+					t.Fatalf("ValidateDraft: %v", err)
+				}
+				if !result.Valid {
+					t.Fatalf("draft %s is V1-invalid: %+v\n---\n%s", id, result.Violations, draft)
+				}
+				wantTo := "beta,gamma"
+				if singleTarget {
+					wantTo = strings.Join(draftRecipients(t, draft), ",")
+					if wantTo != "beta" && wantTo != "gamma" {
+						t.Fatalf("a fanned-out %s must carry one target, got to: %s", typ, wantTo)
+					}
+				}
+				if got := strings.Join(draftRecipients(t, draft), ","); got != wantTo {
+					t.Fatalf("%s: to = [%s], want [%s]", typ, got, wantTo)
+				}
+			}
+		})
 	}
 }

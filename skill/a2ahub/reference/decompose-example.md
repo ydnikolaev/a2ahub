@@ -56,7 +56,10 @@ the manual-relay era was items with no individual state).
    mints a thread automatically. For subsequent drafts on the same thread,
    pass `--thread <that value>` (or use `a2a_new`'s `items[]` batch call via
    the MCP surface, which handles all three on one thread in a single call).
-   Per-type skeletons are in [authoring/](authoring/).
+   Per-type skeletons are in [authoring/](authoring/). The same part sent to
+   several systems is `a2a new <type> --to a,b,c`: one draft per target on
+   one thread for a type that addresses one system (see the
+   [send loop](../loops/send.md)).
 3. **Validate** each draft with `a2a validate`.
 4. **Submit as one batch.** `a2a submit --batch` lands all three in one commit /
    one PR (see [commands.md](commands.md) for exact flag grammar). The

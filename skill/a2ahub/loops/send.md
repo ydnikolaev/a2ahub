@@ -26,7 +26,28 @@
 2. **Draft** with `a2a new <type>`. The tool mints a thread automatically; your
    job is: when hand-drafting multiple related artifacts, pass `--thread <id>`
    on drafts after the first one (or use one batch call via `a2a_new` with
-   `items[]`, which handles all on one thread automatically). Fill every
+   `items[]`, which handles all on one thread automatically). **The same ask
+   to several systems is one artifact per target, never one artifact to
+   many** (D-027): `work_request`, `question`, `handoff` and `response`
+   address exactly one system, and `--to` fans them out for you:
+
+   ```sh
+   a2a new work_request --to beta,gamma,delta --field category=data \
+     --acceptance-criterion "the report names every divergence" --body-file task.md
+   # new: drafted XW-... -> .a2a/staging/XW-....md   (one line per target)
+   # new: fan-out 3 drafts on thread thread:...; next: a2a submit --batch <id1> <id2> <id3>
+   ```
+
+   The three drafts share one thread and are identical but for `id` and
+   `to`; nothing is written unless all three render. Run the printed
+   `a2a submit --batch` line to land them as one PR. On `announcement`,
+   `decision`, `contract` and `requirement`, which take a list, `--to a,b`
+   sets the list on one artifact instead. Choose by what you need back: when
+   each target must DO the work and report done, fan out `work_request`s —
+   each gets its own response, verify and close. When everyone must only
+   READ it and you want the acks tracked, send one `announcement` with
+   `--field ack_requested=true` and `to: all` (set `to: all` in the drafted
+   file; `--to` takes system names only). Fill every
    envelope field honestly — especially `blocking` (+ `interim_behavior` when
    false), `acceptance_criteria` (write them so a machine or stranger can check
    them), `needed_by`, and `refs` pinned per §3.8. The schema keeps `needed_by`
