@@ -12,6 +12,7 @@ import (
 
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
 )
 
 // TestDoctorCheckAdoption drives the "adoption" row through each state of the
@@ -112,7 +113,7 @@ func TestRunDoctorClockFileAgainstRealGit(t *testing.T) {
 	cfg := filepath.Join(root, ".a2a", "config.yaml")
 	gitIn := func(args ...string) {
 		t.Helper()
-		out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
+		out, err := exec.Command("git", gitfixture.Args(append([]string{"-C", root}, args...)...)...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
