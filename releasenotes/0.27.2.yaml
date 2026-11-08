@@ -323,13 +323,22 @@ changes:
 
     `a2a space update --check` is a dry run that exits 1 while the space is
     behind and names it on stderr. With no `--space` it checks every
-    connected space. Those nine notes now use it. The write still refuses a
-    project with two spaces until you name one.
+    connected space. Those nine notes now use it. Writing still refuses a
+    project with two spaces until you name one. That answers spec 35's open
+    `--all` question for the read path only.
+
+    The nine checks are now honest, so a repository whose clock predates
+    them can find `a2a adapt --done` refusing one that used to pass: one of
+    its spaces really is behind the template, often only by its
+    `min_binary_version` floor.
   action:
     scope: none
     why: >
-      Nothing to do. If `a2a adapt --done` refused before because of this
-      check, run it again.
+      This change asks nothing new. If `a2a adapt --done` now refuses an
+      older "update the space" step, run `a2a space update --check` to see
+      which space is behind. Update it with `a2a space update --space <id>`,
+      which writes to the space and needs `--approve` in a confirm space,
+      then run `a2a adapt --done` again.
   roadmap:
     visibility: omit
     why: >

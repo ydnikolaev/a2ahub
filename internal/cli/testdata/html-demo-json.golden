@@ -9776,10 +9776,10 @@
           "kind": "fix",
           "impact": "normal",
           "subject": "adapt's \"is the space current\" check works, and works with two spaces",
-          "detail": "Nine release notes check whether a space is current with `a2a space update --dry-run`, and a detect passes when its command exits 0. A dry run exits 0 even with a diff pending, so the check passed for a space that was behind and fired only on an error. In a repository connected to two spaces it always exited 1 (\"name one with --space\"), so `a2a adapt --done` refused there however current the spaces were.\n`a2a space update --check` is a dry run that exits 1 while the space is behind and names it on stderr. With no `--space` it checks every connected space. Those nine notes now use it. The write still refuses a project with two spaces until you name one.\n",
+          "detail": "Nine release notes check whether a space is current with `a2a space update --dry-run`, and a detect passes when its command exits 0. A dry run exits 0 even with a diff pending, so the check passed for a space that was behind and fired only on an error. In a repository connected to two spaces it always exited 1 (\"name one with --space\"), so `a2a adapt --done` refused there however current the spaces were.\n`a2a space update --check` is a dry run that exits 1 while the space is behind and names it on stderr. With no `--space` it checks every connected space. Those nine notes now use it. Writing still refuses a project with two spaces until you name one. That answers spec 35's open `--all` question for the read path only.\nThe nine checks are now honest, so a repository whose clock predates them can find `a2a adapt --done` refusing one that used to pass: one of its spaces really is behind the template, often only by its `min_binary_version` floor.\n",
           "action": {
             "scope": "none",
-            "why": "Nothing to do. If `a2a adapt --done` refused before because of this check, run it again.\n"
+            "why": "This change asks nothing new. If `a2a adapt --done` now refuses an older \"update the space\" step, run `a2a space update --check` to see which space is behind. Update it with `a2a space update --space \u003cid\u003e`, which writes to the space and needs `--approve` in a confirm space, then run `a2a adapt --done` again.\n"
           }
         },
         {
