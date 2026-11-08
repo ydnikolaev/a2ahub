@@ -32,4 +32,8 @@ resolution: >-
     are not affected; local make deliver builds are. Fix: drop all: (or filter
     dotfiles at install and in the drift check) and add a test that the embed
     holds no dotfile.
+    Fixed on main 2026-11-07 in a747a3d8 and delivered locally (make
+    deliver): the embed drops the all: prefix and a test pins that it holds no
+    dot- or underscore-file. Ships publicly with 0.27.2 (RN-02702-8); flip to
+    shipped then.
 status: accepted

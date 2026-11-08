@@ -34,4 +34,11 @@ resolution: >-
     every fetch error on a local space, ErrMirrorLocked included, and a test
     pins that breadth; that advice points at the one act that breaks in-flight
     writes.
+    Fixed on main 2026-11-07 in b6a70883 and 425ae599 and delivered locally
+    (make deliver): a lock whose recorded pid is dead on this machine is
+    reclaimed at once (Windows keeps the age rule), the refusal names the
+    holder's pid, liveness and age, and doctor reports a locked mirror over an
+    intact space. 48193453 (2026-11-08) covers git's own lock files, which carry no pid and
+    are never reclaimed: doctor names each leftover one with its age and says to
+    delete it. Ships publicly with 0.27.2 (RN-02702-5); flip to shipped then.
 status: accepted

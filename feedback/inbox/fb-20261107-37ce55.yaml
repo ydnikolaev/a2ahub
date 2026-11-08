@@ -46,4 +46,9 @@ resolution: >-
     agent to a2a show for them. Second half confirmed by running it: a2a --help
     and a2a help print unknown command; cmd/a2a/help.go answers help flags only
     after a verb, and bare a2a prints the verb list.
+    Fixed on main 2026-11-07 in 1ffaed67 (show prints and --json carries
+    acceptance_criteria and expected_response, MCP a2a_show too), 2fb76646 (the
+    threads reference says where) and c0206669 (a2a --help, -h and help print the
+    verb list); delivered locally (make deliver). Ships publicly with 0.27.2
+    (RN-02702-7); flip to shipped then.
 status: accepted

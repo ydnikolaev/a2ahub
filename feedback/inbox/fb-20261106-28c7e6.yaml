@@ -38,4 +38,9 @@ resolution: >-
     branch sharing applyContractActivation's owner predicate, plus a test that
     every expected_transition pendency emits is accepted by the land check. The
     existing activate end-to-end test never runs the legality check.
+    Fixed on main 2026-11-07 in cb01f064 (the land check accepts activate
+    from the contract's owner, the predicate the fold applies) and e2da5d67 (the
+    thread view and notify index list the owed activate), with 97ce4319 running
+    the land check in the real-binary activate test; delivered locally (make
+    deliver). Ships publicly with 0.27.2 (RN-02702-4); flip to shipped then.
 status: accepted

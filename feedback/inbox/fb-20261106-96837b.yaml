@@ -25,4 +25,10 @@ resolution: >-
     internal/cache/reasons.go raised in internal/cache/inbox.go when the owed
     party notes after the last transition, and a one-line hint on a2a note. The
     policy that refuses notes is a separate product call.
+    Fixed on main 2026-11-07 in bcd5b325 and delivered locally (make
+    deliver): reason notes-without-move fires at three notes by the owed parties
+    since the current state's event, on inbox --actionable, the statusline and
+    the dashboard, and a2a note from the owed party prints the move it owes. The
+    note-refusing policy stays out of scope. Ships publicly with 0.27.2
+    (RN-02702-10); flip to shipped then.
 status: accepted

@@ -25,4 +25,8 @@ resolution: >-
     missing directory is not a containment fault. The materializer already has
     the typed shape to copy (ErrContractDestinationParentMissing). Fix: a typed
     not-in-space refusal naming the first step, a2a submit of the 0.0.0 draft.
+    Fixed on main 2026-11-07 in 2c2ea6e0 and delivered locally (make
+    deliver): a missing contract directory is ErrContractNotInSpace and the
+    refusal names a2a submit; a symlink stays an unsafe path. Ships publicly with
+    0.27.2 (RN-02702-6); flip to shipped then.
 status: accepted
