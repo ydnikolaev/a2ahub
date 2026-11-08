@@ -188,6 +188,15 @@ func TestCheckoutRemoteHeadLockNeverReleasedReturnsBoundedTypedError(t *testing.
 	if !errors.Is(err, ErrMirrorLocked) {
 		t.Fatalf("checkoutRemoteHead error = %v, want ErrMirrorLocked", err)
 	}
+	// A lock that outlived the whole wait is named, with what to do about
+	// it: "re-run" alone never helps when git's own lock was left by a crash,
+	// and every verb on the space then serves stale data until someone
+	// deletes it (seen on a real mirror nine days on).
+	for _, want := range []string{lockPath, "delete it"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
 	if elapsed < testLockBudget {
 		t.Fatalf("returned before the wait budget elapsed: elapsed=%s want >= %s", elapsed, testLockBudget)
 	}

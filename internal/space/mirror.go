@@ -233,6 +233,13 @@ func runGitRetryLocked(ctx context.Context, dir string, deadline time.Time, args
 			// Both sentinels are wrapped: a caller may want to recognise the
 			// contention (ErrMirrorLocked) OR the underlying git failure, and
 			// dropping either to %v makes errors.Is blind to it.
+			// A git lock that outlived the whole wait may be a crash's
+			// leftover, which nothing reclaims: name it and say what clears
+			// it, since "re-run" alone never would.
+			if held := HeldGitLocks(dir); len(held) > 0 {
+				return fmt.Errorf("%w: waited %s for a git lock file to clear (git %v); still held: %s — git removes its own lock when it finishes, so if no git process is running in this mirror it was left by a crash: delete it: %w",
+					ErrMirrorLocked, indexLockWaitBudget, args, strings.Join(held, ", "), err)
+			}
 			return fmt.Errorf("%w: waited %s for a git lock file to clear (git %v): %w",
 				ErrMirrorLocked, indexLockWaitBudget, args, err)
 		}
