@@ -109,8 +109,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 //	statusline  is one embedded line by contract; it already folds the notice
 //	            in, and a second line would break every prompt embedding it
 //	completion  emits a shell script to stdout that a shell will `eval`
+//	adapt       IS the adoption list the adoption notice points at (D-043)
 var advisorySilentVerbs = map[string]bool{
 	"version": true, "update": true, "doctor": true, "statusline": true, "completion": true,
+	"adapt": true,
 }
 
 // writeUpdateAdvisory renders the update notice ONCE, after any command, for
@@ -138,6 +140,9 @@ func writeUpdateAdvisory(name string, args []string, stderr io.Writer) {
 	if err != nil {
 		return
 	}
+	// Before the store: a repository with no connected space still owes its
+	// adoption steps, and a store that will not build would skip the note.
+	cli.WriteAdoptionAdvisory(cli.IO{Stderr: stderr}, adoptionNotice(p.projectConfig), jsonOut)
 	store, err := buildStore(context.Background(), p)
 	if err != nil {
 		return
@@ -157,6 +162,16 @@ func skillNotice(projectRoot, configuredDir string) string {
 		return ""
 	}
 	return cli.SkillNotice(skill.Files, projectRoot, dir, version)
+}
+
+// adoptionNotice is the one place both surfaces reach the repository's
+// adoption advisory, so the CLI and MCP name the same executable.
+func adoptionNotice(projectConfig string) string {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "a2a"
+	}
+	return cli.RepoAdoptionNotice(projectConfig, version, exe)
 }
 
 // advisoryMode is the whole DECISION, separated from the store read so it can

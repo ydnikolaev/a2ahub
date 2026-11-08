@@ -75,7 +75,15 @@ exec a2a skill install
 exec a2a space init lone --local --dir spaces/lone.git
 rm -r .a2a
 exec a2a connect spaces/lone.git
+# D-043: a project that just connected has never recorded adoption, so its
+# `adoption` row is the advisory UNVERIFIED. Record the clock at this binary's
+# own version (and, through --done, whatever note is open ahead of it) so the
+# no-UNVERIFIED claim below stays about the local rows. Outside a git work
+# tree the row cannot say whether the clock is committed, and says so on a PASS.
+exec sh -c 'echo "adapted_through: \"$A2A_STAMPED_VERSION\"" >> .a2a/config.yaml'
+exec a2a adapt --done
 exec a2a doctor
+stdout 'adoption: PASS · not a git work tree'
 stdout 'credentials: PASS · lone: local space, no credential needed'
 stdout 'CI presence: PASS · lone: validated at land, no CI workflow'
 stdout 'auto-merge enabled: PASS · lone: lands synchronously'

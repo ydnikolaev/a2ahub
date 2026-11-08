@@ -422,10 +422,11 @@ func withUpdateNotice(inner HandlerFunc, store *cache.Store) HandlerFunc {
 	}
 }
 
-// skillNoticeDecorator adds the installed-skill advisory to every tool's text
-// body, on updateNoticeDecorator's terms: never on an error, never touching
+// noticeDecorator adds one injected advisory — the installed-skill notice, the
+// repository's adoption notice (D-043) — to every tool's text body, on
+// updateNoticeDecorator's terms: never on an error, never touching
 // StructuredContent, and a nil notice leaves the handler untouched.
-func skillNoticeDecorator(notice func() string) func(HandlerFunc) HandlerFunc {
+func noticeDecorator(notice func() string) func(HandlerFunc) HandlerFunc {
 	if notice == nil {
 		return func(inner HandlerFunc) HandlerFunc { return inner }
 	}

@@ -44,6 +44,7 @@ notification components: PASS · notifications not enabled for this project
 statusline wiring: PASS
 skill discoverable: PASS · no a2ahub skill installed
 skill manual current: PASS · no skill installed
+adoption: PASS
 notify-routes: PASS · no notification routes configured for this space
 notify-secret: PASS · no route names a secret, so none is required
 notify-delivery: PASS · no a2a-notify run recorded yet for this space
@@ -54,9 +55,9 @@ space policy: PASS · getvisa: gates review, flow full
 repository visibility [getvisa]: PASS: no observed mismatch
 ```
 
-All twenty-five fixed checks, in the order the binary prints them, followed by
+All twenty-six fixed checks, in the order the binary prints them, followed by
 one `repository visibility` row per connected space (this project has one,
-`getvisa`) — that row is not one of the fixed twenty-five and always prints
+`getvisa`) — that row is not one of the fixed twenty-six and always prints
 LAST, after every one of them. **A `PASS` carrying a note is a pass** — do
 not report it as a problem.
 
@@ -127,9 +128,9 @@ and not as "broken"**: the question was not answered. Where a `FAIL` and an
 | `1` | One or more checks failed, OR the local project/machine config could not be loaded (in which case doctor prints a `doctor: cannot load … config` line to stderr before exiting). |
 | `2` | Usage error — including **`doctor --space`**, which is the v2 admin host-drift diff and is explicitly rejected in v1-min (doctor prints `doctor: --space: v1-min: not available`). Doctor's flag only — `a2a validate --ci --space <id>` is a real flag on another verb. |
 
-## The twenty-five checks
+## The twenty-six checks
 
-`doctor` prints a fixed set of exactly twenty-five checks — that fixed count is
+`doctor` prints a fixed set of exactly twenty-six checks — that fixed count is
 what this heading names, and it is why the count and the heading are kept in
 lockstep by the test guarding this file. That lockstep was NOT holding: this
 heading still said "seventeen" on 2026-08-18 while the sentence forty lines up
@@ -139,21 +140,21 @@ written. An expectation spelled as a literal cannot notice that the thing it
 describes has moved; it can only notice somebody editing the doc without
 editing the test, which is the opposite of its job. The number is now DERIVED
 from the binary's own roster, and the summary sentence — which had no assertion
-at all — is checked too. **Each of the twenty-five
+at all — is checked too. **Each of the twenty-six
 runs once per PROJECT, not once per connected space**: when a check must reason about
 several connected spaces, it folds any per-space detail into a single line
 (`space access` and `credentials`, for example, join per-space failures with
 `; `). They print in the order below, top to bottom, matching `doctor`'s own
 output.
 
-The table carries a twenty-sixth row, `repository visibility`, because it is
-real output you will see — but it is NOT one of the fixed twenty-five and shares
+The table carries a twenty-seventh row, `repository visibility`, because it is
+real output you will see — but it is NOT one of the fixed twenty-six and shares
 neither their order nor their cardinality. It prints ONE row PER CONNECTED
 SPACE, after every fixed check, so it is always LAST in the output and absent
 entirely from a project with no connected spaces. Its printed name carries
 the space id (`repository visibility [getvisa]`), which no other row does.
 
-**So the table below is in output order, all twenty-six rows** — read it top to
+**So the table below is in output order, all twenty-seven rows** — read it top to
 bottom and you are reading `doctor`'s own sequence. That is worth stating
 because it has now been false TWICE. The first time, until 2026-08-12, this row
 sat eighth in the table under a sentence promising output order while the
@@ -183,6 +184,7 @@ tripwire now asserts the ORDER, not only the membership and the count.
 | **statusline wiring** | The `git` binary is on `PATH` (the prerequisite for §7.5's hub-less statusline-refresh fallback). | `git` is not on `PATH`, so the statusline's git-fetch fallback refresh cannot run. |
 | **skill discoverable** | The `a2ahub` skill tree is installed and reachable by your agent harness. | Advisory only — this row never FAILs. It reports whether a skill is installed at all. |
 | **skill manual current** | Whether the installed skill's on-disk tree matches THIS BINARY's own embedded copy — but only once the version stamp names this binary's own version; a stamp naming a different release compares against a tree this binary does not carry, so that case is answered from the stamp alone, never from a tree walk. | A stamp that is honestly older, newer, or from a `dev` build is not a FAIL — that PASSes with its own note (`a2a skill install` fixes an older one; a `dev` note only ever fires when its own tree walk finds drift). **Once the stamp names this binary, a FAIL means the on-disk tree disagrees with the embed** — a file is missing, a file's bytes differ, or a file exists on disk that the binary does not ship — and names the differing paths (up to five, then a count). The remedy is `a2a skill install`, and it says plainly that the reinstall **overwrites local edits** — a hand-edited file under an otherwise a2ahub-owned install is exactly the case this FAILs for. A directory with no a2ahub provenance marker is someone else's and is never judged at all. |
+| **adoption** | Whether this repository has done the adoption steps the releases up to this binary ask for (D-043), and whether the file that records it, `.a2a/config.yaml`, is committed. Every other verb prints the same count as a `note:` on stderr until you run `a2a adapt --done`. | **UNVERIFIED** while steps are owed — that is advisory and never changes doctor's exit code, because every release owes some; run `a2a adapt`, do them, then `a2a adapt --done`. **FAIL** when `.a2a/config.yaml` is gitignored or untracked: the record is then machine-local, so every clone and worktree owes every step again. It quotes the ignore rule; re-include the file (for `/.a2a/*`, add `!/.a2a/config.yaml` after it) and commit it. **FAIL** when the repository adapted through a release newer than this binary — almost always an older `a2a` first in `PATH`; it names the executable it ran. Outside a git work tree there is nothing to commit, so a recorded clock PASSes with a note saying that half does not apply. |
 | **automation coverage** | Nothing — and it says so. It names the two automations `onboarding.md` §8.6 recommends (a harness session-start hook, and a scheduled `a2a-poll.yml` in the PARTICIPANT's own repository) and states that doctor cannot observe either: the first is your harness's own config, which D-021 forbids a2a to read or write, and the second lives in a repository doctor is never pointed at. | It cannot FAIL. Always PASS-with-advisory, because a FAIL would claim doctor saw a broken state it structurally cannot see, and a bare PASS would be silent about something every new participant is told to set up. Check both by hand. |
 | **notify-routes** | Every `notification_routes[]` entry in the space's `space.yaml` is well-formed and names a participant the manifest actually lists. | A route is malformed, or its `for:` names a system absent from `participants[]`. The space's own PR gate refuses both (POL-021 / REF-022), so this row failing means a route reached `main` before the rule existed, or the manifest changed under it. Fix the route in `space.yaml` through the normal write funnel. |
 | **notify-secret** | Every secret a route names exists on the space repo. **Presence only — doctor never reads a secret's value.** | A route names a secret the repo does not hold, so its messages cannot be sent. Run `a2a notify setup`, or set it directly with `gh secret set <NAME> --repo <space-repo>`. A route with no secret configured is not an error until it has one to lose. |

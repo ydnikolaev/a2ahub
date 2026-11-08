@@ -34,6 +34,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
@@ -116,6 +117,13 @@ type DoctorCommand struct {
 	// "versions" check's advisory half (doctorCheckVersions): defaults to
 	// release.CachePath; tests override it to point at a seeded temp cache.
 	cachePath func() (string, error)
+	// clockFile, loadNotes, loadKnownIssues and execPath back the "adoption"
+	// row (doctor_adoption.go): git's view of the clock's file, the embedded
+	// corpus, and the running binary's path.
+	clockFile       func(ctx context.Context, root, path string) (doctorClockFile, error)
+	loadNotes       func() ([]notes.ReleaseNotes, error)
+	loadKnownIssues func() ([]notes.Change, error)
+	execPath        func() (string, error)
 
 	// build is the binary's full identity (D-040): a local build says so on
 	// the "versions" row and is never advised to `a2a update`. The zero value
@@ -177,6 +185,10 @@ func NewDoctorCommand(open host.Opener, binaryVersion, projectConfigPath, machin
 		readFile:          os.ReadFile,
 		lookupGit:         func() error { _, err := exec.LookPath("git"); return err },
 		cachePath:         release.CachePath,
+		clockFile:         runDoctorClockFile,
+		loadNotes:         doctorLoadNotes,
+		loadKnownIssues:   doctorLoadKnownIssues,
+		execPath:          os.Executable,
 		skillDir:          skillDefaultDir,
 		notifyAdapter:     newNotifySetupAdapter(http.DefaultClient, notifyGitHubAPIBase()),
 		ghSecretList:      runGHSecretList,
@@ -370,6 +382,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"statusline wiring", passFail(func() (bool, string) { return c.doctorCheckStatuslineWiring() })},
 		{"skill discoverable", passFail(func() (bool, string) { return c.doctorCheckSkillDiscoverable() })},
 		{"skill manual current", passFail(func() (bool, string) { return c.doctorCheckSkillManualCurrent() })},
+		{"adoption", func() (doctorCheckStatus, string) { return c.doctorCheckAdoption(ctx, cfg) }},
 		{"automation coverage", passFail(func() (bool, string) { return c.doctorCheckAutomationCoverage() })},
 		{"notify-routes", passFail(func() (bool, string) { return c.doctorCheckNotifyRoutes(cfg, machine) })},
 		{"notify-secret", passFail(func() (bool, string) { return c.doctorCheckNotifySecret(ctx, cfg, machine) })},

@@ -92,8 +92,8 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 		fixedNames[rosterName] = true
 		printedOrder = append(printedOrder, rosterName)
 	}
-	if len(fixedNames) != 25 {
-		t.Fatalf("doctor emitted %d fixed checks (%v), want 25; update the documented count and this tripwire together", len(fixedNames), fixedNames)
+	if len(fixedNames) != 26 {
+		t.Fatalf("doctor emitted %d fixed checks (%v), want 26; update the documented count and this tripwire together", len(fixedNames), fixedNames)
 	}
 
 	// The doc's rows, in the order the doc lists them, filtered to the fixed
@@ -140,7 +140,7 @@ func TestTroubleshootingEnumeratesEveryDoctorCheck(t *testing.T) {
 	words := map[int]string{
 		15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen",
 		20: "twenty", 21: "twenty-one", 22: "twenty-two", 23: "twenty-three",
-		24: "twenty-four", 25: "twenty-five",
+		24: "twenty-four", 25: "twenty-five", 26: "twenty-six",
 	}
 	word, ok := words[len(fixedNames)]
 	if !ok {

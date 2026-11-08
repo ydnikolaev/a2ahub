@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
@@ -43,6 +44,15 @@ func newTestDoctorCommand() *DoctorCommand {
 	// T3: absent cache == "no notice", never an error) unless a test
 	// overrides cmd.cachePath itself to exercise the advisory.
 	cmd.cachePath = func() (string, error) { return "/unused/does-not-exist/update-check.json", nil }
+	// Hermetic for the same reason: the "adoption" row would otherwise judge
+	// the real embedded corpus and run git on /unused/project. An empty corpus
+	// and a tracked clock file make it PASS; doctor_adoption_test.go drives
+	// every other outcome.
+	cmd.loadNotes = func() ([]notes.ReleaseNotes, error) { return nil, nil }
+	cmd.loadKnownIssues = func() ([]notes.Change, error) { return nil, nil }
+	cmd.clockFile = func(context.Context, string, string) (doctorClockFile, error) {
+		return doctorClockFile{Tracked: true}, nil
+	}
 	return cmd
 }
 

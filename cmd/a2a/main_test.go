@@ -147,7 +147,7 @@ func TestAdvisoryMode(t *testing.T) {
 
 	// Each of these owns the subject already; a generic note would duplicate
 	// or, for statusline and completion, corrupt a contract.
-	for _, verb := range []string{"version", "update", "doctor", "statusline", "completion"} {
+	for _, verb := range []string{"version", "update", "doctor", "statusline", "completion", "adapt"} {
 		render, _ := advisoryMode(verb, nil)
 		if render {
 			t.Fatalf("%q must NOT get the generic advisory; it reports or is the fix itself", verb)

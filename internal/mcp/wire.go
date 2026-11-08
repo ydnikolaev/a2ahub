@@ -68,6 +68,9 @@ type Paths struct {
 	// SkillNotice, when set, returns the installed-skill advisory or "". It is
 	// wired in cmd/a2a because this package does not import the embedded tree.
 	SkillNotice func() string
+	// AdoptionNotice, when set, returns the repository's adoption advisory
+	// or "" (D-043). Wired in cmd/a2a for the same reason as SkillNotice.
+	AdoptionNotice func() string
 }
 
 // ProjectRootEnv names the directory `a2a mcp` treats as the project root,
@@ -218,8 +221,8 @@ func newServerFromConfig(ctx context.Context, p Paths, build version.Build, buil
 	registry := NewRegistry()
 	// EVERY tool carries the update advisory, not just a2a_read. Applied here,
 	// at construction, so no future registration can miss it.
-	withUpdate, withSkill := updateNoticeDecorator(store), skillNoticeDecorator(p.SkillNotice)
-	registry.Decorate(func(inner HandlerFunc) HandlerFunc { return withSkill(withUpdate(inner)) })
+	withUpdate, withSkill, withAdoption := updateNoticeDecorator(store), noticeDecorator(p.SkillNotice), noticeDecorator(p.AdoptionNotice)
+	registry.Decorate(func(inner HandlerFunc) HandlerFunc { return withAdoption(withSkill(withUpdate(inner))) })
 	if len(cfg.Spaces) == 0 {
 		// No connected space yet: the space-free tools still work (over zero
 		// mirrors, cache.Store's own tolerant-of-absent-config contract);

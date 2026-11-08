@@ -44,7 +44,8 @@ changes:
     scope: local
     why: >
       The manual changed in this release, so an installed skill is behind until it
-      is refreshed. Commit the result: the skill lives in your repository.
+      is refreshed. If your repository tracks the skill, commit the refreshed
+      files; if it ignores the skill, the refresh on disk is the whole step.
     detect: ["! a2a doctor 2>/dev/null | grep -q '^skill manual current: FAIL'"]
     run: ["a2a skill install"]
   roadmap:
@@ -273,3 +274,38 @@ changes:
     visibility: omit
     why: >
       An attention signal on existing data; it changes no plan.
+- id: RN-02702-11
+  kind: feat
+  impact: normal
+  subject: every verb says when this repository has adoption steps owed
+  detail: >
+    The binary is per machine and adoption is per repository, and only `a2a
+    update` ran `a2a adapt`, only in the repository it was run in. A binary
+    from `make deliver`, or one another repository updated, reached every
+    other repository with nothing said, and the steps a release asked for were
+    never done there.
+
+    Now every verb that succeeds, and every MCP tool, ends with one `note:` on
+    stderr while this repository owes steps: how many and since which
+    release, or that it never recorded adoption at all. Under `--json` it is
+    an `adoption_notice` object. When the repository adapted through a release
+    newer than the binary, the note names the binary's version and path,
+    because that is almost always an older `a2a` first in `PATH`. It stops
+    once `a2a adapt --done` records the clock, and it never touches stdout or
+    the exit code. `a2a doctor` has a new `adoption` row with the same answer.
+    It FAILs when `.a2a/config.yaml` is gitignored or untracked, and quotes
+    the ignore rule. A re-run of `a2a init`, for example to add a space, no
+    longer drops the recorded clock.
+  action:
+    scope: local
+    why: >
+      The clock lives in `.a2a/config.yaml`. If the repository ignores or has
+      not committed that file, every clone and worktree starts with no record
+      and owes every step again. Commit it. For a `/.a2a/*` ignore rule, add
+      `!/.a2a/config.yaml` after it. Then run `a2a adapt`, do or verify what
+      it lists, and `a2a adapt --done`.
+    detect: ["! git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git ls-files --error-unmatch .a2a/config.yaml >/dev/null 2>&1"]
+  roadmap:
+    visibility: omit
+    why: >
+      An advisory on an existing mechanism; it changes no plan.

@@ -804,27 +804,27 @@ func TestInboxHandler_WarningsAbsentOnCleanRead(t *testing.T) {
 	}
 }
 
-// TestSkillNoticeDecorator holds the advisory to updateNoticeDecorator's terms:
+// TestNoticeDecorator holds the advisory to updateNoticeDecorator's terms:
 // on the text body only, never on an error, and absent when there is no notice.
-func TestSkillNoticeDecorator(t *testing.T) {
+func TestNoticeDecorator(t *testing.T) {
 	t.Parallel()
 	ok := func(context.Context, json.RawMessage) (any, string, error) { return "structured", "body", nil }
 	boom := errors.New("refused")
 	refusal := func(context.Context, json.RawMessage) (any, string, error) { return nil, "", boom }
 	say := func() string { return "stale" }
 
-	_, body, err := skillNoticeDecorator(say)(ok)(context.Background(), nil)
+	_, body, err := noticeDecorator(say)(ok)(context.Background(), nil)
 	if err != nil || body != "body\nnote: stale" {
 		t.Fatalf("with a notice: body %q, err %v", body, err)
 	}
-	result, body, err := skillNoticeDecorator(func() string { return "" })(ok)(context.Background(), nil)
+	result, body, err := noticeDecorator(func() string { return "" })(ok)(context.Background(), nil)
 	if err != nil || body != "body" || result != "structured" {
 		t.Fatalf("with nothing to say: result %v, body %q, err %v", result, body, err)
 	}
-	if _, body, err := skillNoticeDecorator(nil)(ok)(context.Background(), nil); err != nil || body != "body" {
+	if _, body, err := noticeDecorator(nil)(ok)(context.Background(), nil); err != nil || body != "body" {
 		t.Fatalf("with no notice wired: body %q, err %v", body, err)
 	}
-	if _, body, err := skillNoticeDecorator(say)(refusal)(context.Background(), nil); !errors.Is(err, boom) || body != "" {
+	if _, body, err := noticeDecorator(say)(refusal)(context.Background(), nil); !errors.Is(err, boom) || body != "" {
 		t.Fatalf("on a refusal: body %q, err %v", body, err)
 	}
 }

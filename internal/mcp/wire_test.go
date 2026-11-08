@@ -213,6 +213,39 @@ func TestNewServerFromConfigNoConnectedSpaces(t *testing.T) {
 	assertSpaceFreeSurface(t, server.registry.ToolNames())
 }
 
+// TestServerCarriesTheAdoptionNotice: the repository's adoption notice reaches
+// an agent that talks only MCP (D-043), on the body and never on the
+// structured result, because the wiring — not only the decorator — is what a
+// revert would drop.
+func TestServerCarriesTheAdoptionNotice(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	projectConfig := filepath.Join(projectRoot, ".a2a", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectConfig), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(projectConfig, []byte("system: beta\nspaces: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := Paths{ProjectConfig: projectConfig, MachineConfig: filepath.Join(t.TempDir(), "absent.yaml"), ProjectRoot: projectRoot,
+		Staging: filepath.Join(projectRoot, ".a2a", "staging"), AdoptionNotice: func() string { return "owed" }}
+	server, err := NewServerFromConfig(context.Background(), p, testBuild("0.0.1-test"), unavailableWorkToolDeps())
+	if err != nil {
+		t.Fatalf("NewServerFromConfig: %v", err)
+	}
+	spec, ok := server.registry.Get("a2a_whatsnew")
+	if !ok {
+		t.Fatal("a2a_whatsnew is not registered")
+	}
+	_, body, err := spec.Handler(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("a2a_whatsnew: %v", err)
+	}
+	if !strings.HasSuffix(body, "note: owed") {
+		t.Fatalf("body does not end with the adoption notice: %q", body)
+	}
+}
+
 // spaceFreeToolNames is what a session with no usable space must offer:
 // `a2a_read` over the local cache, `a2a_whatsnew` over the embedded release-
 // notes corpus, `a2a_adapt` over the embedded corpus plus the project's own

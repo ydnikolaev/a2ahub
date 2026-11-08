@@ -3452,7 +3452,7 @@
             "scope": "space",
             "why": "if you own a space created before the reusable-workflow CI, this is now the supported way to migrate it",
             "detect": [
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a space update"
@@ -3494,7 +3494,7 @@
             "scope": "local",
             "why": "if you ran `a2a space update` on 0.6.0 and it offered to add a root CODEOWNERS, drop that file from the PR — or re-run the dry-run on 0.6.1",
             "detect": [
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a update"
@@ -3523,7 +3523,7 @@
             "why": "every participant in a space you own must be on 0.6.2+ before the floor lands, or their writes will be refused",
             "detect": [
               "a2a doctor",
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a update",
@@ -3604,7 +3604,7 @@
             "scope": "space",
             "why": "your space CI keeps checking the wrong identity until its reusable-workflow ref points at 0.6.4 or later",
             "detect": [
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a space update"
@@ -3662,7 +3662,7 @@
             "scope": "space",
             "why": "the merge-time half of the check only reaches your space once its reusable-workflow ref points at 0.7.0 or later",
             "detect": [
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a space update"
@@ -3780,7 +3780,7 @@
             "why": "the floor only reaches a space when its space.yaml is updated; every participant must be on 0.7.0 first",
             "detect": [
               "a2a doctor",
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a update",
@@ -3914,7 +3914,7 @@
             "scope": "space",
             "why": "your space's CI resolves the validator through the workflow it pins; re-pin to this release",
             "detect": [
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a space update"
@@ -9501,7 +9501,7 @@
             "scope": "space",
             "why": "A GitHub space picks the fix up with `a2a space update` after this release, which moves its workflow pin. A pull request already refused this way can be re-run once the pin moves; nothing in it needs an edit.\n",
             "detect": [
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a space update"
@@ -9522,7 +9522,7 @@
             "scope": "space",
             "why": "A GitHub space picks the fix up with `a2a space update` after this release. No artifact already merged is judged again.\n",
             "detect": [
-              "a2a space update --dry-run"
+              "a2a space update --check"
             ],
             "run": [
               "a2a space update"
@@ -9649,7 +9649,7 @@
           "detail": "`.a2ahub/skill/` is a committed copy, so a new binary changes nothing in it, and only `a2a doctor` ever compared the two. Every MCP tool and every CLI verb that carries the update notice now adds one line when the installed files differ from the tree this binary carries. It compares the files rather than the version stamp, so a local build whose skill moved is noticed, and an old stamp over an unchanged skill stays quiet. The CLI writes the line to stderr, as `skill_notice` under `--json`, and MCP adds it to the text body.\n",
           "action": {
             "scope": "local",
-            "why": "The manual changed in this release, so an installed skill is behind until it is refreshed. Commit the result: the skill lives in your repository.\n",
+            "why": "The manual changed in this release, so an installed skill is behind until it is refreshed. If your repository tracks the skill, commit the refreshed files; if it ignores the skill, the refresh on disk is the whole step.\n",
             "detect": [
               "! a2a doctor 2\u003e/dev/null | grep -q '^skill manual current: FAIL'"
             ],
@@ -9755,6 +9755,20 @@
           "action": {
             "scope": "none",
             "why": "Nothing is owed by the tool. Where an item is flagged, the side that owes the move should make it.\n"
+          }
+        },
+        {
+          "id": "RN-02702-11",
+          "kind": "feat",
+          "impact": "normal",
+          "subject": "every verb says when this repository has adoption steps owed",
+          "detail": "The binary is per machine and adoption is per repository, and only `a2a update` ran `a2a adapt`, only in the repository it was run in. A binary from `make deliver`, or one another repository updated, reached every other repository with nothing said, and the steps a release asked for were never done there.\nNow every verb that succeeds, and every MCP tool, ends with one `note:` on stderr while this repository owes steps: how many and since which release, or that it never recorded adoption at all. Under `--json` it is an `adoption_notice` object. When the repository adapted through a release newer than the binary, the note names the binary's version and path, because that is almost always an older `a2a` first in `PATH`. It stops once `a2a adapt --done` records the clock, and it never touches stdout or the exit code. `a2a doctor` has a new `adoption` row with the same answer. It FAILs when `.a2a/config.yaml` is gitignored or untracked, and quotes the ignore rule. A re-run of `a2a init`, for example to add a space, no longer drops the recorded clock.\n",
+          "action": {
+            "scope": "local",
+            "why": "The clock lives in `.a2a/config.yaml`. If the repository ignores or has not committed that file, every clone and worktree starts with no record and owes every step again. Commit it. For a `/.a2a/*` ignore rule, add `!/.a2a/config.yaml` after it. Then run `a2a adapt`, do or verify what it lists, and `a2a adapt --done`.\n",
+            "detect": [
+              "! git rev-parse --is-inside-work-tree \u003e/dev/null 2\u003e\u00261 || git ls-files --error-unmatch .a2a/config.yaml \u003e/dev/null 2\u003e\u00261"
+            ]
           }
         },
         {

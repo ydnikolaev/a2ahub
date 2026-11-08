@@ -585,6 +585,7 @@ func buildMCPServer(ctx context.Context, p mcp.Paths, build iversion.Build) (*mc
 		return nil, machineErr
 	}
 	p.SkillNotice = func() string { return skillNotice(p.ProjectRoot, cfg.SkillDir) }
+	p.AdoptionNotice = func() string { return adoptionNotice(p.ProjectConfig) }
 	if len(cfg.Spaces) == 0 {
 		return mcp.NewServerFromConfig(ctx, p, build)
 	}

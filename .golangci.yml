@@ -536,7 +536,11 @@ linters:
       # secret set/list` (the secret is sealed by gh, which owns the NaCl
       # crypto this binary has no dependency for) and `stty -echo` around the
       # TTY token prompt. Same shape as internal/ghauth's own `gh auth token`.
-      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_notify_setup|cmd_statusline|cmd_update|cmd_validate_ci|contract_git)\.go|internal/ghauth/ghauth\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
+      # internal/cli/doctor_adoption.go: the "adoption" row's two read-only git
+      # probes (D-043) — `ls-files --error-unmatch` and `check-ignore -v`, fixed
+      # argv, never a shell; the only variables are the project root and its
+      # own .a2a/config.yaml path.
+      - path: ^(cmd/a2a/notifications_platform\.go|internal/cache/mirror\.go|internal/cli/(cmd_contract|cmd_html|cmd_notify_setup|cmd_statusline|cmd_update|cmd_validate_ci|contract_git|doctor_adoption)\.go|internal/ghauth/ghauth\.go|internal/host/github\.go|internal/mcp/tools_contract\.go|internal/release/selfcheck\.go|internal/space/(credential|mirror)\.go)$
         text: "G204:"
         linters: [gosec]
       # cmd/a2a/feedback_freshness.go: AC3's hub-of-record freshness probe

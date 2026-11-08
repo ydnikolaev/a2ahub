@@ -316,6 +316,18 @@ sees you, and that deprecation still reaches your inbox.
    does not come back when that note is released. `--done --json` names them in
    `recorded_ahead`.
 
+   **You do not have to remember to run it.** The binary is per machine and
+   adoption is per repository, so a binary that arrives without `a2a update`
+   — `make deliver`, a package manager, another repository's update — used to
+   reach this repository with nothing said. Now every other verb that
+   succeeds, and every MCP tool, ends with one `note:` on stderr (an
+   `adoption_notice` object under `--json`) while steps are owed: how many,
+   and since which release, or that this repository never recorded adoption
+   at all. It stops when `--done` records the clock. It never touches stdout
+   or the exit code. `a2a doctor`'s `adoption` row says the same and FAILs
+   when `.a2a/config.yaml` is gitignored or untracked, because a clock that
+   is not committed is lost to every clone and worktree.
+
    Two refusals worth knowing before you meet them. A baseline NEWER than
    your binary refuses rather than walking backwards, naming both versions —
    that is a downgrade, and adapt will not guess what you meant. And a
