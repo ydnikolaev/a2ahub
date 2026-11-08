@@ -152,6 +152,8 @@ changes:
     by a crashed git blocks the mirror until it is deleted. `a2a doctor` now
     names each such file and its age and says to delete it when no git
     process is running in that mirror, instead of saying it clears by itself.
+    Every other verb that gives up waiting on such a file names it the same
+    way, where it used to say only "re-run".
   action:
     scope: none
     why: >
