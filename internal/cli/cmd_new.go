@@ -149,7 +149,7 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if IsHelpArg(typ) {
 		_, _ = fmt.Fprintln(stdio.Stdout, "usage: a2a new <type> [--to <system>[,<system>...]] [--field k=v | k.nested=v]... [--body-file <path>] [--thread <id>] [--slug <slug>]")
 		_, _ = fmt.Fprintln(stdio.Stdout, "types: "+strings.Join(newTypeNames(), " | "))
-		_, _ = fmt.Fprintf(stdio.Stdout, "--to: %s address one system, so several targets draft one artifact per target on one shared thread (then a2a submit --batch); %s take the list on one artifact\n",
+		_, _ = fmt.Fprintf(stdio.Stdout, "--to: %s address one system, so several targets draft one artifact per target on one shared thread (then a2a submit --batch); %s take the list on one artifact, or all for the whole space\n",
 			strings.Join(newTypesBySingleTarget(true), ", "), strings.Join(newTypesBySingleTarget(false), ", "))
 		_, _ = fmt.Fprintln(stdio.Stdout, workflowLine("loop-send"))
 		return 0
@@ -204,6 +204,11 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if _, has := fields["to"]; has && len(targets) > 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "new: --to and --field to= both name the recipients; use one of them")
 		return 2
+	}
+	if prefixInfo.SingleTarget && len(targets) == 1 && targets[0] == "all" {
+		return newRefuse(stdio, 2, "new: read --to all",
+			fmt.Sprintf("%s addresses exactly one system (D-027), so it cannot broadcast to the whole space", typ),
+			"name the systems (--to a,b,c drafts one per target), or send `a2a new announcement --to all` when everyone only needs to read it")
 	}
 	// draftTo holds the `to` value of each draft this run writes, one entry
 	// per draft. An empty entry leaves `to` to --field or the template. One
@@ -435,9 +440,8 @@ func newRefuse(stdio IO, code int, attempted, found, nextStep string) int {
 // itself repeatable) into the target list, in the order given. An empty
 // entry or a target named twice is a usage error naming it: the first would
 // draft an artifact to nobody, the second would send one system the same
-// work twice. `all` is refused too: the broadcast sentinel is the bare
-// scalar `to: all`, and the template's `to` is a list, so it would land as
-// `to: [all]`, which every reader takes for a system named "all".
+// work twice. `all` is the broadcast sentinel, the whole space, so it
+// stands alone: `--to beta,all` names one system and everyone at once.
 func newParseTargets(raw []string) ([]string, error) {
 	var out []string
 	seen := make(map[string]bool)
@@ -447,8 +451,8 @@ func newParseTargets(raw []string) ([]string, error) {
 			if target == "" {
 				return nil, fmt.Errorf("--to %q has an empty target (want <system>[,<system>...])", value)
 			}
-			if target == "all" {
-				return nil, fmt.Errorf("--to cannot carry \"all\": a broadcast to the whole space is the bare value `to: all`, which a list cannot hold; draft without --to and set `to: all` in the drafted file")
+			if (target == "all" && len(out) > 0) || seen["all"] {
+				return nil, fmt.Errorf("--to \"all\" addresses the whole space and cannot be combined with named systems")
 			}
 			if seen[target] {
 				return nil, fmt.Errorf("--to names %q twice; each target is named once", target)

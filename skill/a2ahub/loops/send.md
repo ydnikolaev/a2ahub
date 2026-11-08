@@ -46,8 +46,8 @@
    each target must DO the work and report done, fan out `work_request`s —
    each gets its own response, verify and close. When everyone must only
    READ it and you want the acks tracked, send one `announcement` with
-   `--field ack_requested=true` and `to: all` (set `to: all` in the drafted
-   file; `--to` takes system names only). Fill every
+   `--field ack_requested=true` and `--to all`, which drafts the broadcast
+   `to: all`. Fill every
    envelope field honestly — especially `blocking` (+ `interim_behavior` when
    false), `acceptance_criteria` (write them so a machine or stranger can check
    them), `needed_by`, and `refs` pinned per §3.8. The schema keeps `needed_by`

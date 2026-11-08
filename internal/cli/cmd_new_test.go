@@ -1099,6 +1099,41 @@ func TestNewToMatchesTheEquivalentFieldTo(t *testing.T) {
 	}
 }
 
+// TestNewToAllWritesTheBroadcastScalar pins the broadcast sentinel on every
+// type that takes a list: `--to all` and `--field to=all` both draft the bare
+// `to: all` the base envelope schema accepts. Both used to write `to: [all]`,
+// which every reader takes for a system named "all".
+func TestNewToAllWritesTheBroadcastScalar(t *testing.T) {
+	t.Parallel()
+	for _, typ := range []string{"announcement", "decision", "contract", "requirement"} {
+		for _, form := range [][]string{{"--to", "all"}, {"--field", "to=all"}} {
+			t.Run(typ+" "+strings.Join(form, " "), func(t *testing.T) {
+				t.Parallel()
+				stagingDir := filepath.Join(t.TempDir(), "staging")
+				cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, nil)
+				args := append([]string{typ}, enumFieldArgs(typ)...)
+				if typ == "contract" || typ == "requirement" {
+					args = append(args, "--slug", "ingest")
+				}
+				args = append(args, form...)
+				io, out, errOut := newIO()
+				if code := cmd.Run(context.Background(), args, io); code != 0 {
+					t.Fatalf("new %v: code = %d; stdout=%s stderr=%s", args, code, out.String(), errOut.String())
+				}
+				drafts := stagedDrafts(t, stagingDir)
+				if len(drafts) != 1 {
+					t.Fatalf("new %v: want exactly one draft, got %d", args, len(drafts))
+				}
+				for _, raw := range drafts {
+					if !strings.Contains(string(raw), "\nto: all\n") {
+						t.Fatalf("new %v did not draft the bare `to: all`:\n%s", args, raw)
+					}
+				}
+			})
+		}
+	}
+}
+
 // TestNewToRefusesBeforeWriting covers the usage refusals: each names what
 // is wrong, exits 2, and leaves staging untouched.
 func TestNewToRefusesBeforeWriting(t *testing.T) {
@@ -1113,7 +1148,9 @@ func TestNewToRefusesBeforeWriting(t *testing.T) {
 		{"blank value", []string{"--to", " "}, []string{"empty target"}},
 		{"duplicate in one list", []string{"--to", "beta,gamma, beta"}, []string{`"beta"`, "twice"}},
 		{"duplicate across repeats", []string{"--to", "beta", "--to", "beta"}, []string{`"beta"`, "twice"}},
-		{"the broadcast sentinel", []string{"--to", "beta,all"}, []string{`"all"`, "to: all"}},
+		{"the broadcast sentinel after a system", []string{"--to", "beta,all"}, []string{`"all"`, "named systems"}},
+		{"the broadcast sentinel before a system", []string{"--to", "all", "--to", "beta"}, []string{`"all"`, "named systems"}},
+		{"a broadcast on a single-target type", []string{"--to", "all"}, []string{"work_request", "exactly one system", "announcement --to all"}},
 		{"both --to and --field to=", []string{"--to", "beta", "--field", "to=gamma"}, []string{"--to", "--field to="}},
 	}
 	for _, tc := range tests {

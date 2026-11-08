@@ -735,6 +735,18 @@ func setField(node *yaml.Node, field, override string) error {
 		return nil
 	}
 
+	// `to: all` is the broadcast sentinel: the base envelope schema takes a
+	// list of systems OR the bare const "all". The template's `to` is a list,
+	// so the one-element reading below would write `to: [all]`, which every
+	// reader takes for a system named "all". A bare `all` for `to` therefore
+	// replaces the list with the scalar. Whether the type accepts a broadcast
+	// is the validator's call: exchange types redeclare `to` as one system.
+	if field == "to" && node.Kind == yaml.SequenceNode && strings.TrimSpace(override) == "all" {
+		head, foot := node.HeadComment, node.FootComment
+		*node = yaml.Node{Kind: yaml.ScalarNode, Value: "all", HeadComment: head, FootComment: foot}
+		return nil
+	}
+
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(override), &doc); err != nil || len(doc.Content) == 0 {
 		return fmt.Errorf("%w: --field %s=%q is not valid YAML, and this field is a %s in the template",

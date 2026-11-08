@@ -598,6 +598,36 @@ func TestRenderAppliesAListValuedFieldOverride(t *testing.T) {
 	}
 }
 
+// TestRenderWritesTheBroadcastSentinelAsAScalar: `all` for the list-shaped
+// `to` is the broadcast, the bare const the base schema takes. The
+// one-element reading above would make it `[all]`, a system named "all".
+// An explicit list stays a list.
+func TestRenderWritesTheBroadcastSentinelAsAScalar(t *testing.T) {
+	t.Parallel()
+	render := func(override string) string {
+		t.Helper()
+		out, err := template.Render(template.Input{
+			Type:    "announcement",
+			ID:      "XA-axon-20260726-ab12",
+			Actor:   template.Actor{Kind: "agent", Name: "bot"},
+			Created: time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC),
+			Fields:  map[string]string{"to": override},
+		})
+		if err != nil {
+			t.Fatalf("Render with --field to=%q: %v", override, err)
+		}
+		return string(out)
+	}
+	for _, override := range []string{"all", " all "} {
+		if got := render(override); !strings.Contains(got, "\nto: all\n") {
+			t.Fatalf("--field to=%q did not render the bare `to: all`:\n%s", override, got)
+		}
+	}
+	if got := render("[all]"); strings.Contains(got, "\nto: all\n") {
+		t.Fatalf("an explicit list `[all]` was rewritten to the broadcast scalar:\n%s", got)
+	}
+}
+
 // TestRenderRefusesAFieldOverrideItCannotApply is the other half, and the one
 // that matters more than the fix.
 //
