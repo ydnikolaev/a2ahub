@@ -324,7 +324,7 @@ sees you, and that deprecation still reaches your inbox.
    `adoption_notice` object under `--json`) while steps are owed: how many,
    and since which release, or that this repository never recorded adoption
    at all. It stops when `--done` records the clock. It never touches stdout
-   or the exit code. `a2a doctor`'s `adoption` row says the same and FAILs
+   or the exit code. The doctor's `adoption` row says the same and FAILs
    when `.a2a/config.yaml` is gitignored or untracked, because a clock that
    is not committed is lost to every clone and worktree.
 

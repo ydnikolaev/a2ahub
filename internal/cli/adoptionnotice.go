@@ -67,7 +67,7 @@ func WriteAdoptionAdvisory(stdio IO, sentence string, jsonOut bool) {
 		return
 	}
 	if jsonOut {
-		_ = json.NewEncoder(stdio.Stderr).Encode(struct {
+		_ = json.NewEncoder(stdio.Stderr).Encode(struct { // reason: an advisory on stderr; a write error cannot change the verb's outcome
 			AdoptionNotice string `json:"adoption_notice"`
 		}{sentence})
 		return
