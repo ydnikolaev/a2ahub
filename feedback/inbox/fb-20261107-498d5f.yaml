@@ -40,5 +40,7 @@ resolution: >-
     holder's pid, liveness and age, and doctor reports a locked mirror over an
     intact space. 48193453 (2026-11-08) covers git's own lock files, which carry no pid and
     are never reclaimed: doctor names each leftover one with its age and says to
-    delete it. Ships publicly with 0.27.2 (RN-02702-5); flip to shipped then.
+    delete it; 506b41f6 makes every other verb that gives up on such a
+    file name it the same way instead of saying only "re-run". Ships publicly
+    with 0.27.2 (RN-02702-5); flip to shipped then.
 status: accepted

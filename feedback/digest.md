@@ -148,7 +148,7 @@ from run the fixes. No status changes: they flip to shipped with the public
 0.27.2 release.
 
 - fb-20261106-28c7e6 (bug, still accepted): fixed in cb01f064, e2da5d67 (RN-02702-4)
-- fb-20261107-498d5f (bug, still accepted): fixed in b6a70883, 425ae599, 48193453 (RN-02702-5)
+- fb-20261107-498d5f (bug, still accepted): fixed in b6a70883, 425ae599, 48193453, 506b41f6 (RN-02702-5)
 - fb-20261107-94ae3c (friction, still accepted): fixed in 2c2ea6e0 (RN-02702-6)
 - fb-20261107-37ce55 (bug, still accepted): fixed in 1ffaed67, c0206669 (RN-02702-7)
 - fb-20261107-3779ff (bug, still accepted): fixed in a747a3d8 (RN-02702-8)
