@@ -306,6 +306,11 @@ func (c *InitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		// Preserve the additive project setting when init refreshes the rest of
 		// the config so a custom install cannot silently snap back to default.
 		cfg.SkillDir = existing.SkillDir
+		// Nor the adoption clock (D-043): a re-init that adds a space used to
+		// drop it, so the repository was told it had never adopted anything
+		// right after `a2a adapt --done` recorded that it had.
+		cfg.AdaptedThrough = existing.AdaptedThrough
+		cfg.AdaptedAhead = existing.AdaptedAhead
 	}
 
 	// FIX B runs before the idempotent short-circuit so a repeat `a2a

@@ -94,6 +94,41 @@ func TestInitIdempotentRerun(t *testing.T) {
 	}
 }
 
+// TestInitPreservesTheAdoptionClock: a re-init that rewrites the config must
+// keep what `a2a adapt --done` recorded, or every verb tells the repository it
+// never adopted anything (D-043).
+func TestInitPreservesTheAdoptionClock(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".a2a", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	const initial = "system: axon\nadapted_through: 0.27.1\nadapted_ahead: [RN-02702-0]\nspaces:\n  - id: old\n    repo_url: https://example.invalid/org/old.git\n"
+	if err := os.WriteFile(cfgPath, []byte(initial), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	io, out, errOut := newIO()
+	code := cli.NewInitCommand(cfgPath).Run(context.Background(), []string{
+		"--system", "axon",
+		"--space", "https://example.invalid/org/new.git",
+		"--no-skill", "--no-skill-link", "--no-agents-pointer",
+	}, io)
+	if code != 0 {
+		t.Fatalf("Run: code=%d stdout=%s stderr=%s", code, out.String(), errOut.String())
+	}
+	cfg, err := space.LoadProjectConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadProjectConfig: %v", err)
+	}
+	if cfg.AdaptedThrough != "0.27.1" || len(cfg.AdaptedAhead) != 1 || cfg.AdaptedAhead[0] != "RN-02702-0" {
+		t.Fatalf("clock = %q %v, want 0.27.1 [RN-02702-0] preserved", cfg.AdaptedThrough, cfg.AdaptedAhead)
+	}
+	if len(cfg.Spaces) != 1 || cfg.Spaces[0].RepoURL != "https://example.invalid/org/new.git" {
+		t.Fatalf("spaces=%+v, want the re-init to have rewritten them", cfg.Spaces)
+	}
+}
+
 func TestInitPreservesCustomSkillDirectory(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
