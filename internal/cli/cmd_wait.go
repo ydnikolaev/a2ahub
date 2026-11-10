@@ -30,7 +30,7 @@ const (
 	waitExitUnmeasured = 3
 )
 
-const waitUsage = "usage: a2a wait [--space <id>] [--mine | --subject <id> | --thread <id>] [--timeout <duration>] [--json]"
+const waitUsage = "usage: a2a wait [--space <id>] [--mine | --owed | --subject <id> | --thread <id>] [--timeout <duration>] [--json]"
 
 // WaitCommand owns only transport: flags in, one fact-only line per event out.
 // Selection, the cursor and the watch loop live in internal/cache.
@@ -47,7 +47,7 @@ func (c *WaitCommand) Name() string { return "wait" }
 
 // Synopsis implements Command.
 func (c *WaitCommand) Synopsis() string {
-	return "block until another system's move concerning you lands: wait [--space <id>] [--mine | --subject <id> | --thread <id>] [--timeout <duration>] [--json]"
+	return "block until another system's move concerning you lands: wait [--space <id>] [--mine | --owed | --subject <id> | --thread <id>] [--timeout <duration>] [--json]"
 }
 
 type waitJSON struct {
@@ -62,6 +62,7 @@ func (c *WaitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs.SetOutput(stdio.Stderr)
 	spaceID := fs.String("space", "", "restrict the wait to one connected space")
 	fs.Bool("mine", false, "events that concern this system (the default)")
+	owed := fs.Bool("owed", false, "only events after which the next move is this system's, plus p1, blocking and gated ones")
 	subject := fs.String("subject", "", "events on this artifact id")
 	thread := fs.String("thread", "", "events on this thread id")
 	timeout := fs.Duration("timeout", 30*time.Minute, "maximum wait duration (must be positive)")
@@ -73,12 +74,14 @@ func (c *WaitCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	selectors := 0
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "mine", "subject", "thread":
+		case "mine", "owed", "subject", "thread":
 			selectors++
 		}
 	})
 	sel := cache.WaitSelector{Kind: cache.WaitMine}
 	switch {
+	case *owed:
+		sel = cache.WaitSelector{Kind: cache.WaitOwed}
 	case *subject != "":
 		sel = cache.WaitSelector{Kind: cache.WaitSubject, ID: *subject}
 	case *thread != "":

@@ -57,6 +57,8 @@ type WaitSelectorKind string
 const (
 	// WaitMine selects every counterparty event that concerns this system.
 	WaitMine WaitSelectorKind = "mine"
+	// WaitOwed is WaitMine narrowed to events after which the next move is mine.
+	WaitOwed WaitSelectorKind = "owed"
 	// WaitSubject selects every counterparty event whose subject is the ID.
 	WaitSubject WaitSelectorKind = "subject"
 	// WaitThread selects every counterparty event on an artifact of the thread.
@@ -102,6 +104,8 @@ func (s WaitSelector) cursorKey() string {
 		return "subject-" + waitPathSafe(s.ID)
 	case WaitThread:
 		return "thread-" + waitPathSafe(s.ID)
+	case WaitOwed:
+		return string(WaitOwed)
 	default:
 		return string(WaitMine)
 	}
@@ -197,6 +201,36 @@ func selectWaitEvents(me string, consumes map[string]bool, sel WaitSelector, can
 			Space: c.Space, Event: c.ULID, Actor: c.ActorSystem, Transition: c.Transition,
 			Subject: c.Subject, Thread: fa.Env.Thread, Why: why, At: c.At,
 		})
+	}
+	return out
+}
+
+// keepOwedEvents narrows concerning events to those worth waking for: the next
+// move on the subject or its thread is mine, or the subject is p1, blocking or
+// behind a human gate. A move can sit on another artifact of the thread, as a
+// response leaves the verify on my own request. An event that could not be
+// judged is kept, like everywhere else in the wait.
+func keepOwedEvents(events []WaitEvent, artifacts map[string]foldedArtifact, open []OpenItem) []WaitEvent {
+	owedSubject, owedThread, gated := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, item := range open {
+		if item.HumanGate != "" {
+			gated[item.ID] = true
+		}
+		if !item.YourMove {
+			continue
+		}
+		owedSubject[item.ID] = true
+		if thread := artifacts[item.ID].Env.Thread; thread != "" {
+			owedThread[thread] = true
+		}
+	}
+	var out []WaitEvent
+	for _, e := range events {
+		env := artifacts[e.Subject].Env
+		if e.Why == WhyUnresolved || owedSubject[e.Subject] || (e.Thread != "" && owedThread[e.Thread]) ||
+			gated[e.Subject] || env.Blocking || env.Priority == "p1" {
+			out = append(out, e)
+		}
 	}
 	return out
 }
@@ -360,6 +394,10 @@ type spaceWatch struct {
 	cursorPath string
 	// judged is the mirror main sha whose events have been judged.
 	judged string
+	// started: the baseline exists. A space that could not be read when the
+	// wait began stays false and is retried on every poll; nothing is judged or
+	// saved for it until then.
+	started bool
 	// failed: the latest observation of this space did not succeed.
 	failed   bool
 	interval time.Duration
@@ -369,16 +407,18 @@ type spaceWatch struct {
 // Wait blocks until at least one event concerning the selector lands, the
 // context ends, or the first observation cannot be made. See spec 02 §T3-T4.
 //
-// A returned error means no observation was possible at all (unknown space, no
-// mirror to baseline from, a local space that cannot be classified); the caller
-// maps it to its "error before the first observation" code. A deadline is not
-// an error: it is WaitResult.TimedOut.
+// A returned error means no observation was possible at all: an unknown space,
+// or EVERY watched space without a baseline (no mirror, a local space that
+// cannot be classified). The caller maps it to its "error before the first
+// observation" code. One space failing while another started is the same
+// failed observation as an outage mid-wait: it is reported as unmeasured and
+// retried. A deadline is not an error: it is WaitResult.TimedOut.
 func (w *Waiter) Wait(ctx context.Context, req WaitRequest) (WaitResult, error) {
 	if req.Notify == nil {
 		return WaitResult{}, errors.New("cache: wait: Notify is required")
 	}
 	switch req.Selector.Kind {
-	case WaitMine:
+	case WaitMine, WaitOwed:
 	case WaitSubject, WaitThread:
 		if req.Selector.ID == "" {
 			return WaitResult{}, fmt.Errorf("cache: wait: selector %q needs an id", req.Selector.Kind)
@@ -391,10 +431,8 @@ func (w *Waiter) Wait(ctx context.Context, req WaitRequest) (WaitResult, error) 
 	if err != nil {
 		return WaitResult{}, err
 	}
-	for _, wt := range watches {
-		if err := w.start(ctx, wt); err != nil {
-			return WaitResult{}, err
-		}
+	if err := w.startAll(ctx, watches); err != nil {
+		return WaitResult{}, err
 	}
 
 	// Catch-up: a cursor behind main is judged before blocking.
@@ -434,6 +472,48 @@ func (w *Waiter) Wait(ctx context.Context, req WaitRequest) (WaitResult, error) 
 	events = w.collectLanded(ctx, watches, events)
 	w.persist(watches, false)
 	return WaitResult{Events: events, Unmeasured: unmeasured(watches)}, nil
+}
+
+// startAll baselines every watched space. It fails only when none could be
+// baselined, because a healthy space must not lose its events to a broken one.
+func (w *Waiter) startAll(ctx context.Context, watches []*spaceWatch) error {
+	var firstErr error
+	var deferred []string
+	for _, wt := range watches {
+		err := w.start(ctx, wt)
+		if err == nil {
+			wt.started = true
+			continue
+		}
+		wt.failed = true
+		deferred = append(deferred, err.Error())
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	if len(deferred) == len(watches) {
+		return firstErr
+	}
+	for _, cause := range deferred {
+		w.req.Notify("wait: watching the other spaces and retrying this one: " + cause)
+	}
+	return nil
+}
+
+// retryStart makes another attempt at a baseline that failed when the wait
+// began. A hosted space with no mirror yet can only get one from a fetch.
+func (w *Waiter) retryStart(ctx context.Context, wt *spaceWatch) bool {
+	wt.failed = false
+	err := w.start(ctx, wt)
+	if err != nil && !wt.local && w.store.cloneOrFetch(ctx, wt.sm.Dir, wt.sm.RepoURL, wt.sm.Credential) == nil {
+		err = w.start(ctx, wt)
+	}
+	if err != nil {
+		w.observeFailed(ctx, wt)
+		return false
+	}
+	wt.started = true
+	return true
 }
 
 // collectLanded appends, for every space, whatever its mirror has already
@@ -516,8 +596,8 @@ func (w *Waiter) selectSpaces(ids []string) ([]*spaceWatch, error) {
 }
 
 // start establishes one space's baseline: its kind, its mirror's main, and the
-// cursor. It is the only place a failure is an error rather than an
-// observation that failed: with no mirror there is nothing to baseline from.
+// cursor. With no mirror there is nothing to baseline from, so a failure here
+// is returned; startAll decides whether it ends the wait.
 func (w *Waiter) start(ctx context.Context, wt *spaceWatch) error {
 	gitDir, local, err := w.env.localKind(ctx, wt.sm.RepoURL)
 	if err != nil {
@@ -562,6 +642,10 @@ func (w *Waiter) start(ctx context.Context, wt *spaceWatch) error {
 
 // poll makes one observation of one space and schedules the next.
 func (w *Waiter) poll(ctx context.Context, wt *spaceWatch) []WaitEvent {
+	if !wt.started && !w.retryStart(ctx, wt) {
+		w.schedule(wt, false)
+		return nil
+	}
 	var events []WaitEvent
 	changed := false
 	if wt.local {
@@ -620,6 +704,9 @@ func (w *Waiter) schedule(wt *spaceWatch, changed bool) {
 // step judges judged..main without fetching. A range that could not be judged
 // leaves judged where it was, so the next step retries it.
 func (w *Waiter) step(ctx context.Context, wt *spaceWatch) []WaitEvent {
+	if !wt.started {
+		return nil
+	}
 	head, err := w.env.mirrorHead(ctx, wt.sm.Dir)
 	if err != nil {
 		w.observeFailed(ctx, wt)
@@ -644,7 +731,7 @@ func (w *Waiter) step(ctx context.Context, wt *spaceWatch) []WaitEvent {
 // was not measured there.
 func (w *Waiter) persist(watches []*spaceWatch, timedOut bool) {
 	for _, wt := range watches {
-		if timedOut && wt.failed {
+		if !wt.started || (timedOut && wt.failed) {
 			continue
 		}
 		w.saveCursor(wt)
@@ -920,6 +1007,10 @@ func (w *Waiter) selectWithIndex(ctx context.Context, wt *spaceWatch, candidates
 		got.Degraded = true
 	}
 	got.Events = selectWaitEvents(w.store.ownSystem, consumes, w.req.Selector, candidates, artifacts)
+	if w.req.Selector.Kind == WaitOwed {
+		open := buildOpenItems(folded, artifacts, manifest, w.store.ownSystem)
+		got.Events = keepOwedEvents(got.Events, artifacts, open)
+	}
 	for _, e := range got.Events {
 		if e.Why == WhyUnresolved {
 			w.req.Notify(fmt.Sprintf("wait: space %s: event %s names subject %s, which is not in the mirror; it is reported as unresolved",

@@ -535,6 +535,8 @@ type fakeSpaces struct {
 	notes   []string
 	onFetch func(space string, n int)
 	judge   func(space, from, to string) judgement
+
+	badUnreadable bool
 }
 
 func newFakeSpaces(t *testing.T, local bool, ids ...string) *fakeSpaces {
@@ -809,6 +811,99 @@ func TestWait_MultiSpace_OneExitReportsEverythingLanded(t *testing.T) {
 	}
 }
 
+// TestWait_OneSpaceUnreadableAtStart: a space with no baseline must not cost
+// the healthy one its events, and must be named when it is all that is left.
+func TestWait_OneSpaceUnreadableAtStart(t *testing.T) {
+	t.Parallel()
+	broken := func(f *fakeSpaces) {
+		healthyHead := f.w.env.mirrorHead
+		f.w.env.mirrorHead = func(ctx context.Context, dir string) (string, error) {
+			if filepath.Base(dir) == "bad" && f.badUnreadable {
+				return "", errors.New("mirror missing")
+			}
+			return healthyHead(ctx, dir)
+		}
+	}
+	t.Run("the healthy space still delivers", func(t *testing.T) {
+		t.Parallel()
+		f := newFakeSpaces(t, true, "good", "bad")
+		f.badUnreadable = true
+		broken(f)
+		f.clock.onSleep = func(n int, _ time.Duration) error {
+			if n == 1 {
+				f.refs["good"], f.heads["good"] = waitShaB, waitShaB
+			}
+			return nil
+		}
+		f.judge = func(id, _, _ string) judgement {
+			return judgement{Events: []WaitEvent{fakeEvent(id, "01"+id)}}
+		}
+		res, err := f.wait(context.Background())
+		if err != nil {
+			t.Fatalf("Wait: %v", err)
+		}
+		if len(res.Events) != 1 || res.Events[0].Space != "good" || !reflect.DeepEqual(res.Unmeasured, []string{"bad"}) {
+			t.Fatalf("res = %+v, want good's event and bad unmeasured", res)
+		}
+		if _, have := f.cursor("bad"); have {
+			t.Fatal("a space with no baseline wrote a cursor")
+		}
+	})
+	t.Run("a quiet wait names it", func(t *testing.T) {
+		t.Parallel()
+		f := newFakeSpaces(t, true, "good", "bad")
+		f.badUnreadable = true
+		broken(f)
+		f.clock.onSleep = func(n int, _ time.Duration) error {
+			if n == 2 {
+				return context.DeadlineExceeded
+			}
+			return nil
+		}
+		res, err := f.wait(context.Background())
+		if err != nil {
+			t.Fatalf("Wait: %v", err)
+		}
+		if !res.TimedOut || !reflect.DeepEqual(res.Unmeasured, []string{"bad"}) {
+			t.Fatalf("res = %+v, want a timeout naming bad", res)
+		}
+	})
+	t.Run("it joins once readable", func(t *testing.T) {
+		t.Parallel()
+		f := newFakeSpaces(t, true, "good", "bad")
+		f.badUnreadable = true
+		broken(f)
+		f.clock.onSleep = func(n int, _ time.Duration) error {
+			switch n {
+			case 1:
+				f.badUnreadable = false
+			case 3:
+				return context.DeadlineExceeded
+			}
+			return nil
+		}
+		res, err := f.wait(context.Background())
+		if err != nil {
+			t.Fatalf("Wait: %v", err)
+		}
+		if !res.TimedOut || len(res.Unmeasured) != 0 {
+			t.Fatalf("res = %+v, want a clean timeout after the space recovered", res)
+		}
+		if _, have := f.cursor("bad"); !have {
+			t.Fatal("the recovered space has no baseline cursor")
+		}
+	})
+	t.Run("no space readable is still an error", func(t *testing.T) {
+		t.Parallel()
+		f := newFakeSpaces(t, true, "bad")
+		f.badUnreadable = true
+		broken(f)
+		if _, err := f.wait(context.Background()); err == nil {
+			t.Fatal("want an error when nothing could be observed")
+		}
+	})
+}
+
 func TestWait_UnknownSpaceAndNoSpaces(t *testing.T) {
 	t.Parallel()
 	f := newFakeSpaces(t, false, "gh")
@@ -952,5 +1047,77 @@ func TestWait_NoFreeText(t *testing.T) {
 	}
 	if strings.Contains(string(raw)+strings.Join(r.notes, "\n"), sentinel) {
 		t.Fatalf("free text reached the wait's output: %s %q", raw, r.notes)
+	}
+}
+
+// TestWait_OwedSkipsMovesThatAskNothing runs the real fold over real git: a
+// counterparty's acknowledge of my request leaves the next move theirs, and a
+// question addressed to me makes it mine.
+func TestWait_OwedSkipsMovesThatAskNothing(t *testing.T) {
+	t.Parallel()
+	r := newWaitRig(t, true)
+	var question string
+	at := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	r.clock.onSleep = func(n int, _ time.Duration) error {
+		switch n {
+		case 1:
+			r.counterparty("acknowledge")
+		case 3:
+			r.fx.commitArtifact("seomatrix/exchanges/XW-seomatrix-ask.md",
+				wr("XW-seomatrix-ask", "theirs", "seomatrix", []string{"axon"}, "p2", false), "body")
+			question = r.nextULID()
+			r.fx.commitEvent("seomatrix", question, evt("XW-seomatrix-ask", "submit", "seomatrix", at))
+		}
+		return nil
+	}
+	res, err := r.w.Wait(context.Background(), WaitRequest{
+		Selector: WaitSelector{Kind: WaitOwed}, Notify: func(string) {},
+	})
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if len(res.Events) != 1 || res.Events[0].Event != question {
+		t.Fatalf("events = %+v, want only the submit %s that left me a move", res.Events, question)
+	}
+}
+
+func TestKeepOwedEvents(t *testing.T) {
+	t.Parallel()
+	urgent := waitArtifact("XW-urgent", "work_request", "axon", []any{"sem"}, "T-urgent", "01A")
+	urgent.Env.Priority = "p1"
+	blocking := waitArtifact("XQ-blocking", "question", "axon", []any{"sem"}, "T-blocking", "01A")
+	blocking.Env.Blocking = true
+	artifacts := map[string]foldedArtifact{
+		"XW-quiet":    waitArtifact("XW-quiet", "work_request", "axon", []any{"sem"}, "T-quiet", "01A"),
+		"XW-mine":     waitArtifact("XW-mine", "work_request", "sem", []any{"axon"}, "T-mine", "01A"),
+		"XW-parent":   waitArtifact("XW-parent", "work_request", "axon", []any{"sem"}, "T-resp", "01A"),
+		"XS-response": waitArtifact("XS-response", "response", "sem", []any{"axon"}, "T-resp", "01A"),
+		"XW-gated":    waitArtifact("XW-gated", "work_request", "axon", []any{"sem"}, "T-gated", "01A"),
+		"XW-urgent":   urgent,
+		"XQ-blocking": blocking,
+	}
+	open := []OpenItem{
+		{ID: "XW-mine", YourMove: true},
+		{ID: "XW-parent", YourMove: true},
+		{ID: "XW-gated", HumanGate: "G1"},
+		{ID: "XW-quiet"},
+	}
+	cases := []struct {
+		name, subject, why string
+		want               bool
+	}{
+		{"nothing asked of me", "XW-quiet", WhyAuthored, false},
+		{"my move on the subject", "XW-mine", WhyAddressed, true},
+		{"my move on another artifact of the thread", "XS-response", WhyAddressed, true},
+		{"a human gate", "XW-gated", WhyAuthored, true},
+		{"p1", "XW-urgent", WhyAuthored, true},
+		{"blocking", "XQ-blocking", WhyAuthored, true},
+		{"an unjudged event is kept", "XW-nowhere", WhyUnresolved, true},
+	}
+	for _, tc := range cases {
+		e := WaitEvent{Subject: tc.subject, Thread: artifacts[tc.subject].Env.Thread, Why: tc.why}
+		if got := len(keepOwedEvents([]WaitEvent{e}, artifacts, open)) == 1; got != tc.want {
+			t.Errorf("%s: kept = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
