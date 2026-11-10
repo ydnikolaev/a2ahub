@@ -12,7 +12,7 @@ export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  // The quality matrix deliberately reuses one system Chrome process at a
+  // The quality matrix deliberately reuses one browser process at a
   // time. Spawning a browser per route in parallel is both noisier than the
   // product workload and unreliable in sandboxed CI/desktop environments.
   fullyParallel: false,
@@ -24,10 +24,9 @@ export default defineConfig({
     baseURL: origin,
     headless: true,
     viewport: { width: 1280, height: 900 },
-    // CI installs Playwright's pinned Chromium. Developer machines use the
-    // system Chrome promised above, so a package update does not require a
-    // second 200+ MiB browser download before the local quality lane can run.
-    channel: process.env.CI ? undefined : 'chrome',
+    // Playwright's pinned Chromium everywhere (`npx playwright install
+    // chromium` once per machine). The system Chrome left an APFS code-sign
+    // clone in $TMPDIR for every launch, and a killed run never removed it.
   },
   webServer: {
     // --ignore-lock keeps the server in the foreground, owned by this run.

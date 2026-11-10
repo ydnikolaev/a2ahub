@@ -73,10 +73,9 @@ try {
     const clsSamples = [];
     for (let run = 0; run < runsPerRoute; run += 1) {
       chrome = await chromeLauncher.launch({
-        // CI installs Playwright's pinned Chromium. Local quality runs use
-        // chrome-launcher's canonical system-browser discovery, matching the
-        // Playwright config without requiring a duplicate browser download.
-        chromePath: process.env.CI ? chromium.executablePath() : chromeLauncher.getChromePath(),
+        // Playwright's pinned Chromium, as in web/playwright.config.mjs: the
+        // system Chrome leaves a code-sign clone in $TMPDIR on every launch.
+        chromePath: chromium.executablePath(),
         chromeFlags: ['--headless=new', '--no-sandbox', '--disable-gpu'],
       });
       let result;
