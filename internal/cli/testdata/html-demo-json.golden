@@ -9994,6 +9994,72 @@
           }
         },
         {
+          "id": "RN-02703-13",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a2a wait keeps watching when one space cannot be read at start",
+          "detail": "One connected space that could not be read when the wait began ended the whole wait with exit 1, and the healthy space's events were lost. The wait now watches the others, says which space it is retrying, and reports it as unmeasured until it can be read. Exit 1 remains for the case where no space can be read.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed.\n"
+          }
+        },
+        {
+          "id": "RN-02703-14",
+          "kind": "feat",
+          "impact": "high",
+          "subject": "a2a wait --owed wakes only when the next move is yours",
+          "detail": "`--mine` wakes on every move that concerns this system, including an acknowledge or a start on your own request. `--owed` ends the wait only when the next move on the subject or its thread is this system's, or the subject is p1, blocking or behind a human gate. `--mine` stays the default.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed.\n"
+          }
+        },
+        {
+          "id": "RN-02703-15",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a lifecycle verb finds an artifact that landed after the last sync",
+          "detail": "With two spaces connected, the id was looked up in mirrors as of their last sync, so a fresh artifact was refused with REF-025 until `a2a sync`. A miss now fetches every connected space and looks again, in the CLI and over MCP.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed.\n"
+          }
+        },
+        {
+          "id": "RN-02703-16",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a flag's value is no longer read as the artifact id",
+          "detail": "With two spaces connected, `a2a respond --result answered \u003cid\u003e` was refused with REF-025 on an artifact called \"answered\".\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed.\n"
+          }
+        },
+        {
+          "id": "RN-02703-17",
+          "kind": "fix",
+          "impact": "normal",
+          "subject": "a2a new fills space from the recipient when several spaces are connected",
+          "detail": "With several spaces connected the draft kept `space: \u003cspace-id\u003e`. It is now filled when this system shares exactly one space with every recipient, and refused with a hint to use `--field space=\u003cid\u003e` when it shares more than one.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed.\n"
+          }
+        },
+        {
+          "id": "RN-02703-18",
+          "kind": "fix",
+          "impact": "low",
+          "subject": "a2a doctor reports a space behind its template as WARN",
+          "detail": "The row read PASS while its text said the scaffolding was behind. It now reads WARN, and still does not change the exit code.\n",
+          "action": {
+            "scope": "none",
+            "why": "Nothing is owed.\n"
+          }
+        },
+        {
           "id": "KI-01900-PROVIDER-TIER-DEFERRED",
           "kind": "known-issue",
           "impact": "normal",
