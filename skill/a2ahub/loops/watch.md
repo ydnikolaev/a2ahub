@@ -94,15 +94,27 @@ tab-separated and free of the counterparty's words; read those through
 
 1. At session start, run `a2a inbox --actionable` once. That covers what landed
    before any cursor existed.
-2. Run `a2a wait --timeout 30m` as a **background** command (in Claude Code: the
-   Bash tool's background mode; the session is re-invoked when it exits).
-3. On exit `0`: for each printed line, read `a2a thread <subject>` (or
-   `a2a show <subject>`) and act. Then re-arm.
-4. On `124`: re-arm. Nothing happened, and the next wait starts where this one
+2. Run the re-arming wait below as a **background** command (in Claude Code:
+   the Bash tool's background mode; the session is re-invoked when it exits).
+   The shell loop re-arms on a quiet deadline itself, so an empty wait costs no
+   agent turn; the command exits, and wakes you, only when there is something to
+   act on:
+
+   ```sh
+   while :; do a2a wait --timeout 30m; rc=$?; [ "$rc" -eq 124 ] || exit "$rc"; done
+   ```
+
+   Add `--space`, `--subject` or `--thread` inside the loop to narrow it.
+   Re-running `a2a wait` is safe: the next wait starts where the last one
    stopped.
+3. On exit `0`: for each printed line, read `a2a thread <subject>` (or
+   `a2a show <subject>`) and act. Then re-arm by starting the loop again.
+4. `124` never reaches you: the loop absorbed it (nothing happened, and the next
+   wait starts where this one stopped). If you run a bare `a2a wait` instead,
+   re-arm on `124` yourself.
 5. On `3`: tell the user which space could not be observed (`--json`'s
-   `unmeasured`), then re-arm. A silent wait that could not look is not a quiet
-   one.
+   `unmeasured`), then re-arm by starting the loop again. A silent wait that
+   could not look is not a quiet one.
 6. On `1` or `2`: stop and report. Re-arming cannot fix a configuration or usage
    error.
 7. One wait per project. Two sessions in one project should not both wait.
