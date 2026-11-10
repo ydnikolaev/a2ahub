@@ -1113,3 +1113,23 @@ func TestContractActivateSecondCallNotPoisonedByFirst(t *testing.T) {
 		t.Fatalf("expected space-b's funnel to be called exactly once (by the FIRST call), got %d", len(b.funnel.calls))
 	}
 }
+
+// TestContractDeprecateRefusesEmptyResolvedVersion is backlog B47 on the MCP
+// surface: no version anywhere must refuse, never write `deprecates: <id>@`.
+func TestContractDeprecateRefusesEmptyResolvedVersion(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "emptyver", "")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-emptyver", "publish", "axon")
+
+	fake := &fakeFunnel{}
+	handler := newContractDeprecateHandler(contractTestDeps(mirrorDir, fake))
+	args, _ := json.Marshal(ContractDeprecateInput{ID: "XC-axon-emptyver", Successor: "XC-axon-emptyver@2.0.0", Sunset: "2099-01-01"})
+	_, _, err := handler(context.Background(), args)
+	if err == nil || !strings.Contains(err.Error(), "version is required") {
+		t.Fatalf("want a version-required refusal, got %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("funnel must not be called, got %d", len(fake.calls))
+	}
+}

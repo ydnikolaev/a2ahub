@@ -380,6 +380,9 @@ func contractResolveVersionOrRefuse(all []eventDoc, id, explicit, currentVersion
 	}
 	versions := contractDistinctPublishedVersions(all, id)
 	if len(versions) <= 1 {
+		if currentVersion == "" {
+			return "", fmt.Errorf("mcp: version is required: the descriptor of %s carries no version to default to — pass version (semver)", id)
+		}
 		return currentVersion, nil
 	}
 	strs := make([]string, len(versions))

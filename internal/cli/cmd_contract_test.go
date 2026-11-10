@@ -1774,3 +1774,27 @@ func gitOutputForTest(t *testing.T, dir string, args ...string) string {
 	}
 	return string(out)
 }
+
+// TestContractDeprecateRefusesEmptyResolvedVersion is backlog B47: a
+// descriptor with no version and no --version used to write
+// `deprecates: <id>@` with an empty version.
+func TestContractDeprecateRefusesEmptyResolvedVersion(t *testing.T) {
+	t.Parallel()
+	mirrorDir := t.TempDir()
+	writeContractDescriptor(t, mirrorDir, "emptyver", "")
+	writeLifecycleEvent(t, mirrorDir, "axon", 0, "XC-axon-emptyver", "publish", "axon")
+
+	fake := &fakeLifecycleFunnel{}
+	cmd := cli.NewContractCommand(nil, fake, mirrorDir, "fixture-space", "axon", lifecycleManifest(), lifecycleHostConfig(), lifecycleActorResolver("agent", "bot"))
+	io, _, errOut := newIO()
+	code := cmd.Run(context.Background(), []string{"deprecate", "--successor", "XC-axon-emptyver@2.0.0", "--sunset", "2026-12-31", "XC-axon-emptyver"}, io)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; stderr=%s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "--version") {
+		t.Fatalf("refusal must say what to pass, got %q", errOut.String())
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("funnel must not be called, got %d", len(fake.calls))
+	}
+}
