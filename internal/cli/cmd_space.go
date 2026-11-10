@@ -1440,8 +1440,9 @@ func (c *SpaceCommand) runInitLocal(ctx context.Context, spaceID, dir, gates, fl
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "space init: created local space %s at %s\n", spaceID, abs)
 	_, _ = fmt.Fprintln(stdio.Stdout, "space init: next steps, IN THIS ORDER:")
-	_, _ = fmt.Fprintf(stdio.Stdout, "  1. from each participant repo: a2a connect %s\n", abs)
-	_, _ = fmt.Fprintln(stdio.Stdout, "  2. from the same repo: a2a space join")
+	_, _ = fmt.Fprintf(stdio.Stdout, "  1. from each participant repo: a2a init --system <system> --space %s\n", abs)
+	_, _ = fmt.Fprintf(stdio.Stdout, "  2. from the same repo: a2a connect %s\n", abs)
+	_, _ = fmt.Fprintln(stdio.Stdout, "  3. from the same repo: a2a space join")
 	return 0
 }
 

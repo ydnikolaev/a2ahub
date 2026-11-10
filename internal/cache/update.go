@@ -224,7 +224,15 @@ type SpaceVersion struct {
 	// the floor (space.WorkRuntime.refresh), so a refusal is always decided on
 	// the live value. This is about the REPORT, which is why the fix is to
 	// carry the age rather than to make the report reach the network.
+	//
+	// THE UNIT OF THIS FIELD IS WRONG AND IS PUBLISHED: encoding/json writes a
+	// time.Duration as its int64 NANOSECOND count, so `sync_age_seconds`
+	// carries nanoseconds. Changing it would change a shipped shape; read
+	// SyncAgeSeconds instead.
 	SyncAge time.Duration `json:"sync_age_seconds"`
+	// SyncAgeSeconds is SyncAge in real whole seconds, additive beside the
+	// field above. Zero when the mirror was never synced (see Synced).
+	SyncAgeSeconds int64 `json:"sync_age_in_seconds"`
 	// Synced is false when this mirror has never been fetched at all — a
 	// different state from "fetched a long time ago", and rendering them the
 	// same way is how "I have no idea" becomes "it is old".
@@ -309,6 +317,7 @@ func (s *Store) VersionReport(binaryVersion string, workflowPin func(dir string)
 		// computation here would be a second answer to one question.
 		age, synced := mirrorSyncAge(s.now(), sm.Dir)
 		row.SyncAge, row.Synced = age, synced
+		row.SyncAgeSeconds = int64(age / time.Second)
 		row.Stale = !synced || age > s.ttl
 		row.Flow = sm.Manifest.FlowSetting()
 		if capabilities != nil {

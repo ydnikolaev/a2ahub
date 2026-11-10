@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
 	"github.com/ydnikolaev/a2ahub/internal/template"
 	"github.com/ydnikolaev/a2ahub/internal/validate"
+	"gopkg.in/yaml.v3"
 )
 
 // newTypePrefix maps an envelope type to its §3.3 ID prefix + mint class
@@ -381,6 +383,14 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	}
 	draft := drafts[0]
 
+	// A closed-enum field the template leaves as `<a|b>` stays a placeholder
+	// until the author sets it; without this line the first anyone hears of it
+	// is validate's refusal. Reported once: a fan-out's drafts differ only in
+	// `to`.
+	if open := newUnfilledEnumFields(draft); len(open) > 0 {
+		_, _ = fmt.Fprintf(stdio.Stdout, "new: still to fill: %s (set with --field <key>=<value>, or edit the draft)\n", strings.Join(open, "; "))
+	}
+
 	// D-D: a fresh contract whose schema_format is a JSON-Schema dialect
 	// gets a starter schema/ + fixtures/valid/ scaffold, so §5.4b's
 	// computed compatibility check has a real baseline the moment the
@@ -406,6 +416,47 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	}
 
 	return 0
+}
+
+// newEnumPlaceholder matches a frontmatter value still holding a template's
+// closed-enum placeholder, `<a|b|c>`. A single-choice `<thing>` is a free-text
+// prompt, not an enum, and is deliberately not matched.
+var newEnumPlaceholder = regexp.MustCompile(`^<([^<>|]+(?:\|[^<>|]+)+)>$`)
+
+// newUnfilledEnumFields names each frontmatter key of draft that still holds
+// a `<a|b>` placeholder, in document order, as `key (one of a, b)`. Nested
+// keys are reported by their dotted path, the form --field accepts. A draft
+// whose frontmatter cannot be read yields nothing: validate owns that refusal.
+func newUnfilledEnumFields(draft []byte) []string {
+	fm, err := artifact.ParseFrontmatter(draft)
+	if err != nil {
+		return nil
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(fm.YAML, &doc); err != nil || len(doc.Content) == 0 {
+		return nil
+	}
+	var out []string
+	var walk func(prefix string, n *yaml.Node)
+	walk = func(prefix string, n *yaml.Node) {
+		if n.Kind != yaml.MappingNode {
+			return
+		}
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key, val := n.Content[i].Value, n.Content[i+1]
+			path := prefix + key
+			switch val.Kind {
+			case yaml.MappingNode:
+				walk(path+".", val)
+			case yaml.ScalarNode:
+				if m := newEnumPlaceholder.FindStringSubmatch(val.Value); m != nil {
+					out = append(out, path+" (one of "+strings.ReplaceAll(m[1], "|", ", ")+")")
+				}
+			}
+		}
+	}
+	walk("", doc.Content[0])
+	return out
 }
 
 // newParseFields splits each "k=v" --field value into a map; a value with

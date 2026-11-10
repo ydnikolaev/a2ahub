@@ -579,3 +579,27 @@ func TestDataStepTransitionEncodesAsTheBareString(t *testing.T) {
 		t.Errorf("DataStep JSON = %s, want %s", raw, want)
 	}
 }
+
+// TestDataToolSchemaDescriptionsNameEveryAcceptingAction: `deliver` (express,
+// with `for`) accepts the pack-shaped fields, so a description saying "pack
+// only" or "fetch only" tells an agent that a field it may send is refused.
+func TestDataToolSchemaDescriptionsNameEveryAcceptingAction(t *testing.T) {
+	t.Parallel()
+	var schema struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(dataToolSchema(), &schema); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	for _, field := range []string{"contract", "from", "profile", "format", "expires", "max_attempts"} {
+		desc := schema.Properties[field].Description
+		if strings.HasPrefix(desc, "pack only") || strings.HasPrefix(desc, "fetch only") {
+			t.Errorf("%s: description %q understates the accepting actions", field, desc)
+		}
+		if !strings.Contains(desc, "pack") || !strings.Contains(desc, "deliver") {
+			t.Errorf("%s: description %q must name both pack and deliver", field, desc)
+		}
+	}
+}

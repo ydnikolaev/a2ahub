@@ -1277,3 +1277,34 @@ func TestNewToFanOutFollowsTheSchema(t *testing.T) {
 		})
 	}
 }
+
+// TestNewNamesTheClosedEnumFieldsStillUnfilled: a draft whose closed-enum
+// field keeps its template `<a|b>` placeholder must say so at write time,
+// naming the key, its choices and the flag that sets it — not leave the
+// author to meet it as a validate refusal. A draft with the field supplied
+// says nothing.
+func TestNewNamesTheClosedEnumFieldsStillUnfilled(t *testing.T) {
+	t.Parallel()
+	run := func(t *testing.T, args ...string) string {
+		t.Helper()
+		cmd := cli.NewNewCommand(t.TempDir(), "axon", fixedActorResolver, nil)
+		io, out, errOut := newIO()
+		if code := cmd.Run(context.Background(), args, io); code != 0 {
+			t.Fatalf("code = %d; stdout=%s stderr=%s", code, out.String(), errOut.String())
+		}
+		return out.String()
+	}
+
+	got := run(t, "announcement")
+	want := "new: still to fill: category (one of release, deprecation, migration, incident, notice, status)"
+	if !strings.Contains(got, want) {
+		t.Errorf("stdout = %q, want it to contain %q", got, want)
+	}
+	if !strings.Contains(got, "--field") {
+		t.Errorf("stdout = %q, want it to name the --field flag", got)
+	}
+
+	if got := run(t, "announcement", "--field", "category=notice"); strings.Contains(got, "still to fill") {
+		t.Errorf("a draft with its enum supplied must not report a placeholder, got %q", got)
+	}
+}

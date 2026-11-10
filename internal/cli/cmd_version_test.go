@@ -515,3 +515,23 @@ func TestVersionCommand_LocalBuildStampAndText(t *testing.T) {
 		t.Fatalf("a release build was described as local:\n%s", errOut.String())
 	}
 }
+
+// TestVersionCommand_JSONCarriesSyncAgeInRealSeconds: `sync_age_seconds` is a
+// published field that carries nanoseconds (a time.Duration), so the honest
+// value rides beside it in `sync_age_in_seconds`.
+func TestVersionCommand_JSONCarriesSyncAgeInRealSeconds(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	dir, manifest := versionFixture(t, "0.23.0", "")
+	markMirrorSynced(t, dir, now.Add(-90*time.Second))
+	store := versionStore(t, "", now, []cache.SpaceMirror{{SpaceID: "axon", Dir: dir, Manifest: manifest}})
+	cmd := &cli.VersionCommand{Stamp: "a2a 0.25.0 (abc1234)", BinaryVersion: "0.25.0", Store: store, Now: func() time.Time { return now }}
+
+	sp := versionJSONSpaces(t, cmd)["axon"]
+	if got, _ := sp["sync_age_in_seconds"].(float64); got != 90 {
+		t.Fatalf("sync_age_in_seconds = %v, want 90 (entry=%v)", sp["sync_age_in_seconds"], sp)
+	}
+	if got, _ := sp["sync_age_seconds"].(float64); got != 90e9 {
+		t.Fatalf("published sync_age_seconds must keep its nanosecond unit, got %v", sp["sync_age_seconds"])
+	}
+}

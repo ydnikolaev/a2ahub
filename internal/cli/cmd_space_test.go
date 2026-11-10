@@ -1371,11 +1371,12 @@ func TestSpaceInitLocalCreatesAGuardedBareRepoWithOnlyTheLocalSubset(t *testing.
 	if want := "space init: created local space acme at " + target + "\n"; !strings.HasPrefix(out.String(), want) {
 		t.Errorf("stdout = %q, want it to start with %q", out.String(), want)
 	}
-	// The next steps are named in order: connect from each repo, THEN join.
+	// The next steps are named in order: init the repo, connect it, THEN join.
+	initAt := strings.Index(out.String(), "a2a init --system <system> --space "+target)
 	connectAt := strings.Index(out.String(), "a2a connect "+target)
 	joinAt := strings.Index(out.String(), "a2a space join")
-	if connectAt < 0 || joinAt < 0 || connectAt > joinAt {
-		t.Errorf("stdout = %q, want `a2a connect %s` before `a2a space join`", out.String(), target)
+	if initAt < 0 || connectAt < 0 || joinAt < 0 || initAt > connectAt || connectAt > joinAt {
+		t.Errorf("stdout = %q, want `a2a init --system` before `a2a connect %s` before `a2a space join`", out.String(), target)
 	}
 
 	tree := spaceGit(t, target, "ls-tree", "-r", "--name-only", "main")
