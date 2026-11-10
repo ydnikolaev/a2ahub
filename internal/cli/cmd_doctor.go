@@ -206,6 +206,7 @@ const (
 	doctorCheckPass       doctorCheckStatus = "PASS"
 	doctorCheckFail       doctorCheckStatus = "FAIL"
 	doctorCheckUnverified doctorCheckStatus = "UNVERIFIED"
+	doctorCheckWarn       doctorCheckStatus = "WARN"
 )
 
 // passFail adapts a check that only passes or fails to the three-outcome table.
@@ -378,7 +379,7 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 		{"participant avatars", passFail(func() (bool, string) { return c.doctorCheckParticipantAvatars(cfg, machine) })},
 		{"versions", passFail(func() (bool, string) { return c.doctorCheckVersions(cfg, machine) })},
 		{"CI presence", passFail(func() (bool, string) { return c.doctorCheckCIPresence(cfg, machine) })},
-		{"space scaffolding current", passFail(func() (bool, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) })},
+		{"space scaffolding current", func() (doctorCheckStatus, string) { return c.doctorCheckScaffoldingCurrent(ctx, cfg, machine) }},
 		{"auto-merge enabled", passFail(func() (bool, string) { return c.doctorCheckAutoMerge(ctx, cfg, machine) })},
 		{"stuck green PRs", passFail(func() (bool, string) { return c.doctorCheckStuckGreenPRs(ctx, cfg, machine) })},
 		{"default branch healthy", passFail(func() (bool, string) { return c.doctorCheckDefaultBranchHealthy(ctx, cfg, machine) })},
@@ -411,6 +412,10 @@ func (c *DoctorCommand) Run(ctx context.Context, args []string, stdio IO) int {
 			// comparison itself passes — AC #7 requires doctor to actually
 			// REPORT that advisory, not just compute it.
 			_, _ = fmt.Fprintf(stdio.Stdout, "%s: PASS%s\n", chk.name, detail)
+		case doctorCheckWarn:
+			// Advisory: the space works, and the person running doctor may not
+			// be able to fix it, so it never changes the exit code.
+			_, _ = fmt.Fprintf(stdio.Stdout, "%s: WARN: %s\n", chk.name, detail)
 		case doctorCheckUnverified:
 			// Advisory, like the visibility rows' UNVERIFIED: the check could
 			// not judge, which is neither a pass nor a failure, so it never
@@ -1266,12 +1271,12 @@ type doctorSpaceScaffoldingReader interface {
 //     short class, never the raw underlying error: a plan error can embed
 //     an absolute mirror path, which is the same output-stability failure
 //     mode the auto-merge row's own doc warns against for a raw API body.
-func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (bool, string) {
+func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig) (doctorCheckStatus, string) {
 	if len(cfg.Spaces) == 0 {
-		return true, ""
+		return doctorCheckPass, ""
 	}
 	if c.TemplateFiles == nil {
-		return true, " · scaffolding drift unverified: this build wires no embedded space template"
+		return doctorCheckPass, " · scaffolding drift unverified: this build wires no embedded space template"
 	}
 	// The RUNNING BINARY's own clean version, exactly what spaceComputeUpdatePlan
 	// would be given by a real `space update` run right now — never the
@@ -1283,6 +1288,7 @@ func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg s
 	cleanVersion, versionErr := spaceCleanVersion(c.binaryVersion)
 
 	var notes []string
+	behind := false
 	for _, ref := range cfg.Spaces {
 		if versionErr != nil {
 			notes = append(notes, fmt.Sprintf("%s: scaffolding drift could not be checked (binary version %q is not a release version)", ref.ID, c.binaryVersion))
@@ -1320,13 +1326,17 @@ func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg s
 		default:
 			whoNote = "ask the space admin to run `a2a space update`"
 		}
+		behind = true
 		notes = append(notes, fmt.Sprintf("%s: scaffolding is behind the current template (%s) — %s",
 			ref.ID, strings.Join(plan.summary, "; "), whoNote))
 	}
-	if len(notes) == 0 {
-		return true, ""
+	if behind {
+		return doctorCheckWarn, strings.Join(notes, "; ")
 	}
-	return true, " · " + strings.Join(notes, "; ")
+	if len(notes) == 0 {
+		return doctorCheckPass, ""
+	}
+	return doctorCheckPass, " · " + strings.Join(notes, "; ")
 }
 
 // doctorScaffoldingCanFix reports whether the credential resolved for ref

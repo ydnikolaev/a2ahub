@@ -884,9 +884,9 @@ func TestDoctorCheckScaffoldingCurrent_NoConnectedSpacesVacuouslyPasses(t *testi
 	t.Parallel()
 	cmd := newTestDoctorCommand()
 	cmd.TemplateFiles = doctorScaffoldingTemplateFS()
-	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), space.ProjectConfig{}, space.MachineConfig{})
-	if !ok || detail != "" {
-		t.Fatalf("want pass with no note, got ok=%v detail=%q", ok, detail)
+	status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), space.ProjectConfig{}, space.MachineConfig{})
+	if status == doctorCheckFail || detail != "" {
+		t.Fatalf("want pass with no note, got status=%v detail=%q", status, detail)
 	}
 }
 
@@ -894,8 +894,8 @@ func TestDoctorCheckScaffoldingCurrent_TemplateNotWiredIsAdvisoryNotFailure(t *t
 	t.Parallel()
 	cfg := space.ProjectConfig{Spaces: []space.Ref{{ID: "getvisa", RepoURL: "https://github.com/acme/getvisa.git"}}}
 	cmd := newTestDoctorCommand() // cmd.TemplateFiles left nil, "not wired"
-	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-	if !ok {
+	status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if status == doctorCheckFail {
 		t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
 	}
 	if !strings.Contains(detail, "unverified") {
@@ -909,8 +909,8 @@ func TestDoctorCheckScaffoldingCurrent_DevBinaryIsUndecidableNotFailure(t *testi
 	cmd := newTestDoctorCommand()
 	cmd.TemplateFiles = doctorScaffoldingTemplateFS()
 	cmd.binaryVersion = "dev"
-	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-	if !ok {
+	status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if status == doctorCheckFail {
 		t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
 	}
 	if !strings.Contains(detail, "could not be checked") {
@@ -928,8 +928,8 @@ func TestDoctorCheckScaffoldingCurrent_UnreadableMirrorIsUndecidableNotFailure(t
 	// spaceComputeUpdatePlanFor itself return an error — this must render as
 	// "could not be checked", never a FAIL.
 	cmd.readFile = func(string) ([]byte, error) { return nil, errors.New("permission denied") }
-	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-	if !ok {
+	status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if status == doctorCheckFail {
 		t.Fatalf("want an advisory PASS, got FAIL: %s", detail)
 	}
 	if !strings.Contains(detail, "could not be checked") {
@@ -950,9 +950,9 @@ func TestDoctorCheckScaffoldingCurrent_InSyncPassesWithNoNote(t *testing.T) {
 		".github/dependabot.yml":             "version: 2\n",
 		"BRANCH-PROTECTION.md":               "# branch protection checklist\n",
 	})
-	ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-	if !ok || detail != "" {
-		t.Fatalf("want pass with no note for an already-current space, got ok=%v detail=%q", ok, detail)
+	status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+	if status == doctorCheckFail || detail != "" {
+		t.Fatalf("want pass with no note for an already-current space, got status=%v detail=%q", status, detail)
 	}
 }
 
@@ -988,8 +988,8 @@ func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testi
 		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
-		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-		if !ok {
+		status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if status == doctorCheckFail {
 			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
 		}
 		if !strings.Contains(detail, "getvisa") {
@@ -1021,8 +1021,8 @@ func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testi
 		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
-		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-		if !ok {
+		status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if status == doctorCheckFail {
 			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
 		}
 		if !strings.Contains(detail, "ask the space admin to run `a2a space update`") {
@@ -1047,8 +1047,8 @@ func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testi
 		cmd.open = host.FixedOpener(host.NewGitHubHost(nil, srv.URL))
 		cmd.resolveCredential = withToken
 
-		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-		if !ok {
+		status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if status == doctorCheckFail {
 			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
 		}
 		if !strings.Contains(detail, "could not be determined") {
@@ -1076,8 +1076,8 @@ func TestDoctorCheckScaffoldingCurrent_BehindNamesWhoCanFixByPermission(t *testi
 		cmd.readFile = behindReadFile
 		cmd.resolveCredential = withToken
 
-		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-		if !ok {
+		status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if status == doctorCheckFail {
 			t.Fatalf("want an advisory PASS (never FAIL), got FAIL: %s", detail)
 		}
 		if !strings.Contains(detail, "could not be determined") {
@@ -3387,16 +3387,16 @@ func TestDoctorScaffoldingRowComparesALocalSpaceToTheLocalSubset(t *testing.T) {
 
 	t.Run("a mirror with only the local subset is current", func(t *testing.T) {
 		t.Parallel()
-		ok, detail := newCmd("0.1.0").doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-		if !ok || detail != "" {
-			t.Fatalf("want a plain PASS, got ok=%v detail=%q", ok, detail)
+		status, detail := newCmd("0.1.0").doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if status == doctorCheckFail || detail != "" {
+			t.Fatalf("want a plain PASS, got status=%v detail=%q", status, detail)
 		}
 	})
 
 	t.Run("a stale floor is behind, with the local repair", func(t *testing.T) {
 		t.Parallel()
-		ok, detail := newCmd("0.0.1").doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-		if !ok {
+		status, detail := newCmd("0.0.1").doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if status == doctorCheckFail {
 			t.Fatalf("behind is advisory, never FAIL: %s", detail)
 		}
 		for _, want := range []string{"acme: scaffolding is behind the current template", "run `a2a space update`"} {
@@ -3415,9 +3415,9 @@ func TestDoctorScaffoldingRowComparesALocalSpaceToTheLocalSubset(t *testing.T) {
 		t.Parallel()
 		cmd := newCmd("0.1.0")
 		cmd.open = host.FixedOpener(host.NewFakeHost())
-		ok, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
-		if !ok || !strings.Contains(detail, "behind the current template") {
-			t.Fatalf("want an advisory 'behind' for a GitHub-shaped space, got ok=%v detail=%q", ok, detail)
+		status, detail := cmd.doctorCheckScaffoldingCurrent(context.Background(), cfg, space.MachineConfig{})
+		if status != doctorCheckWarn || !strings.Contains(detail, "behind the current template") {
+			t.Fatalf("want a WARN naming 'behind' for a GitHub-shaped space, got status=%v detail=%q", status, detail)
 		}
 	})
 }

@@ -33,7 +33,7 @@ space identity: PASS
 participant avatars: PASS · local participant avatars are missing (getvisa: ydnikolaev) — run `a2a sync`; initials remain available meanwhile
 versions: FAIL: <detail>
 CI presence: PASS
-space scaffolding current: PASS · the space is behind this binary's template (workflow ref, write floor): ask the space admin to run `a2a space update`
+space scaffolding current: WARN: the space is behind this binary's template (workflow ref, write floor): ask the space admin to run `a2a space update`
 auto-merge enabled: PASS · auto-merge unverified for <space>: the credential cannot read this repo's settings (a fine-grained token needs "Repository metadata: read")
 stuck green PRs: PASS
 default branch healthy: PASS
@@ -72,7 +72,7 @@ Eighteen rows can print `PASS · <note>`:
 | `default branch healthy` | always, whenever any space is connected — it appends each connected space's own derived base branch, or names that it could not be determined |
 | `versions` | a newer release is available (never a failure — the floor is a separate check) |
 | `participant avatars` | one or more active participant owners have no validated image in the disposable local cache |
-| `space scaffolding current` | the space is behind this binary's template, or the answer could not be determined. An **in-sync** space gets a bare `PASS` with no note |
+| `space scaffolding current` | the answer could not be determined. A space **behind** this binary's template reads `WARN` with the note, which does not change the exit code. An **in-sync** space gets a bare `PASS` with no note |
 | `auto-merge enabled` | the setting could not be read (no host reader wired, or the API refused) |
 | `stuck green PRs` | open-PR state could not be read, so the result is unknown rather than healthy |
 | `codeowners resolvable` | GitHub's CODEOWNERS diagnostics could not be read, so the result is unknown rather than healthy |

@@ -17,13 +17,13 @@ stdout 'CI presence: PASS'
 # reverse of "versions" — is the SPACE behind what THIS BINARY's embedded
 # template would write, not just is the binary too old for the space. It is
 # advisory-only (never a FAIL — a behind space still writes fine), so only
-# the row name + PASS is asserted here; the note text depends on whether
+# the row name + WARN is asserted here; the note text depends on whether
 # cmd/a2a wires DoctorCommand.TemplateFiles (a lead-side wiring step this
 # phase reports as needed) and is exercised in full, for all three note
 # variants (can-fix / cannot-fix / unknown), by internal/cli's own unit
 # tests — this line is only the through-the-binary proof the row exists and
 # never reds.
-stdout 'space scaffolding current: PASS'
+stdout 'space scaffolding current: WARN'
 # P45's auto-merge row, in its ADVISORY state: A2A_GITHUB_API is pinned to a
 # local 403 fixture (txtar_test.go's Setup), so the repo-settings read cannot
 # be answered with this credential. That must render as a PASS carrying an explicit "unverified"
