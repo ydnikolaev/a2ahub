@@ -1,6 +1,6 @@
 schema: release-notes/v1
 version: 0.27.3
-released: unreleased
+released: 2026-11-10
 headline: a contract can carry its generated files, and a landed write is visible at once
 changes:
 - id: RN-02703-0
