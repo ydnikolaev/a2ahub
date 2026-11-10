@@ -759,6 +759,9 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 	}
 	result.PRNumber, result.PRURL = pr.Number, pr.URL
 	result.Stage, result.MergeMethod = furthestWriteStage(result.Stage, WriteStagePRCreated), pr.MergeMethod
+	if pr.State == "merged" {
+		f.refreshMirrorAfterLand(ctx, req)
+	}
 
 	// Step 4b (WAVE M4): OpenPR's own auto-merge arming can be refused
 	// because the PR is ALREADY mergeable — nothing to wait for. That is
@@ -1566,6 +1569,7 @@ func (f *WriteFunnel) resumeSynchronousLand(ctx context.Context, req SubmitReque
 	if pr.MergeSHA == "" && req.OperationKey == "" {
 		return WriteResult{}, true, nil
 	}
+	f.refreshMirrorAfterLand(ctx, req)
 	result.State, result.Note = WriteStateMerged, ""
 	if pr.MergeSHA == "" {
 		result.State = WriteStateAlreadyMerged
@@ -1573,6 +1577,21 @@ func (f *WriteFunnel) resumeSynchronousLand(ctx context.Context, req SubmitReque
 	result.Stage, result.MergeMethod = furthestWriteStage(result.Stage, WriteStageMerged), pr.MergeMethod
 	landed, err = completeWriteResult(op, branch, result)
 	return landed, false, err
+}
+
+// landRefreshTimeout bounds the fetch that follows a landed write, so a slow
+// network cannot turn a write that already succeeded into a hang.
+const landRefreshTimeout = 10 * time.Second
+
+// refreshMirrorAfterLand brings the mirror onto the base branch a land just
+// moved. The land happened after this mirror's last fetch, so that fetch's
+// FETCH_HEAD stamp would otherwise pass the read path's freshness check while
+// the tree still lacks the write. Best-effort and bounded: the write has landed
+// either way, and a failed refresh is repaired by the next read past the TTL.
+func (f *WriteFunnel) refreshMirrorAfterLand(ctx context.Context, req SubmitRequest) {
+	refreshCtx, cancel := context.WithTimeout(ctx, landRefreshTimeout)
+	defer cancel()
+	_ = CloneOrFetch(refreshCtx, req.RepoDir, req.RemoteURL, req.Credential) // reason: the land is the answer; see the doc comment
 }
 
 // partialOpenNotes words an OpenPR that failed after the pull request existed,

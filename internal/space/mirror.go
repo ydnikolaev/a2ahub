@@ -93,9 +93,9 @@ func CloneOrFetch(ctx context.Context, dir, repoURL string, credential host.Cred
 	// cannot get the lock within the budget returns a named contention error,
 	// and internal/cache's SyncIfStale treats a refresh failure as non-fatal —
 	// so a read during a write shows slightly stale data with a note, which is
-	// strictly better than corrupting the write. No re-entrancy: Submit never
-	// calls CloneOrFetch (the caller runs it first, then submits), so the two
-	// lock holders are always sequential.
+	// strictly better than corrupting the write. No re-entrancy: Submit calls
+	// CloneOrFetch only after the commit-and-push section has released its lock
+	// (the post-land refresh), so the two lock holders are always sequential.
 	lock, err := AcquireMirrorLock(ctx, dir)
 	if err != nil {
 		return &Error{Op: op, Input: dir, Err: err}
