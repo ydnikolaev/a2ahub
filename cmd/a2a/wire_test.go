@@ -590,3 +590,64 @@ func TestNewHostOpener_HasNoSystemToLandUnder(t *testing.T) {
 		t.Fatal("main moved on a land with no system")
 	}
 }
+
+func TestFirstArtifactIDSkipsFlagValues(t *testing.T) {
+	const id = "XW-axon-20261110-aaaa"
+	const other = "XQ-beta-20261110-bbbb"
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"id first", []string{id, "--result", "answered"}, id},
+		{"a value before the id", []string{"--result", "answered", id}, id},
+		{"an id-shaped value before the id", []string{"--ref", other, id}, id},
+		{"equals form", []string{"--result=answered", id}, id},
+		{"a known boolean before the id", []string{"--approve", id}, id},
+		{"an unknown boolean before the id", []string{"--some-switch", id}, id},
+		{"no id at all", []string{"--result", "answered"}, ""},
+		{"a mistyped id still reaches the refusal", []string{"nonsense"}, "nonsense"},
+	}
+	for _, tc := range cases {
+		if got := firstArtifactID(tc.args); got != tc.want {
+			t.Errorf("%s: firstArtifactID(%v) = %q, want %q", tc.name, tc.args, got, tc.want)
+		}
+	}
+}
+
+// TestResolveFreshTargetSpaceRefFetchesOnAMiss: an id that landed after the last
+// sync exists only on the remote, so the first walk cannot see it.
+func TestResolveFreshTargetSpaceRefFetchesOnAMiss(t *testing.T) {
+	root := t.TempDir()
+	remote := func(name, file string) string {
+		tree := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Join(tree, "exchanges"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tree, "exchanges", file), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		wiringGit(t, tree, "init", "-q", "-b", "main")
+		wiringGit(t, tree, "add", "--", ".")
+		wiringGit(t, tree, "commit", "-q", "-m", "seed")
+		return tree
+	}
+	const landed = "XQ-beta-20261110-land"
+	cfg := space.ProjectConfig{System: "beta", Spaces: []space.Ref{
+		{ID: "space-one", RepoURL: remote("one", "XQ-beta-20261110-othr.md")},
+		{ID: "space-two", RepoURL: remote("two", landed+".md")},
+	}}
+	project := t.TempDir()
+
+	if _, err := resolveTargetSpaceRef(cfg, space.MachineConfig{}, project, landed); err == nil {
+		t.Fatal("the plain walk found an id no mirror holds yet, so this test proves nothing")
+	}
+	var notes strings.Builder
+	ref, err := resolveFreshTargetSpaceRef(context.Background(), cfg, space.MachineConfig{}, project, landed, &notes)
+	if err != nil {
+		t.Fatalf("resolveFreshTargetSpaceRef: %v (notes: %s)", err, notes.String())
+	}
+	if ref.ID != "space-two" {
+		t.Fatalf("resolved %q, want space-two", ref.ID)
+	}
+}

@@ -315,7 +315,7 @@ func buildCommands() map[string]command {
 			return failf(stderr, "a2a new: no project config (run `a2a init` first): %v", err)
 		}
 		resolve := actorResolver()
-		return cli.NewNewCommand(p.staging, cfg.System, resolve, connectedSpaceIDs(cfg)).Run(context.Background(), args, stdio(stdout, stderr))
+		return cli.NewNewCommand(p.staging, cfg.System, resolve, connectedSpaceIDs(cfg)).WithSpaceCandidates(spacesSharedWith(p, cfg)).Run(context.Background(), args, stdio(stdout, stderr))
 	}
 	m["validate"] = func(args []string, stdout, stderr io.Writer) int {
 		p, err := resolvePaths()
@@ -1321,7 +1321,7 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 		return lifecycleDeps{}, failf(stderr, "a2a: unreadable machine config (%s): %v", p.machineConfig, err)
 	}
 
-	ref, err := resolveTargetSpaceRef(cfg, machine, p.projectRoot, firstArtifactID(args))
+	ref, err := resolveFreshTargetSpaceRef(ctx, cfg, machine, p.projectRoot, firstArtifactID(args), stderr)
 	if err != nil {
 		return lifecycleDeps{}, failf(stderr, "a2a: %v", err)
 	}
@@ -1440,6 +1440,25 @@ func resolveTargetSpaceRef(cfg space.ProjectConfig, machine space.MachineConfig,
 	}, id)
 }
 
+// resolveFreshTargetSpaceRef is resolveTargetSpaceRef with one recovery: a
+// miss fetches every connected mirror and looks again, because the walk reads
+// mirrors as of their last sync and the id may have landed since.
+func resolveFreshTargetSpaceRef(ctx context.Context, cfg space.ProjectConfig, machine space.MachineConfig, projectRoot, id string, stderr io.Writer) (space.Ref, error) {
+	ref, err := resolveTargetSpaceRef(cfg, machine, projectRoot, id)
+	var missing *cache.ArtifactSpaceNotFoundError
+	if !errors.As(err, &missing) {
+		return ref, err
+	}
+	if ferr := cache.FetchMirrorsForLookup(ctx, cfg.Spaces, func(r space.Ref) string {
+		return space.ResolveMirrorLocation(projectRoot, r, machine)
+	}, func(r space.Ref) host.Credential {
+		return readCredential(ctx, r.ID, machine)
+	}); ferr != nil {
+		_, _ = fmt.Fprintf(stderr, "a2a: looked for %s without a fresh copy of every space: %v\n", id, ferr)
+	}
+	return resolveTargetSpaceRef(cfg, machine, projectRoot, id)
+}
+
 // bypassesArtifactWalk reports whether id belongs to one of the two
 // artifact families whose committed path is never "<id>.md" — see
 // resolveTargetSpaceRef's own doc comment and cache.ResolveArtifactSpace's
@@ -1453,18 +1472,35 @@ func bypassesArtifactWalk(id string) bool {
 	return parsed.Prefix == "XC" || parsed.Prefix == "DP"
 }
 
-// firstArtifactID returns the first non-flag argument (the artifact id most
-// lifecycle verbs take first), or "" if there is none.
+// firstArtifactID returns the positional artifact id most lifecycle verbs take
+// first, or "" if there is none. A space-separated flag value is not that
+// positional: `respond --result answered <id>` targets <id>.
+//
+// A token after a flag this list does not name as boolean is taken for its
+// value. If that reading leaves nothing, a later-added boolean flag may have
+// swallowed the id, so the first id-shaped token is used instead.
 func firstArtifactID(args []string) string {
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if strings.HasPrefix(a, "-") {
-			continue
+	skipValue := false
+	for _, a := range args {
+		switch {
+		case strings.HasPrefix(a, "-"):
+			skipValue = !strings.Contains(a, "=") && !lifecycleBoolFlags[strings.TrimLeft(a, "-")]
+		case skipValue:
+			skipValue = false
+		default:
+			return a
 		}
-		return a
+	}
+	for _, a := range args {
+		if _, err := artifact.ParseID(a); err == nil {
+			return a
+		}
 	}
 	return ""
 }
+
+// lifecycleBoolFlags names the lifecycle verbs' flags that take no value.
+var lifecycleBoolFlags = map[string]bool{"approve": true}
 
 // actorResolver is the ONE actor-resolution closure every CLI write verb
 // receives — `new`, `submit`, every lifecycle verb and every contract sub-verb.
@@ -2049,6 +2085,38 @@ func connectedSpaceIDs(cfg space.ProjectConfig) []string {
 		ids = append(ids, r.ID)
 	}
 	return ids
+}
+
+// spacesSharedWith answers, for `a2a new` with several connected spaces, which
+// of them this system shares with every recipient, read from each mirror's
+// manifest. A mirror that cannot be read is no candidate. "all" names no system,
+// so it narrows nothing.
+func spacesSharedWith(p paths, cfg space.ProjectConfig) func([]string) []string {
+	return func(recipients []string) []string {
+		machine, err := loadMachineConfigForWrite(p.machineConfig)
+		if err != nil {
+			return nil
+		}
+		var out []string
+		for _, ref := range cfg.Spaces {
+			manifest, err := loadManifest(space.ResolveMirrorLocation(p.projectRoot, ref, machine))
+			if err != nil {
+				continue
+			}
+			members := map[string]bool{"all": true}
+			for _, participant := range manifest.Participants {
+				members[participant.System] = true
+			}
+			shared := members[cfg.System]
+			for _, r := range recipients {
+				shared = shared && members[r]
+			}
+			if shared {
+				out = append(out, ref.ID)
+			}
+		}
+		return out
+	}
 }
 
 func loadManifest(mirrorDir string) (space.Manifest, error) {

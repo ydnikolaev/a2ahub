@@ -89,6 +89,9 @@ type NewCommand struct {
 	stagingDir        string
 	ownSystem         string
 	connectedSpaceIDs []string
+	// spaceCandidates, when set, names the connected spaces this system shares
+	// with every given recipient.
+	spaceCandidates func(recipients []string) []string
 
 	now          func() time.Time
 	entropy      io.Reader
@@ -119,6 +122,13 @@ func NewNewCommand(stagingDir, ownSystem string, resolveActor func(ActorFlags) (
 		resolveActor:      resolveActor,
 		writeFile:         os.WriteFile,
 	}
+}
+
+// WithSpaceCandidates lets the draft choose its space from its recipients when
+// several spaces are connected.
+func (c *NewCommand) WithSpaceCandidates(candidates func(recipients []string) []string) *NewCommand {
+	c.spaceCandidates = candidates
+	return c
 }
 
 // StagingDir returns the `.a2a/staging/` path this command was constructed
@@ -233,8 +243,15 @@ func (c *NewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	if _, has := fields["from"]; !has {
 		fields["from"] = c.ownSystem
 	}
-	if _, has := fields["space"]; !has && len(c.connectedSpaceIDs) == 1 {
-		fields["space"] = c.connectedSpaceIDs[0]
+	if _, has := fields["space"]; !has {
+		chosen, why := c.defaultSpace(targets, fields["to"])
+		if why != "" {
+			return newRefuse(stdio, 2, "new: choose the space", why,
+				"name the space with `--field space=<id>`")
+		}
+		if chosen != "" {
+			fields["space"] = chosen
+		}
 	}
 
 	now := c.now()
@@ -461,6 +478,37 @@ func newUnfilledEnumFields(draft []byte) []string {
 
 // newParseFields splits each "k=v" --field value into a map; a value with
 // no "=" is a usage error (never silently dropped or half-applied).
+// defaultSpace picks the draft's `space:`. One connected space is the answer.
+// With several, the recipients decide: exactly one space shared with all of them
+// is the answer, and more than one is a refusal, returned as why. With no
+// recipient named, or none shared, chosen is empty and the draft keeps its
+// placeholder for validate to report.
+func (c *NewCommand) defaultSpace(targets []string, toField string) (chosen, why string) {
+	if len(c.connectedSpaceIDs) == 1 {
+		return c.connectedSpaceIDs[0], ""
+	}
+	recipients := append([]string{}, targets...)
+	if len(recipients) == 0 {
+		for _, r := range strings.Split(strings.Trim(toField, "[] "), ",") {
+			if r = strings.TrimSpace(r); r != "" {
+				recipients = append(recipients, r)
+			}
+		}
+	}
+	if len(recipients) == 0 || c.spaceCandidates == nil {
+		return "", ""
+	}
+	candidates := c.spaceCandidates(recipients)
+	switch len(candidates) {
+	case 0:
+		return "", ""
+	case 1:
+		return candidates[0], ""
+	}
+	return "", fmt.Sprintf("%s reachable in more than one connected space: %s",
+		strings.Join(recipients, ", "), strings.Join(candidates, ", "))
+}
+
 func newParseFields(raw []string) (map[string]string, error) {
 	out := make(map[string]string, len(raw))
 	for _, kv := range raw {

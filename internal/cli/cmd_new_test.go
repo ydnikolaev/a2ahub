@@ -1308,3 +1308,52 @@ func TestNewNamesTheClosedEnumFieldsStillUnfilled(t *testing.T) {
 		t.Errorf("a draft with its enum supplied must not report a placeholder, got %q", got)
 	}
 }
+
+func TestNewChoosesTheSpaceFromItsRecipients(t *testing.T) {
+	t.Parallel()
+	spaces := []string{"getvisa", "devkit"}
+	tests := []struct {
+		name       string
+		args       []string
+		candidates []string
+		wantCode   int
+		want       string
+	}{
+		{"one shared space fills it", []string{"--to", "seomatrix"}, []string{"getvisa"}, 0, "space: getvisa"},
+		{"several shared spaces refuse", []string{"--to", "seomatrix"}, spaces, 2, ""},
+		{"no shared space keeps the placeholder", []string{"--to", "seomatrix"}, nil, 0, "space: <space-id>"},
+		{"--field to= counts as the recipient", []string{"--field", "to=seomatrix"}, []string{"devkit"}, 0, "space: devkit"},
+		{"no recipient keeps the placeholder", nil, []string{"devkit"}, 0, "space: <space-id>"},
+		{"--field space= wins over a refusal", []string{"--to", "seomatrix", "--field", "space=devkit"}, spaces, 0, "space: devkit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			stagingDir := t.TempDir()
+			cmd := cli.NewNewCommand(stagingDir, "axon", fixedActorResolver, spaces).
+				WithSpaceCandidates(func([]string) []string { return tt.candidates })
+			io, out, errOut := newIO()
+			code := cmd.Run(context.Background(), append([]string{"question"}, tt.args...), io)
+			if code != tt.wantCode {
+				t.Fatalf("code = %d, want %d; stdout=%s stderr=%s", code, tt.wantCode, out.String(), errOut.String())
+			}
+			if tt.wantCode != 0 {
+				if !strings.Contains(errOut.String(), "--field space=") {
+					t.Fatalf("refusal does not say how to choose: %s", errOut.String())
+				}
+				return
+			}
+			entries, err := os.ReadDir(stagingDir)
+			if err != nil || len(entries) != 1 {
+				t.Fatalf("staging: %v %v", entries, err)
+			}
+			raw, err := os.ReadFile(filepath.Join(stagingDir, entries[0].Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(raw), tt.want) {
+				t.Fatalf("draft lacks %q:\n%s", tt.want, raw)
+			}
+		})
+	}
+}

@@ -501,9 +501,22 @@ func buildWriteDeps(ctx context.Context, cfg space.ProjectConfig, machine space.
 		primary.write.SpaceOfArtifacts = func(ids []string) (string, error) {
 			resolvedSpace, resolvedID := "", ""
 			for _, id := range ids {
-				ref, err := cache.ResolveArtifactSpace(cfg.Spaces, func(r space.Ref) string {
+				mirrorOf := func(r space.Ref) string {
 					return space.ResolveMirrorLocation(p.ProjectRoot, r, machine)
-				}, id)
+				}
+				ref, err := cache.ResolveArtifactSpace(cfg.Spaces, mirrorOf, id)
+				var missing *cache.ArtifactSpaceNotFoundError
+				if errors.As(err, &missing) {
+					// The walk reads each mirror as of its last sync; the id may
+					// have landed since.
+					ferr := cache.FetchMirrorsForLookup(ctx, cfg.Spaces, mirrorOf, func(r space.Ref) host.Credential {
+						return readMirrorCredential(ctx, r.ID, machine)
+					})
+					ref, err = cache.ResolveArtifactSpace(cfg.Spaces, mirrorOf, id)
+					if err != nil && ferr != nil {
+						return "", fmt.Errorf("mcp: %w (searched without a fresh copy of every space: %w)", err, ferr)
+					}
+				}
 				if err != nil {
 					return "", fmt.Errorf("mcp: %w", err)
 				}

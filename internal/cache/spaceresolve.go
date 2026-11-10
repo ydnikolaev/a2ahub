@@ -29,11 +29,15 @@ package cache
 // "artifact not found" that used to accompany a wrong-space resolution.
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/ydnikolaev/a2ahub/internal/host"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -94,6 +98,27 @@ func ResolveArtifactSpace(refs []space.Ref, mirrorDir func(space.Ref) string, id
 		}
 	}
 	return space.Ref{}, &ArtifactSpaceNotFoundError{ID: id, Searched: searched}
+}
+
+// lookupFetchTimeout bounds each mirror's fetch in FetchMirrorsForLookup, so one
+// unreachable space cannot hold a verb for long.
+const lookupFetchTimeout = 30 * time.Second
+
+// FetchMirrorsForLookup fetches every connected mirror, for a caller whose
+// ResolveArtifactSpace missed: the walk sees each mirror as of its last sync.
+// Every space is attempted. The returned error names the ones not refreshed,
+// so a refusal that follows can say its search was incomplete.
+func FetchMirrorsForLookup(ctx context.Context, refs []space.Ref, mirrorDir func(space.Ref) string, credential func(space.Ref) host.Credential) error {
+	var failures []error
+	for _, ref := range refs {
+		fetchCtx, cancel := context.WithTimeout(ctx, lookupFetchTimeout)
+		err := space.CloneOrFetch(fetchCtx, mirrorDir(ref), ref.RepoURL, credential(ref))
+		cancel()
+		if err != nil {
+			failures = append(failures, fmt.Errorf("space %s: %w", ref.ID, err))
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // mirrorHoldsArtifact reports whether mirrorDir contains a file named
