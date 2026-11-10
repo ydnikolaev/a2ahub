@@ -12,7 +12,7 @@ const (
 	// MaxExplicitFiles is part of the public package API.
 	MaxExplicitFiles = 256
 	// MaxFileBytes is part of the public package API.
-	MaxFileBytes = 1 << 20 // 1 MiB
+	MaxFileBytes = 8 << 20 // 8 MiB (D-046)
 	// MaxAggregateBytes is part of the public package API.
 	MaxAggregateBytes = 16 << 20 // 16 MiB
 )

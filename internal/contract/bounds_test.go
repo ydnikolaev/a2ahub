@@ -157,16 +157,21 @@ func TestLegacyCountBoundRefusesOversizedHistoricalTree(t *testing.T) {
 
 func TestAggregateSizeBoundaries(t *testing.T) {
 	t.Parallel()
-	lengthsAtN := make([]int, 16)
-	for i := 0; i < 15; i++ {
+	// The maximum-size files fill the aggregate; one more one-byte entry keeps
+	// every required role present however few files that takes.
+	full := MaxAggregateBytes / MaxFileBytes
+	adjust := full - 1
+	lengthsAtN := make([]int, full+1)
+	for i := 0; i < full; i++ {
 		lengthsAtN[i] = MaxFileBytes
 	}
-	lengthsAtN[15] = MaxFileBytes - 1 // plus one descriptor byte = exactly 16 MiB
+	lengthsAtN[full] = 1
+	lengthsAtN[adjust] -= 2 // plus the one descriptor byte = exactly the aggregate bound
 
 	lengthsBelow := append([]int(nil), lengthsAtN...)
-	lengthsBelow[15]--
+	lengthsBelow[adjust]--
 	lengthsAbove := append([]int(nil), lengthsAtN...)
-	lengthsAbove[15]++
+	lengthsAbove[adjust]++
 
 	tests := []struct {
 		name    string

@@ -15,7 +15,7 @@ import "fmt"
 // wrapper is declared anywhere — and a refusal that can never fire is worse
 // than none: it reads as protection it does not provide.
 //
-// contract.MaxFileBytes (1 MiB) is deliberately NOT inherited (plan D-2). A
+// contract.MaxFileBytes (8 MiB) is deliberately NOT inherited (plan D-2). A
 // dataset entry is legitimately larger than a contract schema/fixture file,
 // and the record-at-a-time ndjson validation path this package's conformance
 // side uses never needs a whole entry resident to check it — so bounding an

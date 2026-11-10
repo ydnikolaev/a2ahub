@@ -270,7 +270,7 @@ func landTipDescriptorVersion(ctx context.Context, candidate host.LandCandidate,
 	if len(bytes.TrimSpace(listing)) == 0 {
 		return "", nil
 	}
-	raw, err := contractGitBounded(ctx, candidate.CheckoutDir, maxMirrorEventBytes, "show", candidate.BaseSHA+":"+relPath)
+	raw, err := contractGitBounded(ctx, candidate.CheckoutDir, contract.MaxFileBytes, "show", candidate.BaseSHA+":"+relPath)
 	if err != nil {
 		return "", fmt.Errorf("cannot read the tip's descriptor: %w", err)
 	}

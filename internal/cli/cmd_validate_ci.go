@@ -1215,7 +1215,7 @@ func contractWorkingTreeFiles(root, descriptorDir, sub string) (map[string][]byt
 		if d.IsDir() {
 			return nil
 		}
-		raw, rerr := readBoundedFile(p, maxMirrorEventBytes)
+		raw, rerr := readBoundedFile(p, contract.MaxFileBytes)
 		if rerr != nil {
 			return rerr
 		}
@@ -1443,7 +1443,7 @@ func ciCompatibilityBaseline(ctx context.Context, root, base, id, relPath, relDi
 		}
 	}
 
-	priorRaw, gerr := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", base+":"+relPath)
+	priorRaw, gerr := contractGitBounded(ctx, root, contract.MaxFileBytes, "show", base+":"+relPath)
 	if gerr != nil {
 		// base itself already resolved (validateCIContract's
 		// contractReadTreeAtSHA would have errored otherwise) — so a failing
@@ -1481,7 +1481,7 @@ func ciPriorConformsToAt(ctx context.Context, root, sha, relPath string) (map[st
 	if len(bytes.TrimSpace(listing)) == 0 {
 		return nil, nil
 	}
-	raw, err := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", sha+":"+relPath)
+	raw, err := contractGitBounded(ctx, root, contract.MaxFileBytes, "show", sha+":"+relPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the descriptor at %s: %w", sha, err)
 	}

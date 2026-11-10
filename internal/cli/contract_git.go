@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 )
 
 // contractGitBounded runs `git <args...>` in repoDir and returns its
@@ -89,11 +91,12 @@ func contractGitBounded(ctx context.Context, repoDir string, max int64, args ...
 //     compatibility cannot — an unreachable base would read as "nothing to
 //     compute". The sha's shape and existence are both verified up front.
 //
-// Bounded: BOTH git reads — each file's content and the tree listing that
-// names it — go through contractGitBounded at maxMirrorEventBytes
-// (adapters.go, this package's own existing artifact-read ceiling, reused
-// rather than duplicated). Exceeding it is a hard error naming the sha and
-// the path, never a silent truncation.
+// Bounded: BOTH git reads go through contractGitBounded. A file's content is
+// capped at contract.MaxFileBytes, because what it reads is a contract file
+// that publication admitted at that bound and any lower one here refuses the
+// next version's land check; the listing that names it is capped at
+// maxMirrorEventBytes (adapters.go). Exceeding either is a hard error naming
+// the sha and the path, never a silent truncation.
 //
 // Deterministic: each subtree's file list is sorted before it is read, so
 // which file (if any) trips the bound first does not depend on git's or
@@ -144,7 +147,7 @@ func contractReadTreeAtSHA(ctx context.Context, repoDir, sha, descriptorDir stri
 			if strings.HasPrefix(filepath.ToSlash(relToDescriptorRoot), "../") {
 				return nil, fmt.Errorf("cli: %s: git listed %q, which is outside %s", sha, rel, descriptorDir)
 			}
-			content, cerr := contractGitBounded(ctx, repoDir, maxMirrorEventBytes, "show", sha+":"+rel)
+			content, cerr := contractGitBounded(ctx, repoDir, contract.MaxFileBytes, "show", sha+":"+rel)
 			if cerr != nil {
 				return nil, fmt.Errorf("cli: git show %s:%s: %w", sha, rel, cerr)
 			}

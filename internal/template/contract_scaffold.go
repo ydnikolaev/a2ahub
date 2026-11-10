@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -172,17 +173,10 @@ func ContractDraftSchemaFormat(draft []byte) (string, error) {
 	return probe.SchemaFormat, nil
 }
 
-// contractSidecarMaxBytes bounds every sidecar leaf file read below — this
-// package's own copy of the repo-wide bounded-read idiom, matching
-// internal/cli/adapters.go's maxMirrorEventBytes and
-// internal/artifact/digesttree.go's maxDigestTreeFileBytes exactly (both 1
-// MiB, both themselves unexported to their own package —
-// internal/artifact/digesttree.go's own doc comment states the rule this
-// follows: "each package owns its own cap constant... none shared across
-// package boundaries"). There is no principled reason a contract's staged
-// schema/fixture file should tolerate a larger read than any other
-// artifact-adjacent file this codebase reads.
-const contractSidecarMaxBytes = 1 << 20 // 1 MiB
+// contractSidecarMaxBytes bounds every sidecar leaf file read below. It is the
+// published contract's own per-file bound: a sidecar this read refused could
+// not be staged, however legal the carried set would be (D-046).
+const contractSidecarMaxBytes = contract.MaxFileBytes
 
 // contractSidecarDirs are decision D-D's own scaffold subtrees under a
 // contract's provides/<slug>/ section (internal/space.Layout's

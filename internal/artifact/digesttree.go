@@ -15,9 +15,10 @@ import (
 // multi-file digest tree — this package's own copy of the repo-wide bounded-
 // read idiom (each package owns its own cap constant; see e.g.
 // internal/cli/adapters.go's maxMirrorEventBytes, internal/cache/mirror.go's
-// maxCacheReadBytes, internal/space/config.go's maxConfigBytes — all 1 MiB,
-// none shared across package boundaries).
-const maxDigestTreeFileBytes = 1 << 20 // 1 MiB
+// maxCacheReadBytes, internal/space/config.go's maxConfigBytes — none shared
+// across package boundaries). This one walks a contract's sidecars, so it
+// equals contract.MaxFileBytes, which this package cannot import (D-046).
+const maxDigestTreeFileBytes = 8 << 20 // 8 MiB
 
 // DigestTreeFS computes the spec 08 §5.7/D-029 multi-file digest tree over
 // root's subtrees (e.g. []string{"schema", "fixtures"} — a contract's own
