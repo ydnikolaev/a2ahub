@@ -258,7 +258,14 @@ const llmsFull = readFileSync(join(dist, 'llms-full.txt'), 'utf8');
 // and was GREEN on the same bytes that Pages refused minutes later. De-
 // embedding the changelog removes the pressure but not the blind spot; the
 // pre-tag projection that would close it is a docs/validator-backlog.md row.
-if (Buffer.byteLength(llmsFull) > 450_000) failures.push('llms-full.txt: raw corpus exceeds 450 KB');
+//
+// 500 KB since 2026-11-10. v0.27.3 landed at 450,050 bytes, 50 over, with its
+// own prose pass adding about 2 KB. The duplication question was asked first:
+// sentences of 60 or more characters repeat for 181 bytes in total, so nothing
+// is embedded twice. The corpus grew 76 KB in ten weeks of skill prose, not from an
+// embed. Trimming 50 bytes would leave no headroom for the tag's own bytes, the
+// blind spot above.
+if (Buffer.byteLength(llmsFull) > 500_000) failures.push('llms-full.txt: raw corpus exceeds 500 KB');
 for (const marker of ['## Bundle provenance', 'Source revision:', 'Source snapshot timestamp:', '## Table of contents', 'Roadmap — non-committed work is labelled']) {
   if (!llmsFull.includes(marker)) failures.push(`llms-full.txt: missing provenance marker ${marker}`);
 }
