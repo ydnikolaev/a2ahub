@@ -2101,6 +2101,9 @@ func spacesSharedWith(p paths, cfg space.ProjectConfig) func([]string) []string 
 		for _, ref := range cfg.Spaces {
 			manifest, err := loadManifest(space.ResolveMirrorLocation(p.projectRoot, ref, machine))
 			if err != nil {
+				// Unknown membership stays a candidate: dropping it could turn
+				// an ambiguous recipient into a confident wrong fill.
+				out = append(out, ref.ID)
 				continue
 			}
 			members := map[string]bool{"all": true}

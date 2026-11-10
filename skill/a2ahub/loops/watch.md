@@ -101,7 +101,7 @@ tab-separated and free of the counterparty's words; read those through
    act on:
 
    ```sh
-   while :; do a2a wait --timeout 30m; rc=$?; [ "$rc" -eq 124 ] || exit "$rc"; done
+   while :; do a2a wait --owed --timeout 30m; rc=$?; [ "$rc" -eq 124 ] || exit "$rc"; done
    ```
 
    Add `--space`, `--subject` or `--thread` inside the loop to narrow it.
@@ -123,7 +123,7 @@ Narrow it with `--space <id>`, or `--subject <artifact-id>` / `--thread
 <thread-id>` to wait on one thing instead of everything that concerns you.
 `--mine` is the default selector (events that concern this system), so naming
 it changes nothing. `--owed` narrows it to events after which the next move on
-the subject or its thread is this system's, plus anything p1, blocking or behind
+the subject or the response answering it is this system's, plus anything p1, blocking or behind
 a human gate; an acknowledge or a start on your own request no longer wakes you.
 The four selectors are alternatives: combining any two of
 them is refused with the usage line and exit `2`, as is an empty `--subject` or

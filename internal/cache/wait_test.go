@@ -1088,17 +1088,22 @@ func TestKeepOwedEvents(t *testing.T) {
 	blocking := waitArtifact("XQ-blocking", "question", "axon", []any{"sem"}, "T-blocking", "01A")
 	blocking.Env.Blocking = true
 	artifacts := map[string]foldedArtifact{
-		"XW-quiet":    waitArtifact("XW-quiet", "work_request", "axon", []any{"sem"}, "T-quiet", "01A"),
-		"XW-mine":     waitArtifact("XW-mine", "work_request", "sem", []any{"axon"}, "T-mine", "01A"),
-		"XW-parent":   waitArtifact("XW-parent", "work_request", "axon", []any{"sem"}, "T-resp", "01A"),
-		"XS-response": waitArtifact("XS-response", "response", "sem", []any{"axon"}, "T-resp", "01A"),
+		"XW-quiet":  waitArtifact("XW-quiet", "work_request", "axon", []any{"sem"}, "T-quiet", "01A"),
+		"XW-mine":   waitArtifact("XW-mine", "work_request", "sem", []any{"axon"}, "T-mine", "01A"),
+		"XW-parent": waitArtifact("XW-parent", "work_request", "axon", []any{"sem"}, "T-resp", "01A"),
+		"XS-response": func() foldedArtifact {
+			fa := waitArtifact("XS-response", "response", "sem", []any{"axon"}, "T-resp", "01A")
+			fa.Env.Parent = "XW-parent"
+			return fa
+		}(),
+		"XQ-sibling":  waitArtifact("XQ-sibling", "question", "axon", []any{"sem"}, "T-resp", "01A"),
 		"XW-gated":    waitArtifact("XW-gated", "work_request", "axon", []any{"sem"}, "T-gated", "01A"),
 		"XW-urgent":   urgent,
 		"XQ-blocking": blocking,
 	}
 	open := []OpenItem{
 		{ID: "XW-mine", YourMove: true},
-		{ID: "XW-parent", YourMove: true},
+		{ID: "XS-response", YourMove: true},
 		{ID: "XW-gated", HumanGate: "G1"},
 		{ID: "XW-quiet"},
 	}
@@ -1108,7 +1113,9 @@ func TestKeepOwedEvents(t *testing.T) {
 	}{
 		{"nothing asked of me", "XW-quiet", WhyAuthored, false},
 		{"my move on the subject", "XW-mine", WhyAddressed, true},
-		{"my move on another artifact of the thread", "XS-response", WhyAddressed, true},
+		{"my move on the response", "XS-response", WhyAddressed, true},
+		{"my move on the response that answers the subject", "XW-parent", WhyAuthored, true},
+		{"a sibling on a thread where I owe elsewhere", "XQ-sibling", WhyAuthored, false},
 		{"a human gate", "XW-gated", WhyAuthored, true},
 		{"p1", "XW-urgent", WhyAuthored, true},
 		{"blocking", "XQ-blocking", WhyAuthored, true},

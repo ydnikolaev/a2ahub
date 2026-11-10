@@ -651,3 +651,30 @@ func TestResolveFreshTargetSpaceRefFetchesOnAMiss(t *testing.T) {
 		t.Fatalf("resolved %q, want space-two", ref.ID)
 	}
 }
+
+func TestSpacesSharedWith(t *testing.T) {
+	fx := spacefixture.New(t, "axon", "beta")
+	raw, err := os.ReadFile(filepath.Join(fx.Clones["axon"], "space.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	p := paths{projectRoot: root, machineConfig: filepath.Join(root, "absent-machine.yaml")}
+	readable := space.Ref{ID: "readable"}
+	location := space.ResolveMirrorLocation(root, readable, space.MachineConfig{})
+	if err := os.MkdirAll(location, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(location, "space.yaml"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unread := space.Ref{ID: "unread"}
+	shared := spacesSharedWith(p, space.ProjectConfig{System: "axon", Spaces: []space.Ref{readable, unread}})
+
+	if got := strings.Join(shared([]string{"beta"}), ","); got != "readable,unread" {
+		t.Errorf("a member: %q, want the readable space and the one whose members are unknown", got)
+	}
+	if got := strings.Join(shared([]string{"stranger"}), ","); got != "unread" {
+		t.Errorf("a stranger: %q, want only the space whose members are unknown", got)
+	}
+}

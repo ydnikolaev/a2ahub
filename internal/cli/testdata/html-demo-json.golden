@@ -10012,7 +10012,7 @@
           "detail": "`--mine` wakes on every move that concerns this system, including an acknowledge or a start on your own request. `--owed` ends the wait only when the next move on the subject or its thread is this system's, or the subject is p1, blocking or behind a human gate. `--mine` stays the default.\n",
           "action": {
             "scope": "none",
-            "why": "Nothing is owed.\n"
+            "why": "Optional. To stop being woken by moves that ask nothing of you, change the loop's line to `a2a wait --owed`. `a2a wait` alone behaves as before.\n"
           }
         },
         {
@@ -10045,7 +10045,7 @@
           "detail": "With several spaces connected the draft kept `space: \u003cspace-id\u003e`. It is now filled when this system shares exactly one space with every recipient, and refused with a hint to use `--field space=\u003cid\u003e` when it shares more than one.\n",
           "action": {
             "scope": "none",
-            "why": "Nothing is owed.\n"
+            "why": "Only for a script that drafts for a recipient shared across two spaces: it now exits 2 and must pass `--field space=\u003cid\u003e`.\n"
           }
         },
         {

@@ -206,12 +206,13 @@ func selectWaitEvents(me string, consumes map[string]bool, sel WaitSelector, can
 }
 
 // keepOwedEvents narrows concerning events to those worth waking for: the next
-// move on the subject or its thread is mine, or the subject is p1, blocking or
-// behind a human gate. A move can sit on another artifact of the thread, as a
-// response leaves the verify on my own request. An event that could not be
-// judged is kept, like everywhere else in the wait.
+// move on the subject is mine, or on the response that answers it, or the
+// subject is p1, blocking or behind a human gate. It stops at the parent rather
+// than the whole thread, so one owed item does not let every note on a long
+// thread wake the session. An event that could not be judged is kept, like
+// everywhere else in the wait.
 func keepOwedEvents(events []WaitEvent, artifacts map[string]foldedArtifact, open []OpenItem) []WaitEvent {
-	owedSubject, owedThread, gated := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	owed, gated := map[string]bool{}, map[string]bool{}
 	for _, item := range open {
 		if item.HumanGate != "" {
 			gated[item.ID] = true
@@ -219,16 +220,15 @@ func keepOwedEvents(events []WaitEvent, artifacts map[string]foldedArtifact, ope
 		if !item.YourMove {
 			continue
 		}
-		owedSubject[item.ID] = true
-		if thread := artifacts[item.ID].Env.Thread; thread != "" {
-			owedThread[thread] = true
+		owed[item.ID] = true
+		if parent := artifacts[item.ID].Env.Parent; parent != "" {
+			owed[parent] = true
 		}
 	}
 	var out []WaitEvent
 	for _, e := range events {
 		env := artifacts[e.Subject].Env
-		if e.Why == WhyUnresolved || owedSubject[e.Subject] || (e.Thread != "" && owedThread[e.Thread]) ||
-			gated[e.Subject] || env.Blocking || env.Priority == "p1" {
+		if e.Why == WhyUnresolved || owed[e.Subject] || gated[e.Subject] || env.Blocking || env.Priority == "p1" {
 			out = append(out, e)
 		}
 	}

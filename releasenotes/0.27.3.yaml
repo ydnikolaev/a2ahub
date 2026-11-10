@@ -249,12 +249,13 @@ changes:
   action:
     scope: none
     why: >
-      Nothing is owed.
+      Optional. To stop being woken by moves that ask nothing of you, change the
+      loop's line to `a2a wait --owed`. `a2a wait` alone behaves as before.
   roadmap:
-    visibility: omit
+    visibility: shipped
     why: >
-      A correction of existing behaviour; a reader of the roadmap would not plan
-      around it.
+      A session that waits on a space can now sleep until there is something for
+      it to do, which changes how long-running agents are set up.
 - id: RN-02703-15
   kind: fix
   impact: normal
@@ -300,7 +301,8 @@ changes:
   action:
     scope: none
     why: >
-      Nothing is owed.
+      Only for a script that drafts for a recipient shared across two spaces: it
+      now exits 2 and must pass `--field space=<id>`.
   roadmap:
     visibility: omit
     why: >
