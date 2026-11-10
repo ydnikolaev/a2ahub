@@ -297,8 +297,12 @@ sees you, and that deprecation still reaches your inbox.
    **`a2a adapt --done` records that you adapted**, in the repository rather
    than on your machine, so a teammate's agent cloning the repo neither
    redoes finished work nor skips work it wrongly believes done. It runs
-   every `detect:` command in the pending set first and refuses if one still
-   fires, naming the change. A detect it could not RUN at all refuses
+   every runnable `detect:` command in the pending set first and refuses if
+   one still fires, naming the change. A detect exits 0 once its step is
+   done. A detect that is a template rather than a probe (it holds a
+   placeholder such as `<id>`) is never run: its obligation is recorded on
+   your word, and the output names it, as `template_only` under `--json`. A
+   detect it could not RUN at all refuses
    separately, and the two are never conflated: *"still fires"* means the
    obligation is measurably outstanding, *"could not be run"* means nothing
    was measured, and a check that cannot be measured is never treated as
@@ -307,6 +311,26 @@ sees you, and that deprecation still reaches your inbox.
    `--done` will not pretend otherwise. If the record itself cannot be
    written it refuses naming what to confirm: that `.a2a/config.yaml` exists,
    is valid YAML with a mapping at its root, and is writable.
+
+   **A repository that never recorded a clock sets the first one by hand
+   (D-044).** Its range reaches back to the oldest release, and obligations
+   from before it was onboarded describe states it never had, so `--done`
+   refuses before running any detect and `a2a adapt` prints the same line
+   under its "never recorded" notice. Set `adapted_through:` in
+   `.a2a/config.yaml` to the version that onboarded the repository: the
+   PROVENANCE stamp in the commit that first added the skill, or, with no
+   stamp, the release before the one current on the day `.a2a/config.yaml`
+   was first committed. A repository onboarded by the running binary takes
+   that binary's version. Then run `a2a adapt`, which lists only what came
+   after it.
+
+   **`--done` refusing an "update the space" step means a space really is
+   behind.** Those steps detect with `a2a space update --check`, a dry run
+   that exits `1` while a space differs from this binary's template and
+   names it on stderr, often only by its `min_binary_version` floor. With no
+   `--space` it checks every connected space. Update the one it names with
+   `a2a space update --space <id>`, which writes to the space and needs
+   `--approve` in a confirm space, then run `--done` again.
 
    **A local build owes what it carries.** A binary from `make deliver` is
    stamped with the last published release and embeds the notes written since,
@@ -320,13 +344,18 @@ sees you, and that deprecation still reaches your inbox.
    adoption is per repository, so a binary that arrives without `a2a update`
    — `make deliver`, a package manager, another repository's update — used to
    reach this repository with nothing said. Now every other verb that
-   succeeds, and every MCP tool, ends with one `note:` on stderr (an
-   `adoption_notice` object under `--json`) while steps are owed: how many,
-   and since which release, or that this repository never recorded adoption
-   at all. It stops when `--done` records the clock. It never touches stdout
-   or the exit code. The doctor's `adoption` row says the same and FAILs
-   when `.a2a/config.yaml` is gitignored or untracked, because a clock that
-   is not committed is lost to every clone and worktree.
+   succeeds ends with one `note:` on stderr (an `adoption_notice` object
+   under `--json`), and every MCP tool adds the same sentence to its text
+   body, while steps are owed: how many, and since which release, or that
+   this repository never recorded adoption at all. When the repository
+   adapted through a release newer than the binary, the sentence names the
+   binary's version and path instead, because that is almost always an older
+   `a2a` first in `PATH`. It stops when `--done` records the clock. It never
+   touches stdout or the exit code. The doctor's `adoption` row says the
+   same and FAILs when `.a2a/config.yaml` is gitignored or untracked,
+   because a clock that is not committed is lost to every clone and
+   worktree. A re-run of `a2a init`, for example to add a space, keeps the
+   recorded clock.
 
    Two refusals worth knowing before you meet them. A baseline NEWER than
    your binary refuses rather than walking backwards, naming both versions —

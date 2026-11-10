@@ -71,7 +71,10 @@
    anyone checking its state.
 5. **Respond** with `a2a respond` — reference concrete artifacts
    (`id@version` / `id#digest`) and address every acceptance criterion
-   explicitly.
+   explicitly. `a2a show <id>` prints the request's criteria as `<id>: <text>`
+   and its `expected_response` (`shape` and `by`), so read them there rather
+   than in the space's files; [reference/threads.md](../reference/threads.md)
+   has the detail.
    - **A `work_request` with `category: data` that asks for an actual payload
      is NOT discharged by `a2a respond`.** A response describes; it carries no
      bytes anyone can check. Pack the result against the pinned contract and

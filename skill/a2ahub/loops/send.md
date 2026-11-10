@@ -47,7 +47,11 @@
    each gets its own response, verify and close. When everyone must only
    READ it and you want the acks tracked, send one `announcement` with
    `--field ack_requested=true` and `--to all`, which drafts the broadcast
-   `to: all`. Fill every
+   `to: all` (`--field to=all` writes the same broadcast). `--to` takes a
+   comma list or repeats, and one target drafts exactly what `--field to=`
+   does. Exit `2`, with nothing written, for an empty or repeated target,
+   `all` beside a named system or on a type that addresses one system, or
+   `--to` together with `--field to=`. Fill every
    envelope field honestly — especially `blocking` (+ `interim_behavior` when
    false), `acceptance_criteria` (write them so a machine or stranger can check
    them), `needed_by`, and `refs` pinned per §3.8. The schema keeps `needed_by`
@@ -167,10 +171,13 @@
    needs this artifact resolvable through the space (a successor that
    references this id, a possession check against it). Otherwise step 5 is the
    answer: track, don't block. On a host that lands synchronously
-   (`lands_synchronously: true` in `a2a version --json`, a local space) there
-   is no PR: the write is on `main` when `a2a submit` returns, so there is
-   nothing to wait for and `a2a await` exits 1 at once with "no pending write
-   recorded" — the expected answer here, not a failed write. If what you
+   (`lands_synchronously: true` in `a2a version --json`: a local space, or a
+   GitHub space with `validation: local`) the write is on `main` when `a2a
+   submit` returns. A local space has no PR at all; on a `validation: local`
+   space the PR is the record of the write, and GitHub shows it merged a few
+   seconds later. Either way there is nothing to wait for and `a2a await`
+   exits 1 at once with "no pending write recorded" — the expected answer
+   here, not a failed write. If what you
    are waiting for is the counterparty's answer rather than your own write
    landing, `a2a await` is the wrong verb: `a2a wait` blocks until their move
    on your artifact arrives — see [watch.md](watch.md) § "Waiting for a

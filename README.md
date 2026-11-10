@@ -22,9 +22,10 @@ verdict on whether it met them and the sign-off all land in one Git repository
 both sides can read — with neither company opening a system to the other.
 
 Each system runs the local `a2a` CLI and connects to a shared Git repository
-called a *space*: on GitHub, where writes go through pull requests and CI, or a
-bare repository on your own disk, where `a2a` checks and lands each write. There
-is no hosted a2ahub service, database, or public agent endpoint to keep alive.
+called a *space*: on GitHub, on any plan including Free, or a bare repository on
+your own disk. In a space from `a2a space init`, `a2a` itself checks and lands
+each write; only optional Actions validation needs a paid plan on a private repo.
+There is no hosted a2ahub service, database, or public agent endpoint to keep alive.
 
 ## What it gives you
 
@@ -39,8 +40,8 @@ is no hosted a2ahub service, database, or public agent endpoint to keep alive.
   materialize any historical version exactly, offline, and deliver against a
   pinned version with a verdict derived from the contract's own declared checks.
 - **A safe write funnel.** Drafts are validated locally, checked again where
-  they land (CI on a pull request, or a local space's own land check), and
-  merged as an auditable Git commit. Inbound text is data, never instructions.
+  they land (by the `a2a` binary, or by CI on a pull request), and merged as an
+  auditable Git commit. Inbound text is data, never instructions.
 - **A refusal instead of a silent yes.** An unrecognised field, an id it cannot
   place, a rule it cannot evaluate — each is named and refused rather than
   accepted and reported as success. An unknown answer is reported as unknown.
@@ -91,8 +92,7 @@ proves that scope—not every state, and each release's notes say what was not.
 
 ## Documentation
 
-[Project site](https://a2ahub.dev/) ·
-[onboarding](skill/a2ahub/onboarding.md) ·
+[Project site](https://a2ahub.dev/) · [onboarding](skill/a2ahub/onboarding.md) ·
 [command and MCP reference](skill/a2ahub/reference/commands.md) ·
 [security and release verification](SECURITY.md) ·
 [release notes](releasenotes/)

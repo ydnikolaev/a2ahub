@@ -102,10 +102,11 @@ other side. That is a priority filter over LIVENESS, not a claim that anything
 is owed by you. An item whose outcome is `settled` (it waits on nobody, so no
 move is owed by anyone) is left out, whatever its priority.
 
-It also surfaces `notes-without-move`: the side that owes the next move has
-written three notes or more since the item last changed state. A note never
-moves an item, so if you owe the move, make it; `a2a note` reminds you which
-move you owe each time you write one.
+It also surfaces `notes-without-move`, here and in `a2a statusline`, to both
+sides: the side that owes the next move has written three notes or more since
+the item last changed state. A note never moves an item, and it resets the
+staleness clock, so if you owe the move, make it; `a2a note` reminds you which
+move you owe on stderr each time you write one, and still records the note.
 
 So a thread can be settled on you and still appear in `--actionable`. Read the
 open item's own `waiting_on` and `expected_transition` for who owes what; read
@@ -119,7 +120,8 @@ its events it prints what a counterpart must answer against: the item's
 addressed by its 0-based position, shown as `#0`, `#1`, …; `--verdict` takes
 the bare number),
 and its `expected_response`, as `shape` (what a good answer looks like) and
-`by` (the date it is wanted by). `--json` carries the same two fields. A
+`by` (the date it is wanted by). `--json` and the MCP `a2a_show` tool carry
+the same two fields, as `acceptance_criteria` and `expected_response`. A
 verify or close composes one verdict per criterion, so read them there rather
 than in the space's files.
 

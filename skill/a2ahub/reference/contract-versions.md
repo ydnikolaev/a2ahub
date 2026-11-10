@@ -330,6 +330,12 @@ where the version FLIPS — is what makes that version resolvable ever after.
 `a2a contract materialize` reads it, and so does every later version, which
 resolves the earlier one as its compatibility baseline.
 
+The compatibility check, in `a2a contract publish` and in `a2a validate --ci`,
+maps each prior valid fixture to a schema by the fixture's declared `conforms_to`
+first. The file-name rule (`<stem>.json` to `<stem>.schema.json`) applies only to
+a fixture that declares none. A fixture whose declared schema the new version no
+longer publishes is a breaking change, and the message names that schema.
+
 **No git tag is minted for a publish, on purpose: a tag is movable, a commit
 is not.** `id@version` resolves through the publish event's own commit —
 never through a ref anyone could later repoint — so treating a published

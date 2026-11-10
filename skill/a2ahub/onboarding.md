@@ -59,7 +59,7 @@ one operator, several repositories" below.
 | Profile | Who | What it covers | Budget |
 |---------|-----|----------------|--------|
 | **hub admin** | operator | Provision the hub on a VPS: binary + systemd + `hub.yaml` + space read-PATs + webhook registration + TLS + optional chat webhook. | ≤ 1 h |
-| **org/space admin** | operator (v1) | Create a space repo from the product's space template (layout, CI **caller** workflow + `dependabot.yml`, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, required check `a2a-validate / validate`) + the SEPARATE repo setting "Allow auto-merge" (Settings → General — not part of branch protection, and off by default) + invite participants. Verify an ungated PR auto-merges, and that a direct push is rejected **for a participant** — your own admin push is bypassed by design (`enforce_admins: false`). | ≤ 30 min |
+| **org/space admin** | operator (v1) | A space created with `a2a space init` needs only the repository and its collaborators: see "A GitHub space judged by the binary" below. For a space with `validation: actions`: create a space repo from the product's space template (layout, CI **caller** workflow + `dependabot.yml`, CODEOWNERS skeleton, `space.yaml`) + branch protection (PR-only main, required check `a2a-validate / validate`) + the SEPARATE repo setting "Allow auto-merge" (Settings → General — not part of branch protection, and off by default) + invite participants. Verify an ungated PR auto-merges, and that a direct push is rejected **for a participant** — your own admin push is bypassed by design (`enforce_admins: false`). | ≤ 30 min |
 | **project dev** | each participating team | Install the binary + `a2a init` + `a2a connect` + credentials + the harness adapter, then `a2a doctor` green. | ≤ 30 min, no walkthrough |
 
 The project-dev profile is the one an agent most often assists. The end state is
@@ -72,6 +72,10 @@ channels only when its project-scoped `offer.state` is `ask`. Notification
 setup is optional and must not delay the green core profile.
 
 ### Two roles — don't conflate them (P33 space-CI model)
+
+This section describes a space with `validation: actions`. A space with
+`validation: local`, which is what `a2a space init` writes for GitHub, has no CI
+caller, no Dependabot and no reusable workflow.
 
 - **Space owner** *creates* the space repo from `space-template/`. That template
   already carries the CI **caller** (`.github/workflows/a2a-validate.yml`) and
@@ -132,6 +136,14 @@ What changes for you:
   push to `main` directly. The space relies on everyone writing through `a2a`.
 - **No Actions workflow is scaffolded**, so there is no CI check and no
   Actions-based notification delivery unless you add them yourself.
+
+**Moving an existing space to this mode** is one reviewed manifest change on the
+pull-request path: set `validation: local` and raise `min_binary_version` to
+0.27.2 or newer, the first release that reads the key, in the same change. An
+older binary ignores the key and would keep opening pull requests, and no check
+makes the two travel together, so this sentence is the only guard. Every
+participant updates first. Remove branch protection from `main` after that
+change lands: until then GitHub refuses the client's push.
 
 ## Local space — one operator, several repositories
 
@@ -247,8 +259,8 @@ several repositories" above.
 On a space with `validation: local`, step 1 means adding the participant as a
 collaborator with write access and giving them a classic token. Step 2 is still
 a manifest change: `a2a space join` refuses here as on any GitHub space, because
-a login is GitHub's to assert and the binary cannot mint one, and there is no
-CODEOWNERS entry to add.
+a login is GitHub's to assert and the binary cannot mint one. A CODEOWNERS entry
+does nothing here, because this mode does not enforce the file.
 
 Guide the participant through these steps in order:
 
@@ -319,11 +331,12 @@ gh api -X PUT repos/<org>/<repo>/collaborators/<login>
 ```
 
 **Then each participant onboards** (§9.2 below): a manifest PR adding them to
-`space.yaml`, their section scaffold, and their CODEOWNERS entry. A section is
+`space.yaml`, their section scaffold, and (`validation: actions` only) their
+CODEOWNERS entry. A section is
 six paths — `provides/ requires/ exchanges/ events/ docs/` plus a
 `consumes.yaml` that starts as `schema: consumes/v1`, `system: <name>`,
 `dependencies: []`. The template ships none of these: a space with no
-participants is deliberately valid so CI is green on the empty repo.
+participants is deliberately valid, so its first check passes on the empty repo.
 
 A space with `validation: actions`, from here through the auto-merge bullet. A
 local space and a `validation: local` space skip them: neither has protection or
@@ -477,12 +490,12 @@ the third is what nobody else will ever close for you (S-7).
 
 | Situation | Runbook move |
 |-----------|--------------|
-| Space scaffolding is behind the template (a new CI shape, a new `.github/` file) | `a2a space update --dry-run`, then `a2a space update` — it diffs the space against the embedded template and opens the PR through the normal funnel. Admin-only steps (the required-check rename, deleting a stale secret) are printed as `scope: space` directives for a human to run; a2a holds no admin scope. |
+| Space scaffolding is behind the template (a new CI shape, a new `.github/` file) | `a2a space update --dry-run`, then `a2a space update` — it diffs the space against the embedded template and opens the PR through the normal funnel. `a2a space update --check` is the dry run for a script: it exits `1` while the space is behind and names it on stderr, and with no `--space` it checks every connected space; a real update in a project with two spaces still needs `--space`. Admin-only steps (the required-check rename, deleting a stale secret) are printed as `scope: space` directives for a human to run; a2a holds no admin scope. A space with `validation: local` is compared without the workflows, Dependabot and the branch-protection checklist, gets no directives, and lands the update when the command returns; a change to `space.yaml` needs `--approve` (G4). |
 | Fleet upgrade | Bump `min_binary_version` in the manifest per space (a PR); stale binaries then refuse writes and drift resolves itself. `a2a space update` raises it only as far as the template's own declared floor, and never lowers it. |
 | Envelope schema migration | N/N−1 overlap window; the release note names the cutoff; the validator reports old-schema artifacts. |
 | Hub loss | `hub rebuild` (the hub owns only ephemeral state). |
 | Repo loss | Restore from any participant's mirror + GitHub — git is distributed. |
-| Validation-pipeline outage | Writes freeze loudly; the runbook covers temporarily lifting the required check (logged) and re-arming it, with a mandatory post-incident announcement. |
+| Validation-pipeline outage (a space with `validation: actions`) | Writes freeze loudly; the runbook covers temporarily lifting the required check (logged) and re-arming it, with a mandatory post-incident announcement. |
 | Sanctioned redaction | The operator announces the history rewrite BEFORE executing; participants re-clone (doctor detects divergence), the hub re-indexes, local caches purge, and a closing announcement lands. |
 
 ## First cross-system exchange (putting it together)
