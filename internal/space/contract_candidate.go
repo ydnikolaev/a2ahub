@@ -16,6 +16,10 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 )
 
+// MaxContractFileBytes re-exports the carried-file bound for packages the
+// import rules keep away from internal/contract.
+const MaxContractFileBytes = contract.MaxFileBytes
+
 const (
 	maxContractFilesystemListingBytes = 1 << 20
 	maxContractCandidateFiles         = contract.MaxExplicitFiles * 2

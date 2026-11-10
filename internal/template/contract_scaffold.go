@@ -24,7 +24,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ydnikolaev/a2ahub/internal/artifact"
-	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
@@ -176,7 +175,7 @@ func ContractDraftSchemaFormat(draft []byte) (string, error) {
 // contractSidecarMaxBytes bounds every sidecar leaf file read below. It is the
 // published contract's own per-file bound: a sidecar this read refused could
 // not be staged, however legal the carried set would be (D-046).
-const contractSidecarMaxBytes = contract.MaxFileBytes
+const contractSidecarMaxBytes = space.MaxContractFileBytes
 
 // contractSidecarDirs are decision D-D's own scaffold subtrees under a
 // contract's provides/<slug>/ section (internal/space.Layout's
