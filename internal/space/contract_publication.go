@@ -1163,8 +1163,17 @@ func (s *ContractPublicationService) publicationMutations(plan contract.Publicat
 			}
 			mutations = append(mutations, mutation)
 		case contract.MutationDelete:
-			if expectPlan == "" || expectPlan != plan.PlanDigest || planned.DeleteDomain != contract.ContractSidecarDeleteDomain ||
+			if planned.DeleteDomain != contract.ContractSidecarDeleteDomain ||
 				planned.ContractRoot != planning.ContractRoot || !validContractPublicationGitMode(planned.BeforeMode) {
+				return nil, ErrContractPublicationPlanChanged
+			}
+			// Nothing has changed yet when no digest was given: a delete needs one
+			// on purpose, so the refusal names the plan and how to confirm it.
+			if expectPlan == "" {
+				return nil, fmt.Errorf("%w: this plan deletes %d sidecar file(s); to confirm them, re-run with --expect-plan %s (expect_plan on MCP)",
+					ErrContractPublicationPlanChanged, countSidecarDeletes(plan), plan.PlanDigest)
+			}
+			if expectPlan != plan.PlanDigest {
 				return nil, ErrContractPublicationPlanChanged
 			}
 			prior, ok := planning.PriorDeclaredSidecars[planned.Path]
@@ -1184,6 +1193,17 @@ func (s *ContractPublicationService) publicationMutations(plan contract.Publicat
 		}
 	}
 	return mutations, nil
+}
+
+// countSidecarDeletes is how many files the plan removes from the contract.
+func countSidecarDeletes(plan contract.PublicationPlan) int {
+	count := 0
+	for _, planned := range plan.Mutations {
+		if planned.Action == contract.MutationDelete {
+			count++
+		}
+	}
+	return count
 }
 
 func validContractPublicationGitMode(mode string) bool {

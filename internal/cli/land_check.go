@@ -72,14 +72,14 @@ func NewLandCheck(engine *validate.Engine) host.LandCheckFunc {
 func landGateApproval(ctx context.Context, candidate host.LandCandidate) (host.LandVerdict, error) {
 	required, err := landRequiredGates(ctx, candidate)
 	if err != nil {
-		return host.LandVerdict{}, fmt.Errorf("land check could not judge the write's approval gates: %w", err)
+		return host.LandVerdict{}, fmt.Errorf("the write's approval gates could not be established: %w", err)
 	}
 	if len(required) == 0 {
 		return host.LandVerdict{OK: true}, nil
 	}
 	mode, err := landTipGatesMode(ctx, candidate)
 	if err != nil {
-		return host.LandVerdict{}, fmt.Errorf("land check could not judge the write's approval gates: %w", err)
+		return host.LandVerdict{}, fmt.Errorf("the write's approval gates could not be established: %w", err)
 	}
 	violations := validate.CheckGateApproval(mode, required, landApprovedGates(candidate.HeadMessage))
 	if len(violations) == 0 {
@@ -370,6 +370,10 @@ func landApprovedGates(message string) []string {
 // decodeLandCheckRun turns one runV3Check outcome into a verdict or a
 // "could not judge" error. It is separate from NewLandCheck so every exit
 // shape can be tested without staging the failure that produces it.
+//
+// An error here is the bare cause. The host that ran the check owns the words
+// "land check could not judge the write", for every LandCheckFunc it is given,
+// so saying them here too printed them twice.
 func decodeLandCheckRun(exit int, stdout []byte, stderr string) (host.LandVerdict, error) {
 	var report ciReport
 	decodeErr := json.Unmarshal(stdout, &report)
@@ -382,11 +386,13 @@ func decodeLandCheckRun(exit int, stdout []byte, stderr string) (host.LandVerdic
 		if len(codes) > 0 {
 			return host.LandVerdict{Codes: codes, Detail: detail}, nil
 		}
-		return host.LandVerdict{}, fmt.Errorf("land check could not judge the write: the required check exited 1 and its report carries no violation%s", quotedStderr(stderr))
+		// A report entry can fail with an error and no violation code (an
+		// unreadable file, a base that cannot be read): that entry IS the cause.
+		return host.LandVerdict{}, fmt.Errorf("the required check exited 1 and its report carries no violation%s", quotedCause(detail, stderr))
 	case decodeErr != nil:
-		return host.LandVerdict{}, fmt.Errorf("land check could not judge the write: the required check exited %d without a readable report%s", exit, quotedStderr(stderr))
+		return host.LandVerdict{}, fmt.Errorf("the required check exited %d without a readable report%s", exit, quotedCause(stderr))
 	default:
-		return host.LandVerdict{}, fmt.Errorf("land check could not judge the write: the required check exited %d%s", exit, quotedStderr(stderr))
+		return host.LandVerdict{}, fmt.Errorf("the required check exited %d%s", exit, quotedCause(stderr))
 	}
 }
 
@@ -429,10 +435,17 @@ func truncateLandDetail(s string) string {
 	return strings.ToValidUTF8(s[:landCheckDetailLimit], "") + "\n... (truncated)"
 }
 
-func quotedStderr(stderr string) string {
-	stderr = strings.TrimSpace(stderr)
-	if stderr == "" {
+// quotedCause renders whatever the check said about why it could not judge,
+// or "" when it said nothing.
+func quotedCause(parts ...string) string {
+	var said []string
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			said = append(said, part)
+		}
+	}
+	if len(said) == 0 {
 		return ""
 	}
-	return ": " + truncateLandDetail(stderr)
+	return ": " + truncateLandDetail(strings.Join(said, "\n"))
 }

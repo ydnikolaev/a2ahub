@@ -212,8 +212,8 @@ func TestLandCheck_ExitOneWithoutReportIsError(t *testing.T) {
 			if !reflect.DeepEqual(verdict, host.LandVerdict{}) {
 				t.Fatalf("verdict = %+v alongside error %v, want the zero verdict", verdict, err)
 			}
-			if !strings.Contains(err.Error(), "could not judge") {
-				t.Fatalf("error = %q, want it to say the check could not judge", err)
+			if !strings.Contains(err.Error(), "the required check exited 1") {
+				t.Fatalf("error = %q, want it to say how the required check ended", err)
 			}
 		})
 	}
@@ -248,8 +248,8 @@ func TestDecodeLandCheckRun(t *testing.T) {
 		wantErr   string // substring; empty means no error
 	}{
 		{name: "exit 0 with a report is OK", exit: 0, stdout: report(ciReport{Mode: "v3-pr", Valid: true, Artifacts: []validateReport{}}), wantOK: true},
-		{name: "exit 0 with nothing decodable is an error", exit: 0, stdout: []byte("not json"), wantErr: "could not judge"},
-		{name: "exit 0 with empty stdout is an error", exit: 0, wantErr: "could not judge"},
+		{name: "exit 0 with nothing decodable is an error", exit: 0, stdout: []byte("not json"), wantErr: "without a readable report"},
+		{name: "exit 0 with empty stdout is an error", exit: 0, wantErr: "without a readable report"},
 		{
 			name: "exit 1 with violations lists their codes in order, once each", exit: 1,
 			stdout: report(ciReport{Mode: "v3-pr", Artifacts: []validateReport{
@@ -265,9 +265,9 @@ func TestDecodeLandCheckRun(t *testing.T) {
 			stdout:    report(ciReport{Mode: "v3-pr", Artifacts: []validateReport{artifactViolation("<gate-approval>", approvalCode)}}),
 			wantCodes: []string{approvalCode},
 		},
-		{name: "exit 1 with a decodable report and zero violations is an error", exit: 1, stdout: report(ciReport{Mode: "v3-pr", Artifacts: []validateReport{}}), wantErr: "could not judge"},
+		{name: "exit 1 with a decodable report and zero violations is an error", exit: 1, stdout: report(ciReport{Mode: "v3-pr", Artifacts: []validateReport{}}), wantErr: "carries no violation"},
 		{name: "exit 1 with nothing on stdout is an error carrying stderr", exit: 1, stderr: "validate --ci: boom\n", wantErr: "validate --ci: boom"},
-		{name: "exit 1 with undecodable stdout is an error", exit: 1, stdout: []byte("{"), wantErr: "could not judge"},
+		{name: "exit 1 with undecodable stdout is an error", exit: 1, stdout: []byte("{"), wantErr: "without a readable report"},
 		{name: "exit 2 (usage) is an error even with a report", exit: 2, stdout: report(ciReport{Mode: "v3-pr", DiffAuthz: []ciAuthzViolation{authz}}), stderr: "usage: x", wantErr: "usage: x"},
 	}
 	for _, tc := range cases {
