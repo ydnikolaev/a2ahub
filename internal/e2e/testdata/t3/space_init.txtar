@@ -7,7 +7,7 @@
 #     -X main.version=$A2A_STAMPED_VERSION, main_test.go's own
 #     harnessStampedVersion, so the pin must come out @v<that version>).
 exec a2a space init acme-space
-stdout 'wrote 6 files'
+stdout 'wrote 5 files'
 
 # The remaining steps are printed IN ORDER, and the two orderings that brick a
 # space when taken early are stated. Both were internal-runbook-only knowledge
@@ -24,7 +24,7 @@ stdout 'delete README.md'
 # validation: local (D-045) needs no workflow: a fresh space scaffolds none.
 ! exists acme-space/.github/workflows/a2a-validate.yml
 ! exists acme-space/.github/workflows/a2a-notify.yml
-exists acme-space/.github/dependabot.yml
+! exists acme-space/.github/dependabot.yml
 exists acme-space/space.yaml
 exists acme-space/CODEOWNERS
 
@@ -114,7 +114,7 @@ stdout '^1$'
 # default one. The same work dir, the GitHub form, after the local one: nine
 # files and the ordered GitHub steps are unchanged (six since D-045).
 exec a2a space init acme
-stdout 'wrote 6 files'
+stdout 'wrote 5 files'
 stdout 'IN THIS ORDER'
 stdout 'leave main unprotected'
 ! exists acme/.github/workflows/a2a-validate.yml

@@ -1745,7 +1745,7 @@ func TestSpaceInitWithoutLocalIsUnchanged(t *testing.T) {
 	if code := cmd.Run(context.Background(), []string{"init", "acme", "--dir", target}, io); code != 0 {
 		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
 	}
-	if !strings.HasPrefix(out.String(), "space init: wrote 6 files to "+target+"\n") ||
+	if !strings.HasPrefix(out.String(), "space init: wrote 5 files to "+target+"\n") ||
 		!strings.Contains(out.String(), "remaining steps, IN THIS ORDER:") {
 		t.Errorf("stdout = %q, want the GitHub scaffold output", out.String())
 	}

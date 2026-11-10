@@ -1262,9 +1262,10 @@ func spaceLocalSubsetPath(p string) bool {
 }
 
 // spaceServerEnforcementPath reports a template path that exists only for GitHub
-// to enforce a write: the Actions workflows and the branch-protection checklist.
+// to enforce a write: the Actions workflows, Dependabot (it only bumps the
+// workflow pin) and the branch-protection checklist.
 func spaceServerEnforcementPath(p string) bool {
-	return p == "BRANCH-PROTECTION.md" || strings.HasPrefix(p, ".github/workflows/")
+	return p == "BRANCH-PROTECTION.md" || p == ".github/dependabot.yml" || strings.HasPrefix(p, ".github/workflows/")
 }
 
 // spaceLandsFromClient reports a space on GitHub whose writes this binary judges

@@ -282,7 +282,7 @@ operator, several repositories" above.
 
 `a2a space init <space-id> [--dir <path>]` writes the tree: the manifest with
 `space:` and `min_binary_version` filled and `validation: local` declared,
-CODEOWNERS and `dependabot.yml`. It writes no Actions workflow and no
+and CODEOWNERS. It writes no Actions workflow, no Dependabot config and no
 branch-protection checklist, because this mode uses neither; see "A GitHub space
 judged by the binary" above. It refuses to run from an untagged dev build and
 refuses a non-empty target directory.

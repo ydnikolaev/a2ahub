@@ -43,12 +43,12 @@ func TestSpaceInitDeclaresLocalValidationAndOmitsServerEnforcement(t *testing.T)
 	if got := strings.Count(string(raw), "\nvalidation:"); got != 1 {
 		t.Errorf("validation key appears %d times:\n%s", got, raw)
 	}
-	for _, absent := range []string{".github/workflows", "BRANCH-PROTECTION.md"} {
+	for _, absent := range []string{".github/workflows", ".github/dependabot.yml", "BRANCH-PROTECTION.md"} {
 		if _, err := os.Stat(filepath.Join(target, absent)); !os.IsNotExist(err) {
 			t.Errorf("%s was scaffolded (stat err %v)", absent, err)
 		}
 	}
-	for _, present := range []string{"CODEOWNERS", ".github/dependabot.yml", "README.md"} {
+	for _, present := range []string{"CODEOWNERS", "README.md"} {
 		if _, err := os.Stat(filepath.Join(target, present)); err != nil {
 			t.Errorf("%s was not scaffolded: %v", present, err)
 		}
