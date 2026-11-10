@@ -19,17 +19,17 @@ import (
 // import, so the write-side check and the read-side effective mode cannot
 // disagree about which words are legal.
 
-func policyKeysOf(instance any) (gates, flow any, ok bool) {
+func policyKeysOf(instance any) (gates, flow, validation any, ok bool) {
 	document, isMapping := instance.(map[string]any)
 	if !isMapping {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
-	return document["gates"], document["flow"], true
+	return document["gates"], document["flow"], document["validation"], true
 }
 
-// checkGatesFlowVocabulary is POL-027: `gates` or `flow` carries a value
-// outside its vocabulary, or a value that is not a string. Its argument is a
-// mapping holding the two raw policy values (contract.ManifestPolicyKeys). An absent key, or an
+// checkGatesFlowVocabulary is POL-027: `gates`, `flow` or `validation`
+// carries a value outside its vocabulary, or a value that is not a string. Its argument is a
+// mapping holding the three raw policy values (contract.ManifestPolicyKeys). An absent key, or an
 // explicit null, is the key's default and is clean.
 //
 // It runs from ValidateManifest only, never from checkManifestPolicy: the
@@ -37,7 +37,7 @@ func policyKeysOf(instance any) (gates, flow any, ok bool) {
 // placed there would red an unrelated PR over an old odd value. Judged at the
 // write that introduces the value, the way spec 04 §T1.1 puts it.
 func checkGatesFlowVocabulary(instance any) []Violation {
-	gates, flow, ok := policyKeysOf(instance)
+	gates, flow, validation, ok := policyKeysOf(instance)
 	if !ok {
 		return nil
 	}
@@ -47,6 +47,9 @@ func checkGatesFlowVocabulary(instance any) []Violation {
 	}
 	if _, legal := contract.ParseFlowSetting(flow); !legal {
 		violations = append(violations, outOfVocabularyViolation("flow", flow, "full or express"))
+	}
+	if _, legal := contract.ParseValidationSetting(validation); !legal {
+		violations = append(violations, outOfVocabularyViolation("validation", validation, "local or actions"))
 	}
 	return violations
 }

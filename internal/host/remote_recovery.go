@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
 	"strconv"
@@ -355,6 +356,7 @@ func runRecoveryGitInput(ctx context.Context, stdin []byte, stdoutLimit int, arg
 	stderr := &boundedRecoveryBuffer{limit: maxRecoveryGitErrorOutput}
 	//nolint:gosec // executable is fixed; args are explicit Git argv validated by each recovery operation.
 	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = gitEnvironmentWithoutRepository()
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -373,6 +375,26 @@ func runRecoveryGitInput(ctx context.Context, stdin []byte, stdoutLimit int, arg
 		return recoveryGitResult{stdout: append([]byte(nil), stdout.buffer.Bytes()...), stderr: captured, exitCode: exitErr.ExitCode()}
 	}
 	return recoveryGitResult{exitCode: -1, err: err}
+}
+
+// gitEnvironmentWithoutRepository is the process environment minus the variables
+// that point git at a repository. Git exports them to hooks, rebase --exec and
+// submodule foreach, and they outrank -C: an a2a started from one of those would
+// otherwise run its checkout and clean against the invoker's work tree. The
+// directory a call names is the only one it may touch.
+func gitEnvironmentWithoutRepository() []string {
+	inherited := os.Environ()
+	kept := make([]string, 0, len(inherited))
+	for _, entry := range inherited {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX",
+			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE":
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return kept
 }
 
 func recoveryRequestError(op string) error {

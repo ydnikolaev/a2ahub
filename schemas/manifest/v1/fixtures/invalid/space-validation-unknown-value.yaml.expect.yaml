@@ -1,0 +1,2 @@
+code: POL-027
+note: 'validation carries "sometimes", outside the vocabulary local, actions (personal-space-2026-11 D-045); internal/validate/gates.go checkGatesFlowVocabulary. Policy, not schema, because space.schema.json is byte-frozen and leaves `validation` untyped.'

@@ -482,3 +482,34 @@ vendored: []
 		t.Fatalf("plain: FlowSetting() = %q, want %q", got, contract.FlowSettingExpress)
 	}
 }
+
+// TestManifestEffectiveValidation: absent and unknown read as `actions` (the
+// read side never refuses; personal-space-2026-11, D-045).
+func TestManifestEffectiveValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want contract.ValidationSetting
+	}{
+		{"absent", "space: demo\n", contract.ValidationSettingActions},
+		{"actions", "validation: actions\n", contract.ValidationSettingActions},
+		{"local", "validation: local\n", contract.ValidationSettingLocal},
+		{"unknown word", "validation: sometimes\n", contract.ValidationSettingActions},
+		{"mapping", "validation: {mode: local}\n", contract.ValidationSettingActions},
+		{"number", "validation: 1\n", contract.ValidationSettingActions},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, err := ParseManifest([]byte(tt.raw))
+			if err != nil {
+				t.Fatalf("ParseManifest(%q): %v", tt.raw, err)
+			}
+			if got := m.EffectiveValidation(); got != tt.want {
+				t.Fatalf("EffectiveValidation() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -298,6 +298,38 @@ func ParseFlowSetting(raw any) (FlowSetting, bool) {
 	return "", false
 }
 
+// ValidationSetting is the vocabulary of a space manifest's `validation` key
+// (personal-space-2026-11, D-045): where a write to the space is judged. Absent
+// means `actions`.
+// ValidationSetting is part of the public package API.
+type ValidationSetting string
+
+const (
+	// ValidationSettingActions is validation by the GitHub Actions workflow.
+	ValidationSettingActions ValidationSetting = "actions"
+	// ValidationSettingLocal is validation by the local binary at land time.
+	ValidationSettingLocal ValidationSetting = "local"
+)
+
+// ParseValidationSetting reads a decoded `validation` value the way
+// ParseFlowSetting reads `flow`: nil is `actions`, a non-string or an unknown
+// word is out of vocabulary.
+// ParseValidationSetting is part of the public package API.
+func ParseValidationSetting(raw any) (ValidationSetting, bool) {
+	if raw == nil {
+		return ValidationSettingActions, true
+	}
+	word, isString := raw.(string)
+	if !isString {
+		return "", false
+	}
+	switch setting := ValidationSetting(word); setting {
+	case ValidationSettingActions, ValidationSettingLocal:
+		return setting, true
+	}
+	return "", false
+}
+
 // GatesMode is the EFFECTIVE gate mode of a space for one host: what a write
 // actually has to satisfy. It differs from GatesSetting, which is what the
 // manifest says.

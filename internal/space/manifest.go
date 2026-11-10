@@ -31,6 +31,10 @@ type Manifest struct {
 	// internal/validate's, at the write that introduces it.
 	Gates any `yaml:"gates,omitempty"`
 	Flow  any `yaml:"flow,omitempty"`
+	// Validation is the raw `validation` key (personal-space-2026-11, D-045),
+	// held as `any` for the same reason as Gates and Flow. Read it through
+	// EffectiveValidation.
+	Validation any `yaml:"validation,omitempty"`
 
 	// Raw holds the exact bytes ParseManifest was given, so a caller can
 	// hand them, unmodified, to a ManifestValidator seam that needs the
@@ -59,6 +63,17 @@ func (m Manifest) FlowSetting() contract.FlowSetting {
 		return flow
 	}
 	return contract.FlowSettingFull
+}
+
+// EffectiveValidation is where a write to this space is judged (D-045). Absent,
+// and any value outside the vocabulary, read as `actions`: the read side never
+// refuses, so a manifest without the key behaves as before.
+// EffectiveValidation is part of the public package API.
+func (m Manifest) EffectiveValidation() contract.ValidationSetting {
+	if validation, ok := contract.ParseValidationSetting(m.Validation); ok {
+		return validation
+	}
+	return contract.ValidationSettingActions
 }
 
 // Participant is one space.yaml participant entry: a system's section,
@@ -192,7 +207,7 @@ func ParseManifest(raw []byte) (Manifest, error) {
 	if err := yaml.Unmarshal(raw, &m); err != nil {
 		return Manifest{}, &Error{Op: op, Err: ErrManifestInvalid}
 	}
-	// `gates` and `flow` are read again through the one decoder the write-time
+	// `gates`, `flow` and `validation` are read again through the one decoder the write-time
 	// validator uses (contract.DecodeManifestPolicyKeys), because the struct
 	// decode above follows YAML merge keys and aliases and that decoder refuses
 	// them. A form the two readers could disagree on reads as unset here, which is
@@ -201,9 +216,9 @@ func ParseManifest(raw []byte) (Manifest, error) {
 	// write. ParseManifest still returns no error: whether the bytes may land is
 	// the validator's verdict, not this parse's.
 	if keys, err := contract.DecodeManifestPolicyKeys(raw); err == nil {
-		m.Gates, m.Flow = keys.Gates, keys.Flow
+		m.Gates, m.Flow, m.Validation = keys.Gates, keys.Flow, keys.Validation
 	} else {
-		m.Gates, m.Flow = nil, nil
+		m.Gates, m.Flow, m.Validation = nil, nil, nil
 	}
 	m.Raw = raw
 	return m, nil

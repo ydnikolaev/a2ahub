@@ -277,29 +277,9 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 		return PRInfo{}, mergeMethodUnavailableError(op, req.Repo, err)
 	}
 
-	createBody := map[string]any{
-		"title": req.Title,
-		"head":  req.Head,
-		"base":  req.Base,
-		"body":  req.Body,
-	}
-	path := fmt.Sprintf("/repos/%s/%s/pulls", req.Repo.Owner, req.Repo.Name)
-	var created struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-		NodeID  string `json:"node_id"`
-		State   string `json:"state"`
-	}
-	if err := h.restCall(ctx, op, http.MethodPost, path, req.Credential, createBody, &created); err != nil {
+	info, nodeID, err := h.createPR(ctx, op, req, method)
+	if err != nil {
 		return PRInfo{}, err
-	}
-	state := created.State
-	if state == "" {
-		state = "open"
-	}
-	info := PRInfo{
-		Number: created.Number, URL: created.HTMLURL, State: state, Title: req.Title, Body: req.Body,
-		BaseBranch: req.Base, HeadSHA: req.ExpectedHeadSHA, MergeMethod: method,
 	}
 
 	// Auto-merge is UNIFORM (spec 05 §T1) — always requested, never
@@ -310,7 +290,7 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 	// That is why AutoMerger exists and why the funnel re-arms on its
 	// idempotent-retry path — see EnableAutoMerge.
 	armed, note := true, ""
-	if err := h.armAutoMerge(ctx, op, req.Credential, created.NodeID, method, req.ExpectedHeadSHA); err != nil {
+	if err := h.armAutoMerge(ctx, op, req.Credential, nodeID, method, req.ExpectedHeadSHA); err != nil {
 		note = autoMergeRefusal(err)
 		if note == "" {
 			// The create response is durable evidence even though the later
@@ -326,6 +306,36 @@ func (h *GitHubHost) OpenPR(ctx context.Context, req OpenPRRequest) (PRInfo, err
 	info.AutoMergeArmed = armed
 	info.AutoMergeNote = note
 	return info, nil
+}
+
+// createPR is the REST create half of OpenPR: it opens the pull request and
+// arms nothing. It returns the handle, carrying method as the merge method
+// selected for it, and the node id GraphQL addresses the pull request by.
+func (h *GitHubHost) createPR(ctx context.Context, op string, req OpenPRRequest, method MergeMethod) (PRInfo, string, error) {
+	createBody := map[string]any{
+		"title": req.Title,
+		"head":  req.Head,
+		"base":  req.Base,
+		"body":  req.Body,
+	}
+	path := fmt.Sprintf("/repos/%s/%s/pulls", req.Repo.Owner, req.Repo.Name)
+	var created struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		NodeID  string `json:"node_id"`
+		State   string `json:"state"`
+	}
+	if err := h.restCall(ctx, op, http.MethodPost, path, req.Credential, createBody, &created); err != nil {
+		return PRInfo{}, "", err
+	}
+	state := created.State
+	if state == "" {
+		state = "open"
+	}
+	return PRInfo{
+		Number: created.Number, URL: created.HTMLURL, State: state, Title: req.Title, Body: req.Body,
+		BaseBranch: req.Base, HeadSHA: req.ExpectedHeadSHA, MergeMethod: method,
+	}, created.NodeID, nil
 }
 
 // requiredCheckName is the space CI's gate job name — frozen by spec 33 §11

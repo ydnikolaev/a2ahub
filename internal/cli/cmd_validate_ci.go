@@ -87,8 +87,26 @@ type ciAuthzViolation struct {
 // the environment itself (config & secrets rail).
 func runValidateCI(ctx context.Context, engine *validate.Engine, root string, git gitChangedFilesFunc, mode, base, author string, stdio IO) int {
 	// `validate --ci` runs on a pull request, so the host it judges for is a
-	// host that reviews writes (spec 04 section T1.3).
-	return runV3Check(ctx, engine, root, git, mode, base, author, true, stdio)
+	// host that reviews writes (spec 04 section T1.3), unless the space lands
+	// from the client: an optional workflow there must give the land check's
+	// verdict.
+	return runV3Check(ctx, engine, root, git, mode, base, author, !baseValidatedLocally(ctx, root, mode, base), stdio)
+}
+
+// baseValidatedLocally reports whether the manifest at base declares
+// `validation: local`. It reads the base and not the pull request's own tree, so a
+// change cannot grant itself the land check's answer. A base that is absent or
+// unreadable keeps the stricter reviewing-host verdict.
+func baseValidatedLocally(ctx context.Context, root, mode, base string) bool {
+	if mode != "v3-pr" || base == "" {
+		return false
+	}
+	raw, err := contractGitBounded(ctx, root, maxMirrorEventBytes, "show", base+":space.yaml")
+	if err != nil {
+		return false
+	}
+	manifest, err := space.ParseManifest(raw)
+	return err == nil && manifest.EffectiveValidation() == contract.ValidationSettingLocal
 }
 
 // runV3Check is the whole `--ci` verdict with the one host fact it cannot

@@ -23,6 +23,8 @@ func TestDecodeManifestPolicyKeys(t *testing.T) {
 		{name: "both keys", raw: "space: s\ngates: confirm\nflow: express\n", wantGates: "confirm", wantFlow: "express"},
 		{name: "quoted keys and values", raw: "\"gates\": \"autonomous\"\n'flow': 'full'\n", wantGates: "autonomous", wantFlow: "full"},
 		{name: "absent keys", raw: "space: s\n"},
+		{name: "a duplicated validation key", raw: "validation: local\nvalidation: actions\n", wantErr: ErrManifestPolicyKeysAmbiguous},
+		{name: "an alias as the validation value", raw: "x: &a local\nvalidation: *a\n", wantErr: ErrManifestPolicyKeysAmbiguous},
 		{name: "explicit null", raw: "gates: null\nflow: ~\n"},
 		{name: "a number is returned raw for the vocabulary check", raw: "gates: 7\n", wantGates: 7},
 		{name: "a mapping is returned raw for the vocabulary check", raw: "gates:\n  mode: confirm\n", wantGates: map[string]any{"mode": "confirm"}},
@@ -85,4 +87,17 @@ func sameRaw(got, want any) bool {
 		return true
 	}
 	return got == want
+}
+
+// TestDecodeManifestPolicyKeysValidation: the `validation` key is returned raw,
+// like gates and flow (personal-space-2026-11, D-045).
+func TestDecodeManifestPolicyKeysValidation(t *testing.T) {
+	t.Parallel()
+	keys, err := DecodeManifestPolicyKeys([]byte("space: s\nvalidation: local\n"))
+	if err != nil {
+		t.Fatalf("DecodeManifestPolicyKeys error = %v, want none", err)
+	}
+	if keys.Validation != "local" {
+		t.Fatalf("Validation = %#v, want \"local\"", keys.Validation)
+	}
 }

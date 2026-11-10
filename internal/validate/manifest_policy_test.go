@@ -750,6 +750,12 @@ func TestValidateManifestGatesFlowVocabulary(t *testing.T) {
 		{name: "flow unknown word", extra: "flow: fast", wantPath: "flow"},
 		{name: "flow mapping", extra: "flow: {mode: express}", wantPath: "flow"},
 		{name: "flow number", extra: "flow: 1", wantPath: "flow"},
+		{name: "validation local", extra: "validation: local"},
+		{name: "validation actions", extra: "validation: actions"},
+		{name: "validation unknown word", extra: "validation: sometimes", wantPath: "validation"},
+		{name: "validation wrong case", extra: "validation: Local", wantPath: "validation"},
+		{name: "validation mapping", extra: "validation: {mode: local}", wantPath: "validation"},
+		{name: "validation number", extra: "validation: 1", wantPath: "validation"},
 	}
 
 	engine := mustEngine(t)

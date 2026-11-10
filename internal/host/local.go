@@ -56,7 +56,8 @@ type LandCandidate struct {
 	HeadSHA string
 	// HeadMessage is H's full commit message, verbatim.
 	HeadMessage string
-	// Author is the configured land author (local:<system>).
+	// Author is who the write is judged as: the configured land author
+	// (local:<system>) on a local space, the token's login on a client land.
 	Author string
 }
 
@@ -301,7 +302,8 @@ func (h *LocalHost) landOnce(ctx context.Context, req OpenPRRequest) (info PRInf
 	}
 
 	// Step 3: merge without touching a working tree.
-	tree, conflict, err := h.mergeTree(ctx, op, tip, headSHA)
+	repo := h.landRepo()
+	tree, conflict, err := repo.mergeTree(ctx, op, tip, headSHA)
 	if err != nil {
 		return PRInfo{}, false, err
 	}
@@ -311,7 +313,7 @@ func (h *LocalHost) landOnce(ctx context.Context, req OpenPRRequest) (info PRInf
 	}
 
 	// Step 4: the merge commit, GitHub's shape.
-	headMessage, err := h.commitMessage(ctx, op, headSHA)
+	headMessage, err := repo.commitMessage(ctx, op, headSHA)
 	if err != nil {
 		return PRInfo{}, false, err
 	}
@@ -319,7 +321,7 @@ func (h *LocalHost) landOnce(ctx context.Context, req OpenPRRequest) (info PRInf
 	if err != nil {
 		return PRInfo{}, false, err
 	}
-	mergeSHA, err := h.commitMerge(ctx, op, tree, tip, headSHA, mergeMessage(number, req, headMessage))
+	mergeSHA, err := repo.commitMerge(ctx, op, tree, tip, headSHA, mergeMessage(number, req, headMessage), h.author, authorEmail(h.author))
 	if err != nil {
 		return PRInfo{}, false, err
 	}
@@ -334,8 +336,7 @@ func (h *LocalHost) landOnce(ctx context.Context, req OpenPRRequest) (info PRInf
 	}
 	if !verdict.OK {
 		deleteErr := h.deleteHeadBranch(ctx, op, req.Head, headSHA)
-		refusal := &LandRefusal{Codes: append([]string(nil), verdict.Codes...), Detail: verdict.Detail}
-		return PRInfo{}, false, &Error{Op: op, Input: req.Head, Err: joinKept(fmt.Errorf("%w: %w", ErrLandRefused, refusal), deleteErr)}
+		return PRInfo{}, false, &Error{Op: op, Input: req.Head, Err: joinKept(landRefusedError(verdict), deleteErr)}
 	}
 
 	// Step 7: one atomic transaction moves the base, records the land and removes
@@ -387,6 +388,13 @@ func (h *LocalHost) landCommands(rec landRecord, blob, oldRecord string) string 
 // landURL is the deterministic, non-empty URL of a landed write.
 func (h *LocalHost) landURL(number int) string {
 	return h.spaceURL + "#land-" + strconv.Itoa(number)
+}
+
+// landRefusedError is the one shape of a land check's refusal: ErrLandRefused
+// wrapping the verdict's codes and report, for every host that lands a write.
+func landRefusedError(verdict LandVerdict) error {
+	refusal := &LandRefusal{Codes: append([]string(nil), verdict.Codes...), Detail: verdict.Detail}
+	return fmt.Errorf("%w: %w", ErrLandRefused, refusal)
 }
 
 // joinKept appends the outcome of the head-branch cleanup to a refusal: the
@@ -554,9 +562,25 @@ func (h *LocalHost) writeRecord(ctx context.Context, op string, rec landRecord) 
 	return blob, nil
 }
 
+// landRepo is the merge plumbing a land is built from, over one repository. It
+// holds no host state, so a host that lands in its own space and a host that
+// lands from a throwaway clone build the merge commit the same way.
+type landRepo struct {
+	exec   gitExecFunc
+	gitDir string
+}
+
+// landRepo binds the plumbing to this space, reading h.exec at the call.
+func (h *LocalHost) landRepo() landRepo { return landRepo{exec: h.exec, gitDir: h.dir} }
+
+// run executes git against the repository, on stdin when it is not nil.
+func (r landRepo) run(ctx context.Context, stdin []byte, limit int, args ...string) recoveryGitResult {
+	return r.exec(ctx, stdin, limit, append([]string{"--git-dir=" + r.gitDir}, args...)...)
+}
+
 // mergeTree merges head into tip without a working tree (git 2.38 or newer).
-func (h *LocalHost) mergeTree(ctx context.Context, op, tip, head string) (tree string, conflict bool, err error) {
-	res := h.run(ctx, maxRecoveryGitOutput, "merge-tree", "--write-tree", tip, head)
+func (r landRepo) mergeTree(ctx context.Context, op, tip, head string) (tree string, conflict bool, err error) {
+	res := r.run(ctx, nil, maxRecoveryGitOutput, "merge-tree", "--write-tree", tip, head)
 	switch {
 	case res.err != nil:
 		return "", false, localGitError(op, "merge", res)
@@ -580,8 +604,8 @@ func (h *LocalHost) mergeTree(ctx context.Context, op, tip, head string) (tree s
 
 // commitMessage returns the commit's message verbatim: the bytes after the
 // header block's blank line, with nothing normalised.
-func (h *LocalHost) commitMessage(ctx context.Context, op, sha string) (string, error) {
-	res := h.run(ctx, maxRecoveryGitOutput, "cat-file", "commit", sha)
+func (r landRepo) commitMessage(ctx context.Context, op, sha string) (string, error) {
+	res := r.run(ctx, nil, maxRecoveryGitOutput, "cat-file", "commit", sha)
 	if res.err != nil || res.exitCode != 0 {
 		return "", localGitError(op, "read the head commit", res)
 	}
@@ -604,10 +628,10 @@ func (h *LocalHost) nextNumber(ctx context.Context, op, tip string) (int, error)
 }
 
 // commitMerge creates the merge commit (parents: tip, then head) authored by the
-// land author, signed by nobody.
-func (h *LocalHost) commitMerge(ctx context.Context, op, tree, tip, head, message string) (string, error) {
-	res := h.runIn(ctx, []byte(message), 256,
-		"-c", "user.name="+h.author, "-c", "user.email="+authorEmail(h.author), "-c", "commit.gpgsign=false",
+// given identity, signed by nobody.
+func (r landRepo) commitMerge(ctx context.Context, op, tree, tip, head, message, name, email string) (string, error) {
+	res := r.run(ctx, []byte(message), 256,
+		"-c", "user.name="+name, "-c", "user.email="+email, "-c", "commit.gpgsign=false",
 		"commit-tree", tree, "-p", tip, "-p", head)
 	if res.err != nil || res.exitCode != 0 {
 		return "", localGitError(op, "create the merge commit", res)
@@ -622,6 +646,11 @@ func (h *LocalHost) commitMerge(ctx context.Context, op, tree, tip, head, messag
 // authorEmail derives the merge commit's e-mail from the land author, which
 // carries a colon (local:<system>) that an address cannot.
 func authorEmail(author string) string {
+	return emailLocalPart(author) + "@local.a2a.invalid"
+}
+
+// emailLocalPart maps an identity onto the characters an address can carry.
+func emailLocalPart(author string) string {
 	var b strings.Builder
 	for _, c := range author {
 		switch {
@@ -631,7 +660,7 @@ func authorEmail(author string) string {
 			b.WriteByte('-')
 		}
 	}
-	return b.String() + "@local.a2a.invalid"
+	return b.String()
 }
 
 // deleteHeadBranch removes the head branch by compare-and-swap, so a head that

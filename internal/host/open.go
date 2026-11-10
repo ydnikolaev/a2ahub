@@ -19,21 +19,31 @@ type OpenConfig struct {
 	HTTPClient *http.Client
 	// GitHubAPIBase is the REST API root; "" means https://api.github.com.
 	GitHubAPIBase string
-	// LandCheck judges a write before a local space lands it. Open refuses a
-	// local space when it is nil: a marked path never opens as an unvalidated
-	// host. GitHub ignores it.
+	// LandCheck judges a write before a local space or a client-landed space
+	// lands it. Open refuses either when it is nil: neither ever opens as an
+	// unvalidated host. The plain GitHub host ignores it.
 	LandCheck LandCheckFunc
 	// LandAuthor is the identity a local land is authored as (local:<system>).
 	// It may be empty: Open still succeeds, so a caller that only reads a local
 	// space's capabilities or inspection needs no system, and OpenPR refuses
 	// before it reads or writes anything.
 	LandAuthor string
+	// ClientLand makes Open return a *ClientLandHost for a URL-class locator:
+	// the space is judged by this binary and the write is landed from here. The
+	// caller reads it from the space's own manifest; false is the plain GitHub
+	// host. A path-class locator ignores it.
+	ClientLand bool
+	// LandGuard runs before a client land builds anything, against the base
+	// tip it would land on; nil runs none. Only a *ClientLandHost reads it.
+	LandGuard LandGuardFunc
 }
 
 // Open is the one space-addressed host constructor: it builds the host for the
 // space loc addresses.
 //
-// A URL-class locator is always a *GitHubHost with cfg's client and API base.
+// A URL-class locator is a *GitHubHost with cfg's client and API base, or a
+// *ClientLandHost over one when cfg.ClientLand is set. A cfg.ClientLand with a
+// nil cfg.LandCheck is an error, never an unvalidated host.
 // A path-class locator has three outcomes, read from the repository's own git
 // config:
 //
@@ -53,7 +63,13 @@ type OpenConfig struct {
 func Open(loc Locator, cfg OpenConfig) (Host, error) {
 	switch loc.class {
 	case classURL:
-		return OpenGitHub(cfg), nil
+		if !cfg.ClientLand {
+			return OpenGitHub(cfg), nil
+		}
+		if cfg.LandCheck == nil {
+			return nil, fmt.Errorf("host: %q is judged by this binary but no land check is configured: %w", loc.Raw, errNoLandCheck)
+		}
+		return newClientLandHost(OpenGitHub(cfg), loc.Raw, cfg.LandCheck, cfg.LandGuard), nil
 	case classPath:
 		gitDir, err := filepath.Abs(loc.path)
 		if err != nil {

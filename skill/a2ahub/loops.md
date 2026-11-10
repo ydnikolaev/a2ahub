@@ -167,6 +167,11 @@ have no MCP form, so ask your human to run them from the CLI. Pass `--approve` o
 have read your brief for that gate — never as a reflex to get past the
 refusal.
 
+**A GitHub space with `validation: local` behaves like a local space here.** Its
+pull request is a record and nobody reviews it before the binary lands the
+write, so under `gates: default` a G1–G4 write needs `--approve`, on your
+human's word, and is refused with `POL-029` without it.
+
 ---
 
 ## §8.1 Session-start checklist — the guaranteed floor (D-021)
@@ -271,7 +276,7 @@ D-021. Both verbs are catalogued in
    | Field | Tells you |
    |---|---|
    | `flow` | which data loop to run there: `express` is the [express data loop](loops/express.md), `full` the send and receive loops |
-   | `gates` | whether a G1–G4 write needs `--approve`: `confirm` yes, on your human's word (see "Human approval gates" above); `autonomous` no; `review` is a GitHub space, where the review is the gate |
+   | `gates` | whether a G1–G4 write needs `--approve`: `confirm` yes, on your human's word (see "Human approval gates" above); `autonomous` no; `review` is a GitHub space on the pull-request path, where the review is the gate; a space with `validation: local` reports `confirm` or `autonomous` |
    | `lands_synchronously` | `true`: a write has landed when its command returns; `false`: it waits on a merge |
 
    `null` in `gates` or `lands_synchronously` means the binary could not read

@@ -116,7 +116,7 @@ func policyKeyViolations(raw []byte) []Violation {
 	case err != nil:
 		return nil
 	}
-	return checkGatesFlowVocabulary(map[string]any{"gates": keys.Gates, "flow": keys.Flow})
+	return checkGatesFlowVocabulary(map[string]any{"gates": keys.Gates, "flow": keys.Flow, "validation": keys.Validation})
 }
 
 // ValidateManifestPolicy runs the authority-map half of manifest validation

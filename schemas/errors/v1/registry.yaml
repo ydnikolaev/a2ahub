@@ -1254,12 +1254,13 @@ entries:
 
   - code: POL-027
     class: policy
-    title: A manifest's `gates` or `flow` carries a value outside its vocabulary
+    title: A manifest's `gates`, `flow` or `validation` carries a value outside its vocabulary
     applies_to: >-
       internal/validate.checkGatesFlowVocabulary, run from
       (*Engine).ValidateManifest only (local-space-2026-10 spec 04 §T1.1, AC 1).
       `gates` is one of default, confirm, autonomous; `flow` is one of full,
-      express; an absent key is the key's default. An unknown word, a mapping, a
+      express; `validation` is one of local, actions (personal-space-2026-11, D-045);
+      an absent key is the key's default. An unknown word, a mapping, a
       list, a number or a wrong-case word is refused at the write that
       introduces it, naming the key. Policy, not schema:
       schemas/manifest/v1/space.schema.json is byte-frozen (anti-pattern #21)

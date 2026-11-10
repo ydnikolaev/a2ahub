@@ -97,7 +97,7 @@ func newCLIContractP6Core(p paths, deps lifecycleDeps) (*contractP6Core, error) 
 
 func newMCPContractOperationsFactory(p paths, cfg space.ProjectConfig, machine space.MachineConfig, open host.Opener) mcp.ContractOperationsFactory {
 	if open == nil {
-		open = newHostOpenerFor(cfg.System) // nil-safe, as internal/mcp's own fallback is
+		open = newHostOpenerAt(p, cfg.System) // nil-safe, as internal/mcp's own fallback is
 	}
 	return func(resolveMCPActor mcp.ActorResolver) (mcp.ContractToolOperations, error) {
 		engine, err := newEngine()

@@ -112,6 +112,10 @@ type PRInfo struct {
 	// sufficient evidence for a mutation such as re-arming auto-merge.
 	BaseBranch string
 	HeadSHA    string
+	// MergeSHA is the merge commit a host that lands from the client pushed
+	// to the base branch in this call. Empty for every other outcome, including
+	// a re-run that found the write already landed.
+	MergeSHA string
 	// MergeMethod is set once repository policy was read and a method was
 	// selected. It remains populated when PR creation succeeded but the later
 	// auto-merge operation failed.

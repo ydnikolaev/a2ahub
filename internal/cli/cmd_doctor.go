@@ -272,6 +272,13 @@ func (c *DoctorCommand) doctorDeclaredCaps(ref space.Ref) (caps host.Capabilitie
 	return sh.h.Capabilities(), true
 }
 
+// doctorLandsFromClient reports a space whose host declares that this binary
+// lands writes on GitHub, which the n/a wording of several rows depends on.
+func (c *DoctorCommand) doctorLandsFromClient(ref space.Ref) bool {
+	caps, known := c.doctorDeclaredCaps(ref)
+	return known && spaceLandsFromClient(caps)
+}
+
 // doctorSplitNotApplicable partitions refs into the spaces a row does not apply
 // to (their host DECLARES a capability that makes it n/a) and the spaces it
 // still has to judge. notes carries one reason per n/a space, in refs' order.
@@ -690,7 +697,7 @@ func (c *DoctorCommand) doctorCheckCredentials(ctx context.Context, cfg space.Pr
 // scoped credentials would train people to ignore it.
 func (c *DoctorCommand) doctorWorkflowScopeNote(ctx context.Context, ref space.Ref, cred host.Credential) string {
 	h := c.spaceHost(ref).h
-	if h == nil || cred.Token == "" {
+	if h == nil || cred.Token == "" || !spaceHasServerEnforcement(h.Capabilities()) {
 		return ""
 	}
 	scopes, reported, err := h.TokenScopes(ctx, cred)
@@ -1071,7 +1078,12 @@ func (c *DoctorCommand) doctorCheckCIPresence(cfg space.ProjectConfig, machine s
 	var failures []string
 	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
 		func(caps host.Capabilities) bool { return !caps.ReviewsWrites },
-		func(ref space.Ref) string { return ref.ID + ": validated at land, no CI workflow" })
+		func(ref space.Ref) string {
+			if c.doctorLandsFromClient(ref) {
+				return ref.ID + ": validated at land by the a2a binary, a CI workflow is optional"
+			}
+			return ref.ID + ": validated at land, no CI workflow"
+		})
 	for _, ref := range applicable {
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		if _, err := c.readFile(filepath.Join(dir, ".github", "workflows", "a2a-validate.yml")); err != nil {
@@ -1279,9 +1291,10 @@ func (c *DoctorCommand) doctorCheckScaffoldingCurrent(ctx context.Context, cfg s
 		dir := c.resolveMirror(c.projectRoot, ref, machine)
 		// A space on this machine is compared against the local subset of the
 		// template (what `space init --local` seeds), not the whole tree.
-		caps, known := c.doctorDeclaredCaps(ref)
-		local := known && caps.OnThisMachine
-		plan, err := spaceComputeUpdatePlanFor(c.TemplateFiles, dir, ref.ID, cleanVersion, c.readFile, local)
+		// Unknown capabilities are the zero value, which applies the whole template.
+		caps, _ := c.doctorDeclaredCaps(ref)
+		local := caps.OnThisMachine
+		plan, err := spaceComputeUpdatePlanFor(c.TemplateFiles, dir, ref.ID, cleanVersion, c.readFile, caps)
 		if err != nil {
 			notes = append(notes, fmt.Sprintf("%s: scaffolding drift could not be checked (mirror unreadable or manifest malformed)", ref.ID))
 			continue
@@ -1514,7 +1527,12 @@ func (c *DoctorCommand) doctorCheckStuckGreenPRs(ctx context.Context, cfg space.
 	var listerless []string
 	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
 		func(caps host.Capabilities) bool { return caps.LandsSynchronously },
-		func(ref space.Ref) string { return ref.ID + ": no pull requests" })
+		func(ref space.Ref) string {
+			if c.doctorLandsFromClient(ref) {
+				return ref.ID + ": a write lands from the client, nothing waits to merge"
+			}
+			return ref.ID + ": no pull requests"
+		})
 	for _, ref := range applicable {
 		sh := c.spaceHost(ref)
 		if sh.err != nil {
@@ -1658,6 +1676,10 @@ func (c *DoctorCommand) doctorCheckDefaultBranchHealthy(ctx context.Context, cfg
 		}
 
 		if caps, known := c.doctorDeclaredCaps(ref); known && caps.LandsSynchronously {
+			if spaceLandsFromClient(caps) {
+				notApplicable = append(notApplicable, ref.ID+": "+branch+" has no required check, the a2a binary validates each write it lands")
+				continue
+			}
 			notApplicable = append(notApplicable, ref.ID+": "+branch+" moves only by a validated land")
 			continue
 		}
@@ -1804,7 +1826,12 @@ func (c *DoctorCommand) doctorCheckCodeownersResolvable(ctx context.Context, cfg
 	}
 	notApplicable, applicable := c.doctorSplitNotApplicable(cfg.Spaces,
 		func(caps host.Capabilities) bool { return !caps.ReviewsWrites },
-		func(ref space.Ref) string { return ref.ID + ": owners are " + owners + ", no CODEOWNERS" })
+		func(ref space.Ref) string {
+			if c.doctorLandsFromClient(ref) {
+				return ref.ID + ": owners are GitHub logins in space.yaml, CODEOWNERS is not enforced"
+			}
+			return ref.ID + ": owners are " + owners + ", no CODEOWNERS"
+		})
 	for _, ref := range applicable {
 		sh := c.spaceHost(ref)
 		if sh.err != nil {
@@ -2874,8 +2901,8 @@ func (c *DoctorCommand) doctorInspectLocal(ctx context.Context, ref space.Ref) d
 		got.unverified = "the space's host could not be opened: " + sh.err.Error()
 	case sh.h == nil:
 		got.unverified = "no host is wired for this space"
-	case !sh.h.Capabilities().LandsSynchronously:
-		// Not a local space: nothing to inspect, and nothing to say.
+	case !sh.h.Capabilities().OnThisMachine:
+		// Not a space on this machine: nothing to inspect, and nothing to say.
 	default:
 		got.local = true
 		inspector, ok := hostAs[host.LocalSpaceInspector](sh.h)

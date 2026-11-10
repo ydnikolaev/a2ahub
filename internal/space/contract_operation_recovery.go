@@ -24,6 +24,7 @@ type contractPublicationRecoveryHost interface {
 	ListRemoteRecoveryTreeFiles(context.Context, string, string, []string) (map[string]host.RemoteTreeFile, error)
 	FindPRByHeadBranch(context.Context, host.FindPRRequest) (*host.PRInfo, error)
 	OpenPR(context.Context, host.OpenPRRequest) (host.PRInfo, error)
+	Capabilities() host.Capabilities
 }
 
 type verifiedContractPublicationHead struct {
@@ -496,27 +497,31 @@ func (r *ContractPublicationRecovery) RepairContractPublicationHead(ctx context.
 		if resultErr != nil || existing.State == "merged" || existing.AutoMergeArmed {
 			return result, resultErr
 		}
-		// Auto-merge is an OPTIONAL capability (ADR-003), asserted here at the
-		// one site that needs it, the way the funnel does: a host that cannot
-		// arm it leaves the matching PR for an operator, never a silent loss.
-		merger, canArm := r.host.(host.AutoMerger)
-		if !canArm {
-			result.State = WriteStateNeedsAttention
-			result.Note = "matching publication PR exists, but this host cannot arm auto-merge"
-			return completeWriteResult("ContractPublicationRepair", record.HeadBranch, result)
+		// A host that lands inside OpenPR arms nothing: the OpenPR below resumes it
+		// (idempotent for a head already on the base), and its guard applies the floor.
+		if !r.host.Capabilities().LandsSynchronously {
+			// Auto-merge is an OPTIONAL capability (ADR-003), asserted here at the
+			// one site that needs it, the way the funnel does: a host that cannot
+			// arm it leaves the matching PR for an operator, never a silent loss.
+			merger, canArm := r.host.(host.AutoMerger)
+			if !canArm {
+				result.State = WriteStateNeedsAttention
+				result.Note = "matching publication PR exists, but this host cannot arm auto-merge"
+				return completeWriteResult("ContractPublicationRepair", record.HeadBranch, result)
+			}
+			method, armErr := merger.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
+				Repo: r.repository, PRNumber: existing.Number, ExpectedHeadSHA: proof.HeadSHA, Credential: credential,
+			})
+			if armErr != nil {
+				result.MergeMethod = method
+				result.State = WriteStateNeedsAttention
+				result.Note = "matching publication PR exists, but auto-merge could not be re-armed"
+				result, _ = completeWriteResult("ContractPublicationRepair", record.HeadBranch, result) // reason: armErr is the failure being returned; a finalize error would only mask it
+				return result, armErr
+			}
+			existing.AutoMergeArmed, existing.AutoMergeNote, existing.MergeMethod = true, "", method
+			return contractPublicationPRResult(record, proof.HeadSHA, *existing)
 		}
-		method, armErr := merger.EnableAutoMerge(ctx, host.EnableAutoMergeRequest{
-			Repo: r.repository, PRNumber: existing.Number, ExpectedHeadSHA: proof.HeadSHA, Credential: credential,
-		})
-		if armErr != nil {
-			result.MergeMethod = method
-			result.State = WriteStateNeedsAttention
-			result.Note = "matching publication PR exists, but auto-merge could not be re-armed"
-			result, _ = completeWriteResult("ContractPublicationRepair", record.HeadBranch, result)
-			return result, armErr
-		}
-		existing.AutoMergeArmed, existing.AutoMergeNote, existing.MergeMethod = true, "", method
-		return contractPublicationPRResult(record, proof.HeadSHA, *existing)
 	}
 	opened, err := r.host.OpenPR(ctx, host.OpenPRRequest{
 		Repo: r.repository, Head: record.HeadBranch, Base: record.BaseBranch,

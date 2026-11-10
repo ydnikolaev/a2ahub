@@ -137,7 +137,7 @@ func newSpaceIO() (cli.IO, *strings.Builder, *strings.Builder) {
 func TestSpaceInitScaffolds(t *testing.T) {
 	t.Parallel()
 
-	t.Run("version substitution pins the running binary's version, not the baked template version", func(t *testing.T) {
+	t.Run("the write floor pins the running binary's version, not the baked template version", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		target := filepath.Join(dir, "out")
@@ -147,17 +147,6 @@ func TestSpaceInitScaffolds(t *testing.T) {
 		code := cmd.Run(context.Background(), []string{"init", "myspace", "--dir", target}, io)
 		if code != 0 {
 			t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
-		}
-
-		workflow, err := os.ReadFile(filepath.Join(target, ".github", "workflows", "a2a-validate.yml"))
-		if err != nil {
-			t.Fatalf("read scaffolded workflow: %v", err)
-		}
-		if !strings.Contains(string(workflow), "a2a-validate-reusable.yml@v9.9.9") {
-			t.Errorf("scaffolded workflow does not pin @v9.9.9:\n%s", workflow)
-		}
-		if strings.Contains(string(workflow), "@v0.5.0") {
-			t.Errorf("scaffolded workflow still pins the BAKED template version (@v0.5.0), not the running binary's version:\n%s", workflow)
 		}
 
 		spaceYAML, err := os.ReadFile(filepath.Join(target, "space.yaml"))
@@ -166,30 +155,6 @@ func TestSpaceInitScaffolds(t *testing.T) {
 		}
 		if !strings.Contains(string(spaceYAML), "min_binary_version: 9.9.9") {
 			t.Errorf("scaffolded space.yaml does not carry min_binary_version: 9.9.9:\n%s", spaceYAML)
-		}
-	})
-
-	t.Run("notify caller version substitution pins the running binary's version, not the baked template version", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		target := filepath.Join(dir, "out")
-		cmd := cli.NewSpaceCommand(spacetemplate.Files, "9.9.9")
-
-		io, out, errOut := newSpaceIO()
-		code := cmd.Run(context.Background(), []string{"init", "myspace", "--dir", target}, io)
-		if code != 0 {
-			t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
-		}
-
-		notify, err := os.ReadFile(filepath.Join(target, ".github", "workflows", "a2a-notify.yml"))
-		if err != nil {
-			t.Fatalf("read scaffolded a2a-notify.yml: %v", err)
-		}
-		if !strings.Contains(string(notify), "a2a-notify-reusable.yml@v9.9.9") {
-			t.Errorf("scaffolded notify caller does not pin @v9.9.9:\n%s", notify)
-		}
-		if strings.Contains(string(notify), "@v0.23.0") {
-			t.Errorf("scaffolded notify caller still pins the BAKED template version (@v0.23.0), not the running binary's version:\n%s", notify)
 		}
 	})
 
@@ -318,7 +283,7 @@ func TestSpaceInitScaffolds(t *testing.T) {
 // repo, which is exactly what `space init` produces, and the operator has no
 // remote to check it against yet at scaffold time (the directive must print
 // regardless of whether the repo exists on GitHub already).
-func TestSpaceInitResidualStepsNameAutoMerge(t *testing.T) {
+func TestSpaceInitResidualStepsOmitServerEnforcement(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	target := filepath.Join(dir, "out")
@@ -329,8 +294,15 @@ func TestSpaceInitResidualStepsNameAutoMerge(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run: code = %d, want 0; stdout=%s stderr=%s", code, out.String(), errOut.String())
 	}
-	if !strings.Contains(out.String(), "Allow auto-merge") {
-		t.Fatalf("stdout = %q, want the residual steps to name enabling auto-merge", out.String())
+	for _, unwanted := range []string{"Allow auto-merge", "arm branch protection", "BRANCH-PROTECTION.md", "a2a-validate / validate"} {
+		if strings.Contains(out.String(), unwanted) {
+			t.Errorf("stdout names %q, which does not exist under validation: local:\n%s", unwanted, out.String())
+		}
+	}
+	for _, want := range []string{"IN THIS ORDER", "validation: local", "collaborator"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("stdout does not name %q:\n%s", want, out.String())
+		}
 	}
 }
 
@@ -1763,7 +1735,8 @@ func TestSpaceInitLocalRerun(t *testing.T) {
 }
 
 // TestSpaceInitWithoutLocalIsUnchanged pins that the local branch did not leak
-// into the default one (US-8): nine files and the GitHub steps.
+// into the default one (US-8): the GitHub form's own tree and steps, with no
+// workflows or protection checklist because it declares `validation: local`.
 func TestSpaceInitWithoutLocalIsUnchanged(t *testing.T) {
 	t.Parallel()
 	target := filepath.Join(t.TempDir(), "out")
@@ -1772,7 +1745,7 @@ func TestSpaceInitWithoutLocalIsUnchanged(t *testing.T) {
 	if code := cmd.Run(context.Background(), []string{"init", "acme", "--dir", target}, io); code != 0 {
 		t.Fatalf("code = %d; %s%s", code, out.String(), errOut.String())
 	}
-	if !strings.HasPrefix(out.String(), "space init: wrote 9 files to "+target+"\n") ||
+	if !strings.HasPrefix(out.String(), "space init: wrote 6 files to "+target+"\n") ||
 		!strings.Contains(out.String(), "remaining steps, IN THIS ORDER:") {
 		t.Errorf("stdout = %q, want the GitHub scaffold output", out.String())
 	}

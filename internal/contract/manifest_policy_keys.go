@@ -12,27 +12,29 @@ import (
 // ErrManifestPolicyKeysUnreadable is part of the public package API.
 var ErrManifestPolicyKeysUnreadable = errors.New("manifest policy keys: space.yaml is not a readable YAML mapping")
 
-// ErrManifestPolicyKeysAmbiguous reports a space.yaml whose `gates` or `flow`
-// key can be read two ways: a top-level merge key, a duplicated policy key, or
+// ErrManifestPolicyKeysAmbiguous reports a space.yaml whose `gates`, `flow` or
+// `validation` key can be read two ways: a top-level merge key, a duplicated policy key, or
 // an alias reaching either value. Two YAML readers disagree on these forms, so
 // the decoder interprets none of them.
 // ErrManifestPolicyKeysAmbiguous is part of the public package API.
-var ErrManifestPolicyKeysAmbiguous = errors.New("manifest policy keys: gates/flow are ambiguous (merge key, duplicate key or alias)")
+var ErrManifestPolicyKeysAmbiguous = errors.New("manifest policy keys: gates/flow/validation are ambiguous (merge key, duplicate key or alias)")
 
-// ManifestPolicyKeys holds the raw `gates` and `flow` values of a space.yaml,
-// before any vocabulary check. A nil field means the key is absent or null.
+// ManifestPolicyKeys holds the raw `gates`, `flow` and `validation` values of a
+// space.yaml, before any vocabulary check. A nil field means the key is absent or null.
 // ManifestPolicyKeys is part of the public package API.
 type ManifestPolicyKeys struct {
 	Gates any
 	Flow  any
+	// Validation is the raw `validation` key (personal-space-2026-11, D-045).
+	Validation any
 }
 
-// DecodeManifestPolicyKeys reads the `gates` and `flow` keys of a space.yaml
+// DecodeManifestPolicyKeys reads the `gates`, `flow` and `validation` keys of a space.yaml
 // through one decoder that the write-time validator and the land-time reader
 // share (spec 04 section 10, P4-B carries item 8). It walks the YAML node tree
 // and refuses every form on which a struct decode and a node walk disagree: a
 // top-level merge key (which a struct decode honours and a node walk does not),
-// a duplicated policy key, and any alias inside the `gates` or `flow` value.
+// a duplicated policy key, and any alias inside a policy value.
 // An anchor on a value is not an alias and decodes normally.
 // DecodeManifestPolicyKeys is part of the public package API.
 func DecodeManifestPolicyKeys(raw []byte) (ManifestPolicyKeys, error) {
@@ -52,7 +54,7 @@ func DecodeManifestPolicyKeys(raw []byte) (ManifestPolicyKeys, error) {
 		if key.Kind == yaml.AliasNode || isMergeKey(key) {
 			return ManifestPolicyKeys{}, fmt.Errorf("%w: top-level key at line %d", ErrManifestPolicyKeysAmbiguous, key.Line)
 		}
-		if key.Kind != yaml.ScalarNode || (key.Value != "gates" && key.Value != "flow") {
+		if key.Kind != yaml.ScalarNode || (key.Value != "gates" && key.Value != "flow" && key.Value != "validation") {
 			continue
 		}
 		if seen[key.Value] {
@@ -66,10 +68,13 @@ func DecodeManifestPolicyKeys(raw []byte) (ManifestPolicyKeys, error) {
 		if err := value.Decode(&decoded); err != nil {
 			return ManifestPolicyKeys{}, fmt.Errorf("%w: %q: %w", ErrManifestPolicyKeysUnreadable, key.Value, err)
 		}
-		if key.Value == "gates" {
+		switch key.Value {
+		case "gates":
 			keys.Gates = decoded
-		} else {
+		case "flow":
 			keys.Flow = decoded
+		default:
+			keys.Validation = decoded
 		}
 	}
 	return keys, nil

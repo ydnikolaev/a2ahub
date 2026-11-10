@@ -523,6 +523,16 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		}
 		return result, &Error{Op: op, Input: branch, Err: err}
 	}
+	// A plain write has no key to match an open pull request by, so it is settled
+	// here, ahead of the short-circuit: on a host that lands inside OpenPR the
+	// answer can be "that one already landed, and this is a new write".
+	if existing != nil && existing.State != "merged" && req.OperationKey == "" && f.host.Capabilities().LandsSynchronously {
+		landed, superseded, landErr := f.resumeSynchronousLand(ctx, req, branch, prior, existing, result)
+		if !superseded {
+			return landed, landErr
+		}
+		existing = nil
+	}
 	if existing != nil && (existing.State != "merged" || req.OperationKey != "") {
 		existingIDs := req.ArtifactIDs
 		if req.OperationKey != "" {
@@ -557,6 +567,12 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		// retry answered "already-open". Arming is idempotent, so the common
 		// case — the PR was fully configured — costs one no-op call.
 		if existing.State != "merged" {
+			// Checked before the auto-merge assertion: a host that lands inside
+			// OpenPR arms nothing, whatever other methods it happens to have.
+			if f.host.Capabilities().LandsSynchronously {
+				landed, _, landErr := f.resumeSynchronousLand(ctx, req, branch, prior, existing, result)
+				return landed, landErr
+			}
 			if am, isAutoMerger := f.host.(host.AutoMerger); isAutoMerger {
 				status, statusErr := f.host.CheckStatus(ctx, host.StatusRequest{
 					Repo: req.Repo, PRNumber: existing.Number, Credential: req.Credential,
@@ -727,12 +743,13 @@ func (f *WriteFunnel) submitPreparedRequest(ctx context.Context, req SubmitReque
 		if pr.Number > 0 && pr.URL != "" {
 			result.PRNumber, result.PRURL = pr.Number, pr.URL
 			result.Stage, result.MergeMethod = furthestWriteStage(result.Stage, WriteStagePRCreated), pr.MergeMethod
+			unknownNote, refusedNote := f.partialOpenNotes()
 			if hostOutcomeUnknown(err) {
 				result.State = WriteStateOutcomeUnknown
-				result.Note = "PR was created, but the auto-merge outcome could not be confirmed"
+				result.Note = unknownNote
 			} else {
 				result.State = WriteStateNeedsAttention
-				result.Note = "PR was created, but auto-merge could not be armed"
+				result.Note = refusedNote
 			}
 		} else if hostOutcomeUnknown(err) {
 			result.State = WriteStateOutcomeUnknown
@@ -1500,13 +1517,85 @@ func operationCommitMatches(ctx context.Context, repoDir, branch, remoteSHA, key
 	return strings.Contains("\n"+message+"\n", "\nA2A-Operation-Key: "+key+"\n"), nil
 }
 
+// resumeSynchronousLand finishes the open pull request step 0 found, on a host
+// that lands inside OpenPR. There is nothing to arm and nothing will land it
+// later, so OpenPR is called again: it is idempotent for a head already on the
+// base, and judges and lands one that is not.
+//
+// superseded reports a plain write arriving while GitHub still reads an already
+// landed pull request as open, a few seconds after the land (OpenPR landed
+// nothing, so MergeSHA is empty). Once that read catches up step 0 treats the next
+// write on the branch as a new transition, so it must here as well: reporting the
+// earlier write's result would silently lose this one. An operation-keyed write is
+// matched by its key, so for it the same answer is a replay.
+func (f *WriteFunnel) resumeSynchronousLand(ctx context.Context, req SubmitRequest, branch string, prior WriteResult, existing *host.PRInfo, result WriteResult) (landed WriteResult, superseded bool, err error) {
+	const op = "Submit"
+	result.PRNumber, result.PRURL = existing.Number, existing.URL
+	result.Stage = furthestWriteStage(result.Stage, WriteStagePRCreated)
+	if existing.HeadSHA == "" {
+		result.State = WriteStateNeedsAttention
+		result.Note = "PR exists, but its head is unavailable; the write was not landed"
+		landed, err = failWriteResult(op, branch, result, ErrExpectedHeadUnavailable)
+		return landed, false, err
+	}
+	if writeStageRank(prior.Stage) >= writeStageRank(WriteStagePushed) && existing.HeadSHA != prior.CommitSHA {
+		result.State = WriteStateNeedsAttention
+		result.Note = "PR head does not match the prepared commit; the write was not landed"
+		landed, err = failWriteResult(op, branch, result, remoteRecoveryConflict("pr-head-mismatch"))
+		return landed, false, err
+	}
+	pr, openErr := f.host.OpenPR(ctx, host.OpenPRRequest{
+		Repo: req.Repo, Head: branch, Base: resolvedBaseBranch(req),
+		Title: existing.Title, Body: existing.Body, ExpectedHeadSHA: existing.HeadSHA,
+		Credential: req.Credential,
+	})
+	if openErr != nil {
+		unknownNote, refusedNote := f.partialOpenNotes()
+		result.State, result.Note = WriteStateNeedsAttention, refusedNote
+		if hostOutcomeUnknown(openErr) {
+			result.State, result.Note = WriteStateOutcomeUnknown, unknownNote
+		}
+		landed, err = failWriteResult(op, branch, result, openErr)
+		return landed, false, err
+	}
+	if pr.State != "merged" {
+		result.State, result.Note = WriteStateNeedsAttention, "PR exists, but the host did not land it"
+		landed, err = completeWriteResult(op, branch, result)
+		return landed, false, err
+	}
+	if pr.MergeSHA == "" && req.OperationKey == "" {
+		return WriteResult{}, true, nil
+	}
+	result.State, result.Note = WriteStateMerged, ""
+	if pr.MergeSHA == "" {
+		result.State = WriteStateAlreadyMerged
+	}
+	result.Stage, result.MergeMethod = furthestWriteStage(result.Stage, WriteStageMerged), pr.MergeMethod
+	landed, err = completeWriteResult(op, branch, result)
+	return landed, false, err
+}
+
+// partialOpenNotes words an OpenPR that failed after the pull request existed,
+// for the host's own way of finishing a write.
+func (f *WriteFunnel) partialOpenNotes() (unknown, refused string) {
+	if f.host.Capabilities().LandsSynchronously {
+		return "PR exists, but whether the write landed could not be confirmed; re-running resumes it",
+			"PR exists, but the write did not land"
+	}
+	return "PR was created, but the auto-merge outcome could not be confirmed",
+		"PR was created, but auto-merge could not be armed"
+}
+
 // push sends the committed branch to remoteURL.
 func (f *WriteFunnel) push(ctx context.Context, req SubmitRequest, branch, remoteURL string) error {
 	pushReq := host.PushBranchRequest{
 		RepoDir: req.RepoDir, LocalRef: branch, Branch: branch,
 		RemoteURL: remoteURL, Credential: req.Credential,
 	}
-	if req.ReplaceOrphanBranch {
+	// A host that lands from the client keeps head branches: a refused write's,
+	// and every landed one's. Reaching here means step 0 found no open pull request
+	// for this branch, so what is on the remote is exactly that kind of orphan.
+	if req.ReplaceOrphanBranch || f.host.Capabilities().LandsSynchronously {
 		if reader, ok := f.host.(host.RemoteBranchReader); ok {
 			remote, err := reader.ReadRemoteBranch(ctx, host.RemoteBranchRequest{
 				RepoDir: req.RepoDir, RemoteURL: remoteURL, Branch: branch,

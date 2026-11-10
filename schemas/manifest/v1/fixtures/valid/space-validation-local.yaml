@@ -1,0 +1,12 @@
+schema: space/v1
+space: localvalidation
+min_binary_version: 0.1.0
+validation: local
+participants:
+  - system: axon
+    org: yura
+    section: axon/
+    owners: [ydnikolaev]
+    status: active
+    joined: 2026-10-28
+vendored: []

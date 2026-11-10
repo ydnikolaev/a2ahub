@@ -310,27 +310,16 @@ func (c *SpaceCommand) runInit(ctx context.Context, args []string, stdio IO) int
 	}
 
 	_, _ = fmt.Fprintf(stdio.Stdout, "space init: wrote %d files to %s\n", written, target)
-	// The residual steps are printed IN ORDER, and the order is the part
-	// that used to be missing. Two of these steps brick a space when taken
-	// early, and neither ordering was stated in any published document:
-	// pushing after protection is armed is refused (nothing can merge into
-	// an empty protected main), and arming the required check before the
-	// pinned reusable-workflow release exists means no PR can ever satisfy
-	// it. Both were internal-runbook-only knowledge until now.
+	// The residual steps are printed IN ORDER. This tree declares
+	// `validation: local`: the binary judges and lands each write, so there is no
+	// required check, no auto-merge and no protection to arm, on any GitHub plan.
 	_, _ = fmt.Fprintln(stdio.Stdout, "space init: remaining steps, IN THIS ORDER:")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  1. edit CODEOWNERS: replace BOTH halves of every placeholder — the org AND the name after the slash.")
-	_, _ = fmt.Fprintln(stdio.Stdout, "     An owner that does not exist is IGNORED by GitHub, not rejected: swapping only the org leaves a")
-	_, _ = fmt.Fprintln(stdio.Stdout, "     team nobody created, and the file then gates nothing while looking correct. Individual logins are")
-	_, _ = fmt.Fprintln(stdio.Stdout, "     the safe default; check GitHub's own CODEOWNERS view afterwards, it is the only feedback you get.")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  2. delete README.md from this tree — it documents the TEMPLATE, not your space")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  3. create the space repo on GitHub, EMPTY (no README, no license)")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  4. git init -b main && git add -A && git commit && git remote add origin <url> && git push -u origin main")
-	_, _ = fmt.Fprintln(stdio.Stdout, "     (push BEFORE arming protection: a protected empty main cannot accept its own bootstrap)")
-	_, _ = fmt.Fprintln(stdio.Stdout, `  5. enable Settings -> General -> "Allow auto-merge" (off by default on every new repo;`)
-	_, _ = fmt.Fprintln(stdio.Stdout, "     a2a submit arms auto-merge, so without it every write stalls behind a PR nothing will merge)")
-	_, _ = fmt.Fprintln(stdio.Stdout, `  6. arm branch protection: required check "a2a-validate / validate", 0 required approvals,`)
-	_, _ = fmt.Fprintln(stdio.Stdout, "     code-owner review ON, enforce_admins OFF — the full checklist is in BRANCH-PROTECTION.md")
-	_, _ = fmt.Fprintln(stdio.Stdout, "  7. for each participant: add them to space.yaml, scaffold their section, add their CODEOWNERS entry")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  1. delete README.md from this tree — it documents the TEMPLATE, not your space")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  2. create the space repo on GitHub, EMPTY (no README, no license); a Free account works")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  3. git init -b main && git add -A && git commit && git remote add origin <url> && git push -u origin main")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  4. leave main unprotected: this space declares `validation: local`, so each a2a binary judges a write and pushes it to main")
+	_, _ = fmt.Fprintln(stdio.Stdout, "  5. for each participant: add them as a collaborator with write access, add them to space.yaml with their GitHub login as owner, scaffold their section")
+	_, _ = fmt.Fprintln(stdio.Stdout, "     CODEOWNERS is not enforced in this mode; its placeholders can stay")
 	_, _ = fmt.Fprintln(stdio.Stdout, "")
 	_, _ = fmt.Fprintln(stdio.Stdout, "space init: then verify from a participant's checkout — `a2a connect <url>` and `a2a doctor`.")
 	return 0
@@ -438,9 +427,32 @@ func spaceApplySubstitutions(path string, data []byte, spaceID, version string) 
 	return data
 }
 
+// spaceValidationGatesLine is the template's `gates:` line, which the validation
+// declaration goes after.
+var spaceValidationGatesLine = regexp.MustCompile(`(?m)^gates:.*\n`)
+
+// spaceValidationLine matches an existing top-level `validation:` key.
+var spaceValidationLine = regexp.MustCompile(`(?m)^validation:`)
+
+// spaceDeclareLocalValidation adds `validation: local` to a GitHub space's
+// manifest. It is applied at init only, never by spaceApplySubstitutions: that
+// also serves `space update`, and an existing space keeps the mode it has.
+func spaceDeclareLocalValidation(manifest []byte) ([]byte, error) {
+	if spaceValidationLine.Match(manifest) {
+		return manifest, nil
+	}
+	at := spaceValidationGatesLine.FindIndex(manifest)
+	if at == nil {
+		return nil, fmt.Errorf("the embedded space.yaml has no gates line to declare validation after")
+	}
+	const line = "validation: local                 # this binary judges and lands each write (D-045)\n"
+	return append(append(append([]byte(nil), manifest[:at[1]]...), line...), manifest[at[1]:]...), nil
+}
+
 // spaceScaffold walks c.TemplateFiles and writes every regular file under
-// target, applying spaceApplySubstitutions per file. Returns the count of
-// files written.
+// target except the server-enforcement ones (spaceServerEnforcementPath), applying
+// spaceApplySubstitutions per file and declaring `validation: local`. Returns the
+// count of files written.
 func (c *SpaceCommand) spaceScaffold(target, spaceID, version string) (int, error) {
 	// Nil-safe: a caller that builds SpaceCommand as a struct literal
 	// (rather than through NewSpaceCommand) still gets working defaults —
@@ -467,7 +479,15 @@ func (c *SpaceCommand) spaceScaffold(target, spaceID, version string) (int, erro
 		if rerr != nil {
 			return fmt.Errorf("cannot read embedded %s: %w", p, rerr)
 		}
+		if spaceServerEnforcementPath(p) {
+			return nil
+		}
 		data = spaceApplySubstitutions(p, data, spaceID, version)
+		if p == "space.yaml" {
+			if data, rerr = spaceDeclareLocalValidation(data); rerr != nil {
+				return rerr
+			}
+		}
 
 		destPath := filepath.Join(target, filepath.FromSlash(p))
 		if merr := mkdirAll(filepath.Dir(destPath), 0o755); merr != nil {
@@ -750,7 +770,7 @@ func spaceUpdateFloor(current, templateFloor string) (next string, changed bool,
 // itself). This wrapper's own behaviour is unchanged — same inputs, same
 // readFile default, same output — the lift is byte-identical.
 func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpdatePlan, error) {
-	return spaceComputeUpdatePlanFor(c.TemplateFiles, c.MirrorDir, spaceID, version, c.readFile, c.Caps.OnThisMachine)
+	return spaceComputeUpdatePlanFor(c.TemplateFiles, c.MirrorDir, spaceID, version, c.readFile, c.Caps)
 }
 
 // spaceComputeUpdatePlanFor is the package-level drift computation shared by
@@ -764,12 +784,12 @@ func (c *SpaceCommand) spaceComputeUpdatePlan(spaceID, version string) (spaceUpd
 // NO write — pure diff, safe for --dry-run, a real run, and doctor's
 // read-only row alike.
 //
-// local selects the scaffolding a space on this machine carries
-// (spaceLocalSubsetPath): the template paths outside it are not part of that
-// space at all, so they are skipped silently instead of being proposed or
-// reported as "not propagated". Both callers derive it from the opened host's
-// declared OnThisMachine, never from a host kind.
-func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version string, readFile func(string) ([]byte, error), local bool) (spaceUpdatePlan, error) {
+// caps is the opened host's declared capabilities, never a host kind; both
+// callers pass them, and spaceTemplatePathApplies reads them. A template path that
+// does not apply is not part of that space at all, so it is skipped silently
+// instead of being proposed or reported as "not propagated". The zero value (a
+// host that could not be opened) applies the whole template.
+func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version string, readFile func(string) ([]byte, error), caps host.Capabilities) (spaceUpdatePlan, error) {
 	if readFile == nil {
 		readFile = os.ReadFile
 	}
@@ -782,7 +802,7 @@ func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version 
 		if d.IsDir() {
 			return nil
 		}
-		if local && !spaceLocalSubsetPath(p) {
+		if !spaceTemplatePathApplies(caps, p) {
 			return nil
 		}
 		templateData, rerr := fs.ReadFile(templateFiles, p)
@@ -805,7 +825,7 @@ func spaceComputeUpdatePlanFor(templateFiles fs.FS, mirrorDir, spaceID, version 
 			// A space on this machine keeps decisions/ and vendored/ from its
 			// root commit; the funnel cannot rewrite them, and they are not
 			// "outside what this command may write" news to its operator.
-			if !local {
+			if !caps.OnThisMachine {
 				plan.skipped = append(plan.skipped, p)
 			}
 			return nil
@@ -1036,9 +1056,10 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 	// a raw git push rejection — which reads as "it worked, then broke".
 	// --dry-run still shows the plan (that is what it is for) but says the
 	// run would be refused, so the scope is learned BEFORE it matters.
-	// A space on this machine has no workflow files and no token to probe.
+	// A space that lands from a client carries no workflow files to write, so it
+	// needs no workflow scope; a space on this machine has no token to probe either.
 	var scopeRefusal, scopeNote string
-	if !c.Caps.OnThisMachine {
+	if spaceHasServerEnforcement(c.Caps) {
 		scopeRefusal, scopeNote = c.spaceCheckWorkflowScope(ctx)
 	}
 	if scopeNote != "" {
@@ -1094,9 +1115,9 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 		_, _ = fmt.Fprintf(stdio.Stderr, "space update: %v\n", errMissingHostBaseBranch)
 		return 1
 	}
-	// The two directives are GitHub branch-protection steps; a space on this
-	// machine has neither a protection setting nor a `gh` repo to name.
-	if !c.Caps.OnThisMachine {
+	// The two directives are GitHub branch-protection steps; a space that lands
+	// from a client has no protection to change.
+	if spaceHasServerEnforcement(c.Caps) {
 		for _, line := range spaceUpdateDirectiveLines(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch) {
 			_, _ = fmt.Fprintf(stdio.Stdout, "space update: %s\n", line)
 		}
@@ -1132,7 +1153,7 @@ func (c *SpaceCommand) runUpdate(ctx context.Context, args []string, stdio IO) i
 
 	commitMsg := "a2a(space-update): sync scaffolding with the embedded template"
 	prBody := spaceUpdatePRBody(c.HostCfg.Repo.Owner, c.HostCfg.Repo.Name, baseBranch)
-	if c.Caps.OnThisMachine {
+	if !spaceHasServerEnforcement(c.Caps) {
 		prBody = "a2a space update: sync this space's scaffolding with the current embedded template.\n"
 	}
 	req := space.SubmitRequest{
@@ -1238,6 +1259,39 @@ func spaceLocalSubsetPath(p string) bool {
 		return false
 	}
 	return p == "space.yaml" || !space.IsInfrastructurePath(p)
+}
+
+// spaceServerEnforcementPath reports a template path that exists only for GitHub
+// to enforce a write: the Actions workflows and the branch-protection checklist.
+func spaceServerEnforcementPath(p string) bool {
+	return p == "BRANCH-PROTECTION.md" || strings.HasPrefix(p, ".github/workflows/")
+}
+
+// spaceLandsFromClient reports a space on GitHub whose writes this binary judges
+// and lands itself (`validation: local`). The zero value of Capabilities declares
+// nothing and so is not this: an unwired command keeps the whole template.
+func spaceLandsFromClient(caps host.Capabilities) bool {
+	return caps.LandsSynchronously && !caps.OnThisMachine
+}
+
+// spaceHasServerEnforcement reports a host where a pull request waits on a
+// required check: the only kind that needs workflows, a workflow-scoped token and
+// branch-protection directives.
+func spaceHasServerEnforcement(caps host.Capabilities) bool {
+	return !caps.LandsSynchronously && !caps.OnThisMachine
+}
+
+// spaceTemplatePathApplies reports whether a template path belongs in a space on
+// a host with caps. An existing GitHub space keeps the whole template.
+func spaceTemplatePathApplies(caps host.Capabilities, p string) bool {
+	switch {
+	case caps.OnThisMachine:
+		return spaceLocalSubsetPath(p)
+	case spaceLandsFromClient(caps):
+		return !spaceServerEnforcementPath(p)
+	default:
+		return true
+	}
 }
 
 // spaceLocalFiles renders the local subset of the embedded template for

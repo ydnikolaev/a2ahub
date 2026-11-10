@@ -7,8 +7,10 @@ import (
 	"sync"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
+	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/contractwiring"
 	"github.com/ydnikolaev/a2ahub/internal/host"
+	"github.com/ydnikolaev/a2ahub/internal/space"
 )
 
 // newHostOpenConfig is the one host.OpenConfig a process hands to the host
@@ -43,18 +45,68 @@ func newHostOpener() host.Opener {
 // system is the caller's configured system, the project config's `system`. A
 // local land is attributed to "local:<system>", the author the validator maps
 // through space.yaml's owners. An empty system leaves LandAuthor empty, and a
-// local OpenPR then refuses before it reads or writes anything.
+// local OpenPR then refuses before it reads or writes anything. The client-land
+// host's author is the token's login, so system does not reach it.
 //
 // The land check is lazy (newLazyLandCheck): building the validation engine
 // costs a schema load, and a GitHub open, the avatar refresher and notify must
 // not pay it or fail on it.
 func newHostOpenerFor(system string) host.Opener {
+	// reason: an unresolvable working directory leaves zero paths, which read as
+	// "no mirror" and so as the plain GitHub host, the default this seam promises.
+	p, _ := resolvePaths()
+	return newHostOpenerAt(p, system)
+}
+
+// newHostOpenerAt is newHostOpenerFor for a caller that already resolved the
+// project's paths (the MCP server honours its own project root).
+//
+// host.Open sees only a locator, so which host a GitHub space gets is decided
+// here, per space, from the space's own manifest (D-045): `validation: local`
+// opens the client-landing host with the version guard, anything else the plain
+// GitHub host.
+func newHostOpenerAt(p paths, system string) host.Opener {
 	cfg := newHostOpenConfig()
 	cfg.LandCheck = newLazyLandCheck()
 	if system != "" {
 		cfg.LandAuthor = "local:" + system
 	}
-	return host.NewOpener(cfg)
+	plain := host.NewOpener(cfg)
+	cfg.ClientLand = true
+	cfg.LandGuard = space.NewLandGuard(funnelBuild())
+	clientLand := host.NewOpener(cfg)
+	return func(raw string) (host.Host, host.Repo, error) {
+		if spaceValidatedLocally(p, raw) {
+			return clientLand(raw)
+		}
+		return plain(raw)
+	}
+}
+
+// spaceValidatedLocally reports whether the connected space at raw declares
+// `validation: local` in its local mirror's manifest. No project config, no such
+// space, no mirror yet or an unreadable manifest all answer false: the GitHub
+// host, as before. A stale mirror is safe because the mode changes only through
+// a landed space.yaml, and the floor raised with it refuses the old path.
+func spaceValidatedLocally(p paths, raw string) bool {
+	if p.projectConfig == "" {
+		return false
+	}
+	project, err := space.LoadProjectConfig(p.projectConfig)
+	if err != nil {
+		return false
+	}
+	// reason: a machine config is optional here; without one the mirror resolves
+	// project-relatively, as it does for every other caller.
+	machine, _ := space.LoadMachineConfig(p.machineConfig)
+	for _, ref := range project.Spaces {
+		if ref.RepoURL != raw {
+			continue
+		}
+		manifest, err := loadManifest(space.ResolveMirrorLocation(p.projectRoot, ref, machine))
+		return err == nil && manifest.EffectiveValidation() == contract.ValidationSettingLocal
+	}
+	return false
 }
 
 // newLazyLandCheck is the host.LandCheckFunc a local space's land runs. It

@@ -603,7 +603,7 @@ func buildMCPServer(ctx context.Context, p mcp.Paths, build iversion.Build) (*mc
 	}
 	// One opener per process, shared by the contract and data factories and the
 	// write dependencies internal/mcp builds per space.
-	opener := newHostOpenerFor(cfg.System)
+	opener := newHostOpenerAt(mainPaths, cfg.System)
 	return mcp.NewServerFromConfigWithOperations(ctx, p, build, workDeps,
 		newMCPContractOperationsFactory(mainPaths, cfg, machine, opener),
 		newMCPDataOperationsFactory(mainPaths, cfg, machine, opener),

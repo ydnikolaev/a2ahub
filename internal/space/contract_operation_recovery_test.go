@@ -39,6 +39,7 @@ func (h contractRecoveryTestHost) FindPRByHeadBranch(ctx context.Context, reques
 func (h contractRecoveryTestHost) OpenPR(ctx context.Context, request host.OpenPRRequest) (host.PRInfo, error) {
 	return h.pr.OpenPR(ctx, request)
 }
+func (h contractRecoveryTestHost) Capabilities() host.Capabilities { return h.pr.Capabilities() }
 func (h contractRecoveryTestHost) EnableAutoMerge(ctx context.Context, request host.EnableAutoMergeRequest) (host.MergeMethod, error) {
 	return h.pr.EnableAutoMerge(ctx, request)
 }
@@ -69,6 +70,8 @@ func (h contractRecoveryNoMergerHost) FindPRByHeadBranch(ctx context.Context, re
 func (h contractRecoveryNoMergerHost) OpenPR(ctx context.Context, request host.OpenPRRequest) (host.PRInfo, error) {
 	return h.inner.OpenPR(ctx, request)
 }
+
+func (h contractRecoveryNoMergerHost) Capabilities() host.Capabilities { return h.inner.Capabilities() }
 
 // The recovery host no longer requires EnableAutoMerge, and the no-merger host
 // really lacks it.
@@ -115,6 +118,47 @@ func TestContractPublicationRepair_NoAutoMerger(t *testing.T) {
 	}
 	if len(fakePR.AutoArms) != 0 {
 		t.Errorf("auto-merge was armed %d times over a host that cannot arm", len(fakePR.AutoArms))
+	}
+}
+
+// TestRepairResumesAnOpenPublicationPROnAHostThatLandsSynchronously: a matching
+// open pull request is no dead end when OpenPR itself lands it, and the auto-merge
+// path is not taken even though this fake happens to offer EnableAutoMerge.
+func TestRepairResumesAnOpenPublicationPROnAHostThatLandsSynchronously(t *testing.T) {
+	t.Parallel()
+
+	fakePR := host.NewFakeHost()
+	fakePR.Caps = &host.Capabilities{NeedsCredential: true, LandsSynchronously: true}
+	fixture := newContractRepairFixture(t, contractRecoveryTestHost{git: host.NewGitHubHost(nil, ""), pr: fakePR})
+	head := fixture.listing.Heads[0]
+	open := host.PRInfo{
+		Number: 52, URL: "https://example.invalid/pr/52", State: "open",
+		Title: fixture.record.PRTitle, Body: fixture.record.PRBody, BaseBranch: fixture.record.BaseBranch, HeadSHA: head.HeadSHA,
+	}
+	fakePR.FindPRFunc = func(context.Context, host.FindPRRequest) (*host.PRInfo, error) {
+		found := open
+		return &found, nil
+	}
+	fakePR.OpenPRFunc = func(context.Context, host.OpenPRRequest) (host.PRInfo, error) {
+		landed := open
+		landed.State, landed.MergeSHA = "merged", "3333333333333333333333333333333333333333"
+		return landed, nil
+	}
+
+	result, err := fixture.recovery.RepairContractPublicationHead(t.Context(), head, SubmissionRuntime{
+		RepoDir: fixture.probe, RemoteURL: fixture.fx.RemoteURL(), TargetIdentity: "acme/space", CurrentSpaceFloor: "0.19.0",
+	})
+	if err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if result.State != WriteStateAlreadyMerged {
+		t.Errorf("State = %q, want already-merged", result.State)
+	}
+	if len(fakePR.Opens) != 1 || fakePR.Opens[0].ExpectedHeadSHA != head.HeadSHA {
+		t.Errorf("opens = %+v, want one resume of the proven head", fakePR.Opens)
+	}
+	if len(fakePR.AutoArms) != 0 {
+		t.Errorf("auto-merge armed %d times on a host that lands inside OpenPR", len(fakePR.AutoArms))
 	}
 }
 

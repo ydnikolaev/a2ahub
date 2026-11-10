@@ -68,13 +68,14 @@ var (
 	// ErrLandRefused is returned by a host that lands a write synchronously
 	// when its land check judged the write and refused it. The error also wraps
 	// a *LandRefusal carrying the validator's codes (errors.As). A refused
-	// write leaves nothing behind: no landed record, and the head branch is
-	// deleted, so the corrected retry pushes fresh.
+	// write leaves nothing behind: no landed record, and on a local space the
+	// head branch is deleted, so the corrected retry pushes fresh. A client land
+	// keeps the head branch, which it does not own.
 	ErrLandRefused = errors.New("host: land refused")
 
 	// ErrLandConflict is returned when the head branch cannot be merged into
-	// the base tip without a conflict. The head branch is deleted and nothing
-	// is recorded.
+	// the base tip without a conflict. Nothing is recorded, and on a local space
+	// the head branch is deleted.
 	ErrLandConflict = errors.New("host: land conflict")
 
 	// ErrLandContended is returned when the refs a land updates kept changing

@@ -103,6 +103,36 @@ PRs to open.
 Dependabot opens the bump PR when a2ahub cuts a new release, and it auto-merges
 on the green `a2a-validate / validate` check — never a hand-edit in the space.
 
+## A GitHub space judged by the binary (`validation: local`)
+
+A space whose `space.yaml` says `validation: local` lives on GitHub, on any
+plan, and needs no paid feature: no branch protection, no required check, no
+auto-merge and no Actions minutes. Each `a2a` binary judges a write against the
+tip of `main` with the same check the workflow would run, and pushes the merge
+commit itself. `a2a space init` writes this mode for every new GitHub space; a
+space with no key, or `validation: actions`, stays on the pull-request path.
+
+What changes for you:
+
+- **A write lands when its command returns.** The pull request is still opened,
+  as the record of the write and of who made it. GitHub shows it merged a few
+  seconds later.
+- **`--approve` is needed for a G1–G4 write under `gates: default`**, as on a
+  local space, because no pull request review stands behind the write. See
+  "Human approval gates" in [loops.md](loops.md).
+- **A binary older than the space refuses, and nothing moves.** It compares
+  itself with `min_binary_version` and with the highest version recorded in
+  the space's recent commits, and says `the space is ahead of this binary`. Run
+  `a2a update` and retry the same command.
+- **Credentials are still GitHub's.** Every participant needs a token that can
+  write to the repository. A fine-grained token cannot write to a repository
+  where its user is a collaborator, so use a classic token or `cmd:gh auth
+  token`.
+- **Nothing on the server enforces any of this.** Whoever has write access can
+  push to `main` directly. The space relies on everyone writing through `a2a`.
+- **No Actions workflow is scaffolded**, so there is no CI check and no
+  Actions-based notification delivery unless you add them yourself.
+
 ## Local space — one operator, several repositories
 
 When one person owns every repository taking part, the space can live on that
@@ -214,6 +244,12 @@ that is a G4 write too and takes `--approve` on the operator's word.
 GitHub space. A local space skips steps 1–2: see "Local space — one operator,
 several repositories" above.
 
+On a space with `validation: local`, step 1 means adding the participant as a
+collaborator with write access and giving them a classic token. Step 2 is still
+a manifest change: `a2a space join` refuses here as on any GitHub space, because
+a login is GitHub's to assert and the binary cannot mint one, and there is no
+CODEOWNERS entry to add.
+
 Guide the participant through these steps in order:
 
 1. **Machine account + credential.** The new team's org creates the system's
@@ -244,38 +280,31 @@ Guide the participant through these steps in order:
 GitHub space. A local space skips this section: see "Local space — one
 operator, several repositories" above.
 
-`a2a space init <space-id> [--dir <path>]` writes the tree — the manifest with
-`space:` and `min_binary_version` filled, the CI caller with the
-reusable-workflow ref pinned to the running binary's own release, CODEOWNERS,
-`BRANCH-PROTECTION.md`, `dependabot.yml`. It refuses to run from an untagged
-dev build (it would pin a version that does not exist) and refuses a non-empty
-target directory.
+`a2a space init <space-id> [--dir <path>]` writes the tree: the manifest with
+`space:` and `min_binary_version` filled and `validation: local` declared,
+CODEOWNERS and `dependabot.yml`. It writes no Actions workflow and no
+branch-protection checklist, because this mode uses neither; see "A GitHub space
+judged by the binary" above. It refuses to run from an untagged dev build and
+refuses a non-empty target directory.
 
 **It writes files and nothing else.** It creates no git repository, makes no
-commit, pushes nothing, and never calls GitHub. Everything below is yours, and
-**the order is load-bearing** — two of these steps brick a space when taken
-early, and both fail without naming their cause:
+commit, pushes nothing, and never calls GitHub. The rest is yours:
 
 ```sh
 a2a space init myspace --dir ./myspace
 cd myspace
 
-# 1. real owners in place of the placeholders
-$EDITOR CODEOWNERS                    # @REPLACE_WITH_LOGIN -> a real login (verify:
-#                                      #   gh api repos/O/R/codeowners/errors)
-
-# 2. the template's own readme is not your space's
+# 1. the template's own readme is not your space's
 rm README.md
 
-# 3. optional, and nothing else will prompt you for them:
+# 2. optional, and nothing else will prompt you for them:
 $EDITOR space.yaml                    # `gates:` (default is fine to start) and
                                       # `notification_routes:` (leave [] if unused)
 
-# 4. create the repo EMPTY — no README, no license, or step 5 is a conflict
+# 3. create the repo EMPTY — no README, no license, or step 4 is a conflict
 gh repo create <org>/<repo> --private
 
-# 5. push BEFORE arming protection: a protected empty main cannot accept
-#    its own bootstrap (direct push forbidden, and no branch to PR from)
+# 4. push the bootstrap. Leave main unprotected: each binary pushes to it.
 git init -b main && git add -A && git commit -m "space: bootstrap"
 #    Use the URL form your git is actually authenticated for. An HTTPS remote
 #    needs a credential helper (`gh auth setup-git`); without one this push
@@ -285,12 +314,8 @@ git init -b main && git add -A && git commit -m "space: bootstrap"
 git remote add origin git@github.com:<org>/<repo>.git    # or the https:// form
 git push -u origin main
 
-# 6. the repo settings — auto-merge is OFF by default on every new repo
-gh api -X PATCH repos/<org>/<repo> -f allow_auto_merge=true -f delete_branch_on_merge=true
-
-# 7. branch protection — only now, and only because step 5's push already
-#    landed and the pinned reusable-workflow release exists
-#    (see BRANCH-PROTECTION.md for every value and why)
+# 5. for each participant: add them as a collaborator with write access
+gh api -X PUT repos/<org>/<repo>/collaborators/<login>
 ```
 
 **Then each participant onboards** (§9.2 below): a manifest PR adding them to
@@ -300,8 +325,10 @@ six paths — `provides/ requires/ exchanges/ events/ docs/` plus a
 `dependencies: []`. The template ships none of these: a space with no
 participants is deliberately valid so CI is green on the empty repo.
 
-GitHub space, from here through the auto-merge bullet. A local space skips
-them: see "Local space — one operator, several repositories" above.
+A space with `validation: actions`, from here through the auto-merge bullet. A
+local space and a `validation: local` space skip them: neither has protection or
+auto-merge to verify. For those two, verify with `a2a connect <url>` and `a2a
+doctor` from a participant's checkout.
 
 **Verify from a participant's checkout, not from yours**: `a2a connect <url>`
 then `a2a doctor`. A green doctor does not prove branch protection is armed —
