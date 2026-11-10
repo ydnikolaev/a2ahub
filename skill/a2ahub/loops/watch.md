@@ -114,9 +114,13 @@ tab-separated and free of the counterparty's words; read those through
    re-arm on `124` yourself.
 5. On `3`: tell the user which space could not be observed (`--json`'s
    `unmeasured`), then re-arm by starting the loop again. A silent wait that
-   could not look is not a quiet one.
-6. On `1` or `2`: stop and report. Re-arming cannot fix a configuration or usage
-   error.
+   could not look is not a quiet one. A space that cannot be read when the wait
+   starts does not end it: stderr prints `wait: watching the other spaces and
+   retrying this one: <cause>`, the other spaces are watched, and that space is
+   reported in `unmeasured` until it can be read.
+6. On `1` or `2`: stop and report. `1` means no connected space could be read
+   when the wait began, or `--space` named an unknown one; re-arming cannot fix
+   that or a usage error.
 7. One wait per project. Two sessions in one project should not both wait.
 
 Narrow it with `--space <id>`, or `--subject <artifact-id>` / `--thread

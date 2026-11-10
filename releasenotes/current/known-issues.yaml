@@ -5,7 +5,7 @@ issues:
     impact: normal
     subject: "The current releases shipped with their provider-tier verification deferred, by explicit operator authorization"
     detail: >
-      Every release from v0.19.0 through v0.27.2 shipped this way — THIRTY-THREE
+      Every release from v0.19.0 through v0.27.3 shipped this way — THIRTY-FOUR
       of them, each authorized separately for its own candidate, and the count is
       machine-refused unless the newest record signs for its own position in the
       streak. This paragraph still said TWENTY-SIX through v0.27.0: five
@@ -134,12 +134,12 @@ issues:
       with the spending limit not set. Anything the run finds ships as a patch
       release.
 
-      THIRTY-THREE consecutive deferrals over the same surfaces is not improving
+      THIRTY-FOUR consecutive deferrals over the same surfaces is not improving
       with repetition, and more than one of them passed a condition an earlier
       record had itself named as the deadline: v0.27.0's record promised the
       live run before any thirty-second deferral, and v0.27.1 is that
       deferral; v0.27.1 then promised it before any thirty-third, and v0.27.2 is
-      that one. The run is now scheduled for 2026-12-10; the signed count in
+      that one, and v0.27.3 was cut before that run. The run is scheduled for 2026-12-10; the signed count in
       the newest deferral record is the honest measure of how long this has
       been outstanding.
     affects: ["a2a submit", "a2a contract publish", "space mirror", "branch protection", "space CI"]

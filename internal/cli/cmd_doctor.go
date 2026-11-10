@@ -1260,7 +1260,7 @@ type doctorSpaceScaffoldingReader interface {
 // (doctorWorkflowScopeNote, doctorCheckAutoMerge's "unverified" outcome)
 // exists to avoid. Three PASS shapes:
 //   - in sync -> PASS, no note.
-//   - behind -> PASS, naming the drift AND who can act on it, resolved by
+//   - behind -> WARN, naming the drift AND who can act on it, resolved by
 //     what the credential can actually DO (doctorScaffoldingCanFix), never
 //     from a config field: a client-space participant must not be told to
 //     run a command the host will refuse, and a space admin must not be

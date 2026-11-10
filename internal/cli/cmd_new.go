@@ -108,8 +108,8 @@ type NewCommand struct {
 // project's configured connected-space ids; when the caller does not
 // supply `--field space=` and there is exactly one connected space, Run
 // defaults the drafted `space:` field to it instead of leaving the
-// template's literal `<space-id>` placeholder in place — the ambiguous
-// zero-or-many-spaces case is left untouched (defect: a live-run bug
+// template's literal `<space-id>` placeholder in place; several spaces are
+// settled by WithSpaceCandidates (defect: a live-run bug
 // where the placeholder survived into the draft and the very next `a2a
 // submit` failed).
 func NewNewCommand(stagingDir, ownSystem string, resolveActor func(ActorFlags) (template.Actor, error), connectedSpaceIDs []string) *NewCommand {

@@ -51,7 +51,12 @@
    comma list or repeats, and one target drafts exactly what `--field to=`
    does. Exit `2`, with nothing written, for an empty or repeated target,
    `all` beside a named system or on a type that addresses one system, or
-   `--to` together with `--field to=`. Fill every
+   `--to` together with `--field to=`. With several spaces connected, the CLI
+   fills `space:` when this system shares exactly one space with every
+   recipient; when it shares more than one, `a2a new` exits `2` with `new: choose
+   the space` and you name it with `--field space=<id>`. If a closed field is
+   still open, `a2a new` prints `new: still to fill: <key> (one of a, b)`; set it
+   with `--field <key>=<value>` or edit the draft. Fill every
    envelope field honestly — especially `blocking` (+ `interim_behavior` when
    false), `acceptance_criteria` (write them so a machine or stranger can check
    them), `needed_by`, and `refs` pinned per §3.8. The schema keeps `needed_by`
@@ -179,8 +184,8 @@
    exits 1 at once with "no pending write recorded" — the expected answer
    here, not a failed write. If what you
    are waiting for is the counterparty's answer rather than your own write
-   landing, `a2a await` is the wrong verb: `a2a wait` blocks until their move
-   on your artifact arrives — see [watch.md](watch.md) § "Waiting for a
+   landing, `a2a await` is the wrong verb: `a2a wait --owed` blocks until their move
+   on your artifact leaves the next move with you — see [watch.md](watch.md) § "Waiting for a
    counterparty's move".
 5. **Track, don't poll:** the item appears in your outbox with folded state;
    the statusline surfaces movement. If `needed_by` passes silently, escalate

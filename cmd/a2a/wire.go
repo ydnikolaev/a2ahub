@@ -1412,10 +1412,9 @@ func resolveLifecycleDepsWithPolicy(ctx context.Context, p paths, args []string,
 //     to "an id in the SECOND connected space silently resolves to the
 //     FIRST"; with one connected space there is no second, so the walk has
 //     nothing to disambiguate. This ALSO matters for freshness:
-//     resolveLifecycleDepsWithPolicy resolves the target space BEFORE
-//     syncing its mirror (only the resolved space's mirror is fetched, not
-//     every connected one), so the walk here sees each mirror as of its
-//     LAST sync, not as of this invocation. A single connected space has no
+//     this walk sees each mirror as of its LAST sync, not as of this
+//     invocation, and resolveFreshTargetSpaceRef re-walks after a fetch
+//     when it misses. A single connected space has no
 //     "wrong space" to fall into regardless of staleness; internal/mcp's
 //     own SpaceOfArtifacts/ResolveSpace closures are installed under the
 //     identical len(cfg.Spaces) > 1 guard (wire.go:376), so this brings the

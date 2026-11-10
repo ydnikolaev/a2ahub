@@ -282,4 +282,6 @@ D-021. Both verbs are catalogued in
    `null` in `gates` or `lands_synchronously` means the binary could not read
    that space's host: an unknown, never a `false`. No MCP tool reports these
    fields yet; an agent with only MCP runs the full loop, which is valid in
-   every space.
+   every space. Each entry also carries `sync_age_in_seconds`, the whole seconds
+   since that mirror's last fetch. Use it rather than `sync_age_seconds`, which
+   holds nanoseconds despite its name.

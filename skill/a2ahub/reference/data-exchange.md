@@ -417,8 +417,6 @@ not carry is refused, not ignored. The flags become parameters like this:
 | `--max-attempts` | `max_attempts` (integer) |
 
 `request` requires `producer`, `contract` and `interim_behavior`; `deliver`
-with `for` requires `from`, `profile` and `format`. The parameters' own
-descriptions in the schema label `max_attempts` "fetch only" and `contract`,
-`from`, `profile`, `format`, `expires` "pack only"; with `for`, `deliver` also
-accepts them. `staging_root`, `fulfills`, `supersedes`, `expect_pack` and
+with `for` requires `from`, `profile` and `format`. Each parameter's description
+in the schema names the actions that take it. `staging_root`, `fulfills`, `supersedes`, `expect_pack` and
 `package_id` are refused beside `for`.

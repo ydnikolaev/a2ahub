@@ -78,7 +78,8 @@ Two properties worth relying on:
 
 A contract publishes a **carried set** — the descriptor plus every schema,
 fixture and companion file that travels with it — and the space's write floor
-decides how that set is named.
+decides how that set is named. Each carried file may be up to 8 MiB and the
+whole set up to 16 MiB; past either bound the publish is refused.
 
 | Space `min_binary_version` | Publication profile | The descriptor must |
 |---|---|---|

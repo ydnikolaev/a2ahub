@@ -15,6 +15,25 @@
 
 ## Prose files under review (D-015 hand-maintained set)
 
+### v0.27.3 — large contract files, `a2a wait --owed`, two connected spaces
+
+**The basis of this review.** The 19 entries RN-02703-0 to RN-02703-18 in
+`releasenotes/0.27.3.yaml`, each checked against the code and the prose by a
+read-only pass with file and line citations, whose proposed edits were then
+checked against the source before being applied. It did not walk
+`git diff v0.27.2..HEAD`, and walked `loops/first-integration.md`,
+`loops/express.md` and `loops/escalation.md` by search only. No note adds a new
+prose file.
+
+**Three statements were false and are corrected:** `data-exchange.md` labelled
+`max_attempts` fetch-only (RN-02703-7), `resolutions.md` told a reader to sync
+after `REF-025` (RN-02703-15), and `troubleshooting.md` omitted `WARN` from exit
+`0` (RN-02703-18). **Surfaces that had no prose and now do:** the 8 MiB bound, `land check could not judge`, the contract verb
+with no version to default to, `sync_age_in_seconds`, `still to fill`, the wait's
+retry of an unreadable space, and `new: choose the space`.
+
+**No shipped surface to carry:** RN-02703-1, 2, 11, 12 and 16.
+
 ### v0.27.2 — a binary-judged GitHub space, adoption clocks, and refusals no page named
 
 **The basis of this review.** The 17 entries RN-02702-0 to RN-02702-16 in
@@ -361,6 +380,13 @@ not drifted from the plan wording it quotes.
 | `skill/RELEASE-CHECKLIST.md` (this file) | The prose-file list is complete — every hand-maintained prose file has a row; no generated `reference/**` file was added here by mistake. **Check it against `SKILL.md`'s own D-015 list, in both directions**: this clause silently held for two releases while `reference/feedback.md` was missing from both. **v0.19.9**: checked by enumerating `skill/a2ahub/**/*.md` minus the generated tree and differencing it against both lists — 15 files, four empty differences. That it took a script to answer honestly is the argument for a gate — a clause that has escaped twice will not be caught by reading harder the third time, and the check is a dozen lines of shell over `skill/a2ahub/**/*.md` minus the generated tree. It is NOT filed in `docs/validator-backlog.md`: that file records itself at 15 open rows against a `wip-limit=8` with no gate enforcing the brake, and says plainly that the honest move there is to drain, not to capture a 16th. So this sits here, in the row it would guard, until someone drains that queue or builds this one. | ☑ | Claude Code | 2026-08-07 |
 
 ## Sign-off
+
+- **Release tag:** `v0.27.3`
+- **Reviewer:** `Claude Code`
+- **Date:** `2026-11-10`
+
+> Enumerated from the release notes rather than from the diff; the v0.27.3
+> section above names what was corrected and what was not walked.
 
 - **Release tag:** `v0.27.2`
 - **Reviewer:** `Claude Code`

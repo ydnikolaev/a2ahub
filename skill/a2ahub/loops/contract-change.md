@@ -128,7 +128,8 @@
    - **With more than one version published, `deprecate` and `retire` require
      `--version`** and refuse rather than guess. This is what stops you
      announcing the deprecation of the version you just published instead of
-     the old one.
+     the old one. They also refuse, exit `2`, when the descriptor carries no
+     version to default to: pass `--version <semver>` (`version` on MCP).
 3. Requirements you satisfy: reference the fulfilling `id@version` in your
    response so the requirement can fold to `satisfied`.
 
