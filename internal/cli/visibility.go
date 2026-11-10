@@ -146,11 +146,15 @@ func doctorDecideVisibility(facts doctorVisibilityFacts) doctorVisibilityDecisio
 // truncated path list upstream), so this only ever subtracts the number of
 // PATHS it actually recognised and removed, never more, and never below
 // zero.
+//
+// A contract's companion (space.IsContractBaselinePath) is the same case: it
+// is data the descriptor inventories, walkArtifacts skips it by the same
+// predicate, and naming it here would again point at an action nobody can take.
 func doctorFilterDataPackageReadmeSkips(paths []string, count int) ([]string, int) {
 	filtered := make([]string, 0, len(paths))
 	removed := 0
 	for _, p := range paths {
-		if artifact.IsDataPackageReadmePath(p) {
+		if artifact.IsDataPackageReadmePath(p) || space.IsContractBaselinePath(p) {
 			removed++
 			continue
 		}

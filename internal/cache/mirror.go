@@ -1457,6 +1457,13 @@ func walkArtifacts(dir string) ([]rawArtifact, []SkippedFile, error) {
 				return nil
 			}
 		}
+		// A contract's companions (schema/, fixtures/, artifacts/) are data the
+		// descriptor inventories, not envelopes: artifacts/CHANGELOG.md has no
+		// frontmatter and never will. The descriptor itself is still decoded.
+		// internal/cli's doctorFilterDataPackageReadmeSkips consults the same predicate.
+		if relErr == nil && space.IsContractBaselinePath(filepath.ToSlash(rel)) {
+			return nil
+		}
 		a, skip := decodeArtifactFile(dir, path)
 		if skip != nil {
 			skips = append(skips, *skip)
