@@ -165,6 +165,7 @@ func (c *SpaceCommand) Synopsis() string {
 func (c *SpaceCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a space <init|update|join|set|delete> ...")
+		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
 		return 2
 	}
 	sub, rest := args[0], args[1:]
