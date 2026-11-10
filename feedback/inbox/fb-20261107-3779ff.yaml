@@ -36,4 +36,4 @@ resolution: >-
     deliver): the embed drops the all: prefix and a test pins that it holds no
     dot- or underscore-file. Ships publicly with 0.27.2 (RN-02702-8); flip to
     shipped then.
-status: accepted
+status: shipped

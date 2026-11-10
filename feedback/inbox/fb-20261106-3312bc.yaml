@@ -39,4 +39,4 @@ resolution: >-
     deliver): a settled outcome stops the p1-or-blocking reason and is never
     counted urgent by the statusline, SeverityOf or the notification snapshot.
     Ships publicly with 0.27.2 (RN-02702-9); flip to shipped then.
-status: accepted
+status: shipped

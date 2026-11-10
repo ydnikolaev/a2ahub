@@ -78,4 +78,5 @@ resolution: >-
 
     Two table-driven tests cover both polarities each, and both were watched RED
     against a mutation that reverts the label to a hardcoded "space".
-status: accepted
+    Fixed in 006d6de2; shipped publicly in v0.25.8.
+status: shipped

@@ -31,4 +31,4 @@ resolution: >-
     the dashboard, and a2a note from the owed party prints the move it owes. The
     note-refusing policy stays out of scope. Ships publicly with 0.27.2
     (RN-02702-10); flip to shipped then.
-status: accepted
+status: shipped

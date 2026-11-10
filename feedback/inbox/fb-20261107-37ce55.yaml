@@ -51,4 +51,4 @@ resolution: >-
     threads reference says where) and c0206669 (a2a --help, -h and help print the
     verb list); delivered locally (make deliver). Ships publicly with 0.27.2
     (RN-02702-7); flip to shipped then.
-status: accepted
+status: shipped

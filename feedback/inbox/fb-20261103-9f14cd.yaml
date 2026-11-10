@@ -41,4 +41,4 @@ resolution: >-
     versions, the history memoized per anchor within a publish. Measured on
     draftmedia, read-only preflight: 2 s and 171 git calls, against 1,222 s and
     41,208. Ships publicly with 0.27.2 (RN-02702-2); flip to shipped then.
-status: accepted
+status: shipped

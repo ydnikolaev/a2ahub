@@ -43,4 +43,4 @@ resolution: >-
     delete it; 506b41f6 makes every other verb that gives up on such a
     file name it the same way instead of saying only "re-run". Ships publicly
     with 0.27.2 (RN-02702-5); flip to shipped then.
-status: accepted
+status: shipped

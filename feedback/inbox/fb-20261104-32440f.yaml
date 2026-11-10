@@ -39,4 +39,4 @@ resolution: >-
     fixtures without one, in both callers. A local space's land check has it
     now; a GitHub space's CI gets it with the public 0.27.2 (RN-02702-3); flip
     to shipped then.
-status: accepted
+status: shipped

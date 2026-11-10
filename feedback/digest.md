@@ -125,7 +125,7 @@ rows below are the release flip, not a re-triage.
 Both accepted records from today's triage are fixed and installed on this
 machine with `make deliver`; the local draftmedia space they came from already
 runs the fix. No status changes: they flip to shipped with the public 0.27.2
-release, as v0.27.1's records did.
+release, as v0.27.1's records did. The flip is the "2026-11-10 Release" section below.
 
 - fb-20261103-9f14cd (friction, still accepted): fixed in 6481be94 (RN-02702-2); preflight on draftmedia 1,222 s -> 2 s
 - fb-20261104-32440f (bug, still accepted): fixed in 63d1d0c2 (RN-02702-3)
@@ -145,7 +145,7 @@ release, as v0.27.1's records did.
 All seven accepted records from today's triage are fixed in the same pass and
 installed on this machine with `make deliver`, so the local spaces they came
 from run the fixes. No status changes: they flip to shipped with the public
-0.27.2 release.
+0.27.2 release. The flip is the "2026-11-10 Release" section below.
 
 - fb-20261106-28c7e6 (bug, still accepted): fixed in cb01f064, e2da5d67 (RN-02702-4)
 - fb-20261107-498d5f (bug, still accepted): fixed in b6a70883, 425ae599, 48193453, 506b41f6 (RN-02702-5)
@@ -154,3 +154,18 @@ from run the fixes. No status changes: they flip to shipped with the public
 - fb-20261107-3779ff (bug, still accepted): fixed in a747a3d8 (RN-02702-8)
 - fb-20261106-3312bc (bug, still accepted): fixed in 39ee49af (RN-02702-9)
 - fb-20261106-96837b (feature, still accepted): fixed in bcd5b325 (RN-02702-10)
+
+## 2026-11-10 Release — v0.27.2
+
+The records below ship with 0.27.2. The rows are the release flip, not a
+re-triage.
+
+- fb-20261103-9f14cd (friction -> shipped in v0.27.2): contract preflight and publish re-walk the space history per published version
+- fb-20261104-32440f (bug -> shipped in v0.27.2): minor bump refused POL-008: compat check ignores conforms_to on multi-schema
+- fb-20261106-28c7e6 (bug -> shipped in v0.27.2): contract activate refused LFC-001 while the fold says activate is owed
+- fb-20261107-498d5f (bug -> shipped in v0.27.2): Dead-pid mirror lock blocks every verb; doctor calls it a missing space
+- fb-20261107-94ae3c (friction -> shipped in v0.27.2): contract preflight before first submit says path is not safely contained
+- fb-20261107-37ce55 (bug -> shipped in v0.27.2): a2a show omits acceptance_criteria and expected_response, human and --json
+- fb-20261107-3779ff (bug -> shipped in v0.27.2): a2a skill install writes a macOS .DS_Store into .a2ahub/skill
+- fb-20261106-3312bc (bug -> shipped in v0.27.2): inbox --actionable and statusline urgent count a settled contract
+- fb-20261106-96837b (feature -> shipped in v0.27.2): flag an item whose owed party writes only notes
