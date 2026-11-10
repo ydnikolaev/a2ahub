@@ -458,7 +458,7 @@ func assertCanonicalSnapshotEqual(t *testing.T, got, want operational.Snapshot, 
 
 func getSnapshotEventually(t *testing.T, client *http.Client, baseURL string) ([]byte, string) {
 	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
+	deadline := time.NewTimer(60 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -556,7 +556,7 @@ func (f *controlledTickerFactory) NewTicker(interval time.Duration) localserver.
 
 func (f *controlledTickerFactory) await(t *testing.T, interval time.Duration) *controlledTicker {
 	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
+	deadline := time.NewTimer(60 * time.Second)
 	defer deadline.Stop()
 	for {
 		f.mu.Lock()

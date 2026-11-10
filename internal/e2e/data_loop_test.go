@@ -181,6 +181,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cli"
 	"github.com/ydnikolaev/a2ahub/internal/contract"
@@ -1317,6 +1318,10 @@ func TestDataLoopExpressRequestDeliverVerifyRerun(t *testing.T) {
 	t.Parallel()
 	axon, beta, contractRef, _ := setupDataLoop(t)
 	remote := axon.fx.RemoteURL()
+	// The request id mixes the UTC date into its entropy, so a run that spans
+	// 00:00 UTC legitimately mints a different id on the re-run.
+	utcDay := func() string { return time.Now().UTC().Format("2006-01-02") }
+	dayBefore := utcDay()
 
 	// Row 1: the request.
 	requestArgs := []string{"data", "request", "--producer", "beta", "--contract", contractRef, "--interim-behavior", "beta may continue other work"}
@@ -1393,6 +1398,9 @@ func TestDataLoopExpressRequestDeliverVerifyRerun(t *testing.T) {
 	// Row 7: a re-run of all three writes nothing and exits 0.
 	before := gitCommitCount(t, remote)
 	again := axon.expressRun(t, 0, requestArgs...)
+	if again.WorkRequest != wrID && utcDay() != dayBefore {
+		t.Skipf("the UTC date rolled from %s to %s mid-test, so the request id legitimately differs; rerun", dayBefore, utcDay())
+	}
 	if again.WorkRequest != wrID {
 		t.Fatalf("re-run request minted %q, want the already-landed %q", again.WorkRequest, wrID)
 	}
