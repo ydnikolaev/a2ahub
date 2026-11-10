@@ -450,7 +450,8 @@ changes:
     `min_binary_version`, or below the newest version in the space's recent
     `A2A-Built-By` lines. The message says the space is ahead and to run `a2a
     update`. Nothing on GitHub enforces this mode, so a collaborator who pushes to
-    `main` outside `a2a` is not stopped.
+    `main` outside `a2a` is not stopped. A bare `a2a space` now also names the
+    contract-change workflow that cites it.
   action:
     scope: none
     why: >
