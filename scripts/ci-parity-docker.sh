@@ -226,6 +226,21 @@ parity_volume() { # $1 name, $2 stack
     docker volume create --label dev.a2ahub.owner=a2ahub --label "dev.a2ahub.stack=$2" "$1" >/dev/null
   fi
 }
+# THE WORK VOLUME HAS A CEILING. It holds the run's tree and CI's GOCACHE, and
+# nothing else removes it: measured 2026-11-10 at 4,786 MB after 12 days, 3,725
+# of them the Go build cache. Over PARITY_WORK_CAP_MB it is removed by its exact
+# name, only when it carries our owner label, and recreated cold; the next run
+# pays the cold Go build once. The probe costs ~2 s (`docker system df -v`, 19 s).
+# The container above is refused while running, so nothing has the volume open.
+PARITY_WORK_CAP_MB="${PARITY_WORK_CAP_MB:-8192}"
+if [ "$(docker volume inspect --format '{{index .Labels "dev.a2ahub.owner"}}' "$WORK_VOLUME" 2>/dev/null)" = a2ahub ]; then
+  work_mb="$(docker run --rm --entrypoint du -v "$WORK_VOLUME":/w:ro "$IMAGE" -sm /w 2>/dev/null | cut -f1)"
+  if [ -n "$work_mb" ] && [ "$work_mb" -gt "$PARITY_WORK_CAP_MB" ]; then
+    printf 'ci-parity-docker: %s is %s MB, over its %s MB ceiling; removing it, this run starts cold.\n' \
+      "$WORK_VOLUME" "$work_mb" "$PARITY_WORK_CAP_MB" >&2
+    docker volume rm "$WORK_VOLUME" >/dev/null || die "could not remove $WORK_VOLUME over its ceiling"
+  fi
+fi
 parity_volume "$WORK_VOLUME" test
 parity_volume a2ahub-parity-state test
 parity_volume a2ahub-parity-gocache dev
