@@ -1,0 +1,220 @@
+schema: release-notes/v1
+version: 0.27.3
+released: unreleased
+headline: a contract can carry its generated files, and a landed write is visible at once
+changes:
+- id: RN-02703-0
+  kind: fix
+  impact: high
+  subject: a contract can carry a generated file up to 8 MiB
+  detail: >
+    A contract file was limited to 1 MiB, so a generated manifest could not be
+    published and the contract's own set no longer matched what it carried. The
+    per-file limit is now 8 MiB, and the 16 MiB limit on the whole contract
+    stays. An older binary refuses to read a contract carrying a larger file, so
+    the space's minimum binary version moves with this release.
+  action:
+    scope: none
+    why: >
+      An older binary reports the space is ahead and asks for an update, which
+      is the normal path.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-1
+  kind: fix
+  impact: high
+  subject: a landed write is visible to the next read
+  detail: >
+    On a space where the write lands synchronously, `a2a contracts` and other
+    reads did not show the write until `a2a sync`, which read as an unfinished
+    publication. A landed write now refreshes the local mirror.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-2
+  kind: fix
+  impact: normal
+  subject: a contract's companion files are no longer reported as undecodable
+  detail: >
+    An ordinary Markdown file under a contract's `artifacts/`, `schema/` or
+    `fixtures/` printed `could not be decoded` on every read and held the
+    doctor's visibility scan at UNVERIFIED. These files are no longer read as
+    exchange artifacts. A malformed artifact elsewhere is still reported.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-3
+  kind: fix
+  impact: normal
+  subject: a publication that deletes files names the digest to confirm
+  detail: >
+    `a2a contract publish` answered a plan that deletes files with a bare
+    `space: plan-changed`, although nothing had changed. It now says how many
+    files the plan deletes and gives the exact `--expect-plan` value.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-4
+  kind: fix
+  impact: normal
+  subject: a land check that cannot judge a write says why
+  detail: >
+    The refusal repeated its own prefix and dropped the cause. It now names the
+    cause once.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-5
+  kind: fix
+  impact: normal
+  subject: deprecate and retire refuse a contract with no resolvable version
+  detail: >
+    With no version given and none resolved, `deprecate` wrote `deprecates:
+    id@`, a schema-invalid announcement caught only at merge. The CLI and MCP
+    now refuse and say which version to pass.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-6
+  kind: feat
+  impact: low
+  subject: a2a version reports the sync age in seconds
+  detail: >
+    `--json` gains `sync_age_in_seconds`. The existing `sync_age_seconds` keeps
+    its value, which has always been nanoseconds, so nothing reading it breaks.
+  action:
+    scope: none
+    why: >
+      Nothing is owed; a consumer may move to the new field.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-7
+  kind: fix
+  impact: low
+  subject: the a2a_data tool describes which actions take each field
+  detail: >
+    Several fields said `pack only` or `fetch only` while `deliver` and others
+    accepted them.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-8
+  kind: fix
+  impact: low
+  subject: space init --local names every step in order
+  detail: >
+    The printed next steps left out `a2a init --system`.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-9
+  kind: feat
+  impact: low
+  subject: a2a new names the closed fields still to fill
+  detail: >
+    A response or announcement left a placeholder in `result` or `category` that
+    nothing named until validate. `a2a new` now lists those fields.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-10
+  kind: fix
+  impact: low
+  subject: the watch loop absorbs a quiet deadline in the shell
+  detail: >
+    The skill told an agent to re-arm `a2a wait` itself after exit 124, so every
+    quiet deadline cost a full turn. `loops/watch.md` now gives a shell loop
+    that wakes the agent only when there is something to act on.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-11
+  kind: fix
+  impact: low
+  subject: the web pages and the guide describe both landing paths
+  detail: >
+    Three lines still spoke only of pull requests.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02703-12
+  kind: fix
+  impact: low
+  subject: grpc moves to 1.83.2
+  detail: >
+    Closes a dependency advisory that the binary does not reach.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
