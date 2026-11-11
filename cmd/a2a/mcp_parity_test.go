@@ -66,7 +66,7 @@ import (
 // The fix was the registration, not the test: a2a_adapt is now registered
 // unconditionally by registerSpaceFree, and AdaptDeps' zero value is an
 // honest degraded case — no binary version means the handler REFUSES
-// (notes.ErrBinaryVersionUnusable), never an empty pending list. So the tool
+// (adoption.ErrBinaryVersionUnusable), never an empty pending list. So the tool
 // is in every registry, this list can name it, and the guard is live for it.
 //
 // The rule: a new tool that cannot join this list is a new tool that nothing

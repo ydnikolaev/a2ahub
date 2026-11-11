@@ -1,0 +1,74 @@
+schema: release-notes/v1
+version: 0.27.4
+released: unreleased
+headline: a script can ask whether this a2a is new enough, and a new repository's clock warns instead of failing
+changes:
+- id: RN-02704-0
+  kind: feat
+  impact: normal
+  subject: a2a adapt --require says whether this binary is new enough
+  detail: >
+    `a2a adapt --require <version>` exits 0 when the running binary is that
+    release or newer, and `a2a adapt --require <change-id>` exits 0 when the
+    binary's own release notes carry that change, released or written ahead.
+    Either form also exits 1 when the binary is older than the version this
+    repository adapted through. Otherwise it exits 1 with one line naming the
+    binary's version, its path and what is missing, which is usually an older
+    `a2a` first in `PATH`. A malformed argument exits 2. It is satisfied even
+    while adoption steps are owed, writes nothing, and needs no
+    `.a2a/config.yaml`.
+  action:
+    scope: none
+    why: >
+      Nothing is owed. A script or harness that depends on a feature can call it
+      before it runs.
+  roadmap:
+    visibility: shipped
+    why: >
+      A harness can now refuse to run against an a2a that is too old, instead of
+      failing later on a missing flag.
+- id: RN-02704-1
+  kind: fix
+  impact: low
+  subject: doctor warns, not fails, on an uncommitted clock before the first commit
+  detail: >
+    In a repository with no commit yet, `a2a doctor` reported the adoption row
+    as FAIL because `.a2a/config.yaml` was not committed, although there was
+    nothing to commit it with. It is now a WARN that says to commit the file
+    with the first commit, and doctor's exit code no longer changes for it. Once
+    the repository has a commit an untracked file FAILs as before, and a
+    gitignored one FAILs either way.
+  action:
+    scope: none
+    why: >
+      Nothing is owed.
+  roadmap:
+    visibility: omit
+    why: >
+      A correction of existing behaviour; a reader of the roadmap would not plan
+      around it.
+- id: RN-02704-2
+  kind: fix
+  impact: low
+  subject: adoption errors are renamed, and adapted_through is read as strict semver
+  detail: >
+    The code behind `a2a adapt`, `a2a whatsnew`, the adoption note and doctor's
+    adoption row moved to a shared library. Its error messages begin with
+    `adoption:` instead of `notes:`, name `adapted_through=` where they said
+    `baseline=`, and name the steps `ValidateClock`, `Parse` and
+    `LoadStanding` where they said `ValidateBaseline`, `ParseReleaseNotes` and
+    `LoadCurrentKnownIssues`. Versions are now read as semantic versions: a
+    hand-written `adapted_through` with a leading zero, such as `0.27.03`, no
+    longer parses and is refused, and a pre-release such as `0.28.0-rc.1` now
+    parses. For a plain version, what each command lists, prints and exits
+    with is unchanged.
+  action:
+    scope: none
+    why: >
+      Nothing is owed, unless `adapted_through` was written by hand with a
+      leading zero (write it as `0.27.3`), or a script matches the old error
+      text.
+  roadmap:
+    visibility: omit
+    why: >
+      An internal move; a reader of the roadmap would not notice it.

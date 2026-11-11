@@ -34,13 +34,13 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/contract"
 	"github.com/ydnikolaev/a2ahub/internal/fold"
 	"github.com/ydnikolaev/a2ahub/internal/host"
-	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/notification"
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/internal/spacenotify"
 	"github.com/ydnikolaev/a2ahub/internal/surface"
 	"github.com/ydnikolaev/a2ahub/internal/version"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 	"gopkg.in/yaml.v3"
 )
 
@@ -120,9 +120,9 @@ type DoctorCommand struct {
 	// clockFile, loadNotes, loadKnownIssues and execPath back the "adoption"
 	// row (doctor_adoption.go): git's view of the clock's file, the embedded
 	// corpus, and the running binary's path.
-	clockFile       func(ctx context.Context, root, path string) (doctorClockFile, error)
-	loadNotes       func() ([]notes.ReleaseNotes, error)
-	loadKnownIssues func() ([]notes.Change, error)
+	clockFile       func(ctx context.Context, root, path string) (adoption.ClockFileStatus, error)
+	loadNotes       func() ([]adoption.Release, error)
+	loadKnownIssues func() ([]adoption.Change, error)
 	execPath        func() (string, error)
 
 	// build is the binary's full identity (D-040): a local build says so on
@@ -185,7 +185,7 @@ func NewDoctorCommand(open host.Opener, binaryVersion, projectConfigPath, machin
 		readFile:          os.ReadFile,
 		lookupGit:         func() error { _, err := exec.LookPath("git"); return err },
 		cachePath:         release.CachePath,
-		clockFile:         runDoctorClockFile,
+		clockFile:         adoption.ClockFile,
 		loadNotes:         doctorLoadNotes,
 		loadKnownIssues:   doctorLoadKnownIssues,
 		execPath:          os.Executable,

@@ -4,7 +4,8 @@ package mcp
 // internal/cli's cmd_adapt.go): the READ half of `a2a adapt`, exposed as an
 // action-free, standalone tool (the a2a_whatsnew precedent, tools_whatsnew.go
 // + its registration in tools.go's registerSpaceFree) — surfacing
-// internal/notes.Pending's filtered, group-tagged obligation projection as
+// adoption.Pending's filtered, group-tagged obligation projection (with
+// a2a's notes.Policy) as
 // StructuredContent.
 //
 // `a2a whatsnew` (this tool's own sibling) already answers "what changed?"
@@ -14,7 +15,7 @@ package mcp
 // mcp_parity_test.go's own doc comment names the host-machine acts that ARE
 // excluded — adapt is not one).
 //
-// The two facts notes.Pending needs — the running binary's own version and
+// The two facts adoption.Pending needs — the running binary's own version and
 // the repository's `.a2a/config.yaml` path — are INJECTED at wire time
 // (this package's own wire.go, mirroring how newWhatsnewHandler's two
 // loaders are injected), never accepted as call arguments:
@@ -24,7 +25,7 @@ package mcp
 // an arbitrary file on the host.
 //
 // `--done` is DELIBERATELY NOT exposed: it writes .a2a/config.yaml and runs
-// this repository's own `detect:` shell commands (internal/notes/adapt.go's
+// this repository's own `detect:` shell commands (the adoption unit's
 // DetectRunner) — a repository-state write plus arbitrary shell execution,
 // neither of which belongs on a read tool. An agent that has done the work
 // still records it through `a2a adapt --done` on the host, same as `update`/
@@ -37,7 +38,7 @@ package mcp
 // cmd/a2a's own catalogue generator uses to produce the skill-drift-gated
 // "## MCP tools" section an agent reads. A caller with no real binaryVersion/
 // projectConfigPath to inject (BuildRegistry's own many test callers) gets
-// AdaptDeps{}'s zero value: notes.Pending then refuses
+// AdaptDeps{}'s zero value: adoption.Pending then refuses
 // ErrBinaryVersionUnusable for the empty binary version, exactly the
 // refusal a real `dev` build gets — never a silently empty pending list —
 // so the degraded registration is honest rather than a pretend success.
@@ -50,7 +51,7 @@ package mcp
 // one ordering question differently is this epic's own C3, and writing the
 // reason down does not make it not one.
 //
-// So the rule moved DOWN instead (ADR-019's default): notes.ImpactOrder,
+// So the rule moved DOWN instead (ADR-019's default): adoption.ImpactOrder,
 // which both surfaces already import. Both now sort (Group, ImpactOrder),
 // and a change to the impact vocabulary reaches both by construction.
 import (
@@ -63,6 +64,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // AdaptInput is a2a_adapt's structured input — empty. Every value Pending
@@ -77,9 +79,9 @@ type AdaptInput struct{}
 // cmd_adapt.go's own adaptJSONItem (Version, Group, the full Change, which
 // already carries Action.Scope).
 type AdaptPendingItem struct {
-	Version string       `json:"version"`
-	Group   int          `json:"group"`
-	Change  notes.Change `json:"change"`
+	Version string          `json:"version"`
+	Group   int             `json:"group"`
+	Change  adoption.Change `json:"change"`
 }
 
 // AdaptOutput is a2a_adapt's StructuredContent shape — mirrors cmd_adapt.go's
@@ -105,8 +107,8 @@ type AdaptOutput struct {
 // and projectConfigPath are this call's own injected facts (see this file's
 // doc comment for why they are never input-schema fields).
 func newAdaptHandler(
-	load func() ([]notes.ReleaseNotes, error),
-	loadCurrentIssues func() ([]notes.Change, error),
+	load func() ([]adoption.Release, error),
+	loadCurrentIssues func() ([]adoption.Change, error),
 	loadProjectConfig func(path string) (space.ProjectConfig, error),
 	binaryVersion string,
 	projectConfigPath string,
@@ -129,14 +131,14 @@ func newAdaptHandler(
 		// `a2a init` yet is "never adapted", not a fatal error.
 		cfg, _ := loadProjectConfig(projectConfigPath)
 
-		proj, err := notes.Pending(all, currentIssues, cfg.AdaptedThrough, binaryVersion, cfg.AdaptedAhead)
+		proj, err := adoption.Pending(all, currentIssues, adoption.Clock{Through: cfg.AdaptedThrough, Ahead: cfg.AdaptedAhead}, binaryVersion, notes.Policy())
 		if err != nil {
 			switch {
-			case errors.Is(err, notes.ErrBaselineAheadOfBinary):
+			case errors.Is(err, adoption.ErrClockAheadOfBinary):
 				return nil, "", fmt.Errorf(
 					"a2a_adapt: adapted_through (v%s) is newer than the running binary (v%s) — refusing to walk backwards",
 					cfg.AdaptedThrough, binaryVersion)
-			case errors.Is(err, notes.ErrBinaryVersionUnusable):
+			case errors.Is(err, adoption.ErrBinaryVersionUnusable):
 				return nil, "", fmt.Errorf(
 					"a2a_adapt: this binary's own version (%q) is not a comparable release version, so the obligation range from adapted_through (%q) cannot be computed — run a real release build, not a dev build",
 					binaryVersion, cfg.AdaptedThrough)
@@ -145,16 +147,16 @@ func newAdaptHandler(
 			}
 		}
 
-		items := append([]notes.PendingItem(nil), proj.Items...)
+		items := append([]adoption.PendingItem(nil), proj.Items...)
 		sort.SliceStable(items, func(i, j int) bool {
 			if items[i].Group != items[j].Group {
 				return items[i].Group < items[j].Group
 			}
-			return notes.ImpactOrder(items[i].Change.Impact) < notes.ImpactOrder(items[j].Change.Impact)
+			return adoption.ImpactOrder(items[i].Change.Impact) < adoption.ImpactOrder(items[j].Change.Impact)
 		})
 
 		out := AdaptOutput{
-			Baseline:          proj.Baseline,
+			Baseline:          proj.Clock.Through,
 			BinaryVersion:     proj.BinaryVersion,
 			Releases:          proj.Releases,
 			StartedFromOldest: proj.StartedFromOldest,
@@ -171,7 +173,7 @@ func newAdaptHandler(
 }
 
 // AdaptDeps is a2a_adapt's registration-time dependency set: the two facts
-// notes.Pending needs (BinaryVersion, ProjectConfigPath — see this file's own
+// adoption.Pending needs (BinaryVersion, ProjectConfigPath — see this file's own
 // doc comment for why neither is a call argument) plus the three loaders the
 // production defaults use, injectable so a test can drive a
 // fixed corpus/config without touching the embedded FS or the filesystem.
@@ -182,18 +184,18 @@ func newAdaptHandler(
 // caller with nothing real to inject (every BuildRegistry(...) call site
 // that predates this tool) still registers a working tool NAME — visible to
 // the catalogue and the parity surface — whose calls honestly refuse
-// (notes.ErrBinaryVersionUnusable) rather than silently answering an empty
+// (adoption.ErrBinaryVersionUnusable) rather than silently answering an empty
 // pending list.
 type AdaptDeps struct {
 	BinaryVersion     string
 	ProjectConfigPath string
-	Load              func() ([]notes.ReleaseNotes, error)
-	LoadCurrentIssues func() ([]notes.Change, error)
+	Load              func() ([]adoption.Release, error)
+	LoadCurrentIssues func() ([]adoption.Change, error)
 	LoadProjectConfig func(path string) (space.ProjectConfig, error)
 }
 
 // withDefaults fills d's three loaders with their production implementations
-// when unset (notes.Load / notes.LoadCurrentKnownIssues over releasenotes.FS,
+// when unset (adoption.Load / adoption.LoadStanding over releasenotes.FS,
 // and space.LoadProjectConfig — the same three the CLI surface defaults to)
 // — mirrors registerSpaceFree's own a2a_whatsnew registration, which
 // constructs the identical two loaders inline rather than through a struct;
@@ -202,10 +204,10 @@ type AdaptDeps struct {
 // registration-site literal.
 func (d AdaptDeps) withDefaults() AdaptDeps {
 	if d.Load == nil {
-		d.Load = func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) }
+		d.Load = func() ([]adoption.Release, error) { return adoption.Load(releasenotes.FS, notes.CorpusPattern) }
 	}
 	if d.LoadCurrentIssues == nil {
-		d.LoadCurrentIssues = func() ([]notes.Change, error) { return notes.LoadCurrentKnownIssues(releasenotes.FS) }
+		d.LoadCurrentIssues = func() ([]adoption.Change, error) { return adoption.LoadStanding(releasenotes.FS, notes.StandingPath) }
 	}
 	if d.LoadProjectConfig == nil {
 		d.LoadProjectConfig = space.LoadProjectConfig

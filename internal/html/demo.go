@@ -18,6 +18,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/workreport"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // demoJSON is the committed synthetic breadth fixture (testdata/demo.json).
@@ -42,15 +43,15 @@ func DemoData() (Data, error) {
 		return Data{}, fmt.Errorf("html: demo data: trailing content")
 	}
 	d.Vocabulary = DashboardVocabulary()
-	releases, err := notes.Load(releasenotes.FS)
+	releases, err := adoption.Load(releasenotes.FS, notes.CorpusPattern)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: demo release notes: %w", err)
 	}
-	currentIssues, err := notes.LoadCurrentKnownIssues(releasenotes.FS)
+	currentIssues, err := adoption.LoadStanding(releasenotes.FS, notes.StandingPath)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: demo current known issues: %w", err)
 	}
-	releases = notes.AttachCurrentKnownIssues(releases, releases, currentIssues)
+	releases = adoption.AttachStanding(releases, releases, currentIssues)
 	d.ReleaseNotes = toReleaseNotes(releases)
 	deriveDemoOwnership(&d)
 	// The fixture is authored by hand and carries no feed order. Deriving it

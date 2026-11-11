@@ -20,6 +20,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/operational"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 	"gopkg.in/yaml.v3"
 )
 
@@ -358,15 +359,15 @@ func AssembleWithOperationalAndContractHistory(ctx context.Context, store *cache
 	// Release notes are already embedded in the binary and parsed by the same
 	// internal/notes package as `a2a whatsnew`; the HTML view projects that
 	// corpus instead of maintaining a second changelog.
-	releases, err := notes.Load(releasenotes.FS)
+	releases, err := adoption.Load(releasenotes.FS, notes.CorpusPattern)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: release notes: %w", err)
 	}
-	currentIssues, err := notes.LoadCurrentKnownIssues(releasenotes.FS)
+	currentIssues, err := adoption.LoadStanding(releasenotes.FS, notes.StandingPath)
 	if err != nil {
 		return Data{}, fmt.Errorf("html: current known issues: %w", err)
 	}
-	releases = notes.AttachCurrentKnownIssues(releases, releases, currentIssues)
+	releases = adoption.AttachStanding(releases, releases, currentIssues)
 	d.ReleaseNotes = toReleaseNotes(releases)
 	d.Unavailable = append(d.Unavailable,
 		UnavailableFact{ID: "snapshot-v3-verdict", Scope: "all-spaces", Title: "Whole-snapshot V3 verdict", Reason: "No persisted validation run with timestamp, scope, inputs and codes is mounted in this static HTML read.", SourceClass: "unavailable"},
@@ -1758,7 +1759,7 @@ func exchangeEdges(items []cache.Item, now time.Time) []ExchangeEdge {
 	return out
 }
 
-func toReleaseNotes(in []notes.ReleaseNotes) []ReleaseNote {
+func toReleaseNotes(in []adoption.Release) []ReleaseNote {
 	out := make([]ReleaseNote, 0, len(in))
 	for _, release := range in {
 		row := ReleaseNote{

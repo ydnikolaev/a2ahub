@@ -4,29 +4,31 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 func TestRenderMarkdownUsesAuthoredNotesAsReleaseBody(t *testing.T) {
 	t.Parallel()
 
-	rn := ReleaseNotes{
+	rn := adoption.Release{
 		Version:  "1.2.3",
 		Released: "2026-07-30",
 		Headline: "Agents can finish the handoff",
-		Changes: []Change{
+		Changes: []adoption.Change{
 			{
 				Kind: "fix", Impact: "high", Subject: "Retries keep their identity",
 				Detail:  "A retry now recovers the original operation.",
 				Affects: []string{"a2a submit", "a2a respond"},
-				Action: Action{
+				Action: adoption.Action{
 					Scope: "local", Why: "Retry the same command after updating.",
 					Run: []string{"a2a update --yes", "a2a doctor"},
 				},
 			},
 			{
-				Kind: KindKnownIssue, Impact: "normal", Subject: "macOS may ask once",
+				Kind: adoption.KindKnownIssue, Impact: "normal", Subject: "macOS may ask once",
 				Detail: "The companion is ad-hoc signed.",
-				Action: Action{Scope: "none", Why: "Approve only the verified release in Privacy & Security."},
+				Action: adoption.Action{Scope: "none", Why: "Approve only the verified release in Privacy & Security."},
 			},
 		},
 	}
@@ -72,8 +74,8 @@ func TestRenderMarkdownUsesAuthoredNotesAsReleaseBody(t *testing.T) {
 func TestRenderMarkdownRendersUnreleasedSentinelAsProse(t *testing.T) {
 	t.Parallel()
 
-	got := RenderMarkdown(ReleaseNotes{
-		Version: "0.99.0", Released: UnreleasedSentinel, Headline: "Authored ahead of its tag",
+	got := RenderMarkdown(adoption.Release{
+		Version: "0.99.0", Released: adoption.Unreleased, Headline: "Authored ahead of its tag",
 	}, MarkdownOptions{})
 
 	if !strings.Contains(got, "_Not yet released._") {
@@ -87,7 +89,7 @@ func TestRenderMarkdownRendersUnreleasedSentinelAsProse(t *testing.T) {
 func TestRenderMarkdownOmitsEmptyOptionalSections(t *testing.T) {
 	t.Parallel()
 
-	got := RenderMarkdown(ReleaseNotes{
+	got := RenderMarkdown(adoption.Release{
 		Version: "1.0.0", Released: "2026-07-30", Headline: "Small release",
 	}, MarkdownOptions{})
 	if strings.Contains(got, "## What changed") || strings.Contains(got, "## Known issues") ||

@@ -21,6 +21,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/cache"
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // ErrLegacyContractWriteUnavailable reports an unavailable legacy write path.
@@ -211,8 +212,8 @@ func registerSpaceFree(r *Registry, store *cache.Store, adapt AdaptDeps) {
 			"since": {"string", "a version to query release notes/known issues since; omitted returns the newest corpus entry"},
 		}),
 		Handler: newWhatsnewHandler(
-			func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) },
-			func() ([]notes.Change, error) { return notes.LoadCurrentKnownIssues(releasenotes.FS) },
+			func() ([]adoption.Release, error) { return adoption.Load(releasenotes.FS, notes.CorpusPattern) },
+			func() ([]adoption.Change, error) { return adoption.LoadStanding(releasenotes.FS, notes.StandingPath) },
 		),
 	})
 	registerAdaptTool(r, adapt)

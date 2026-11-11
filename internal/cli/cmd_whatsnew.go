@@ -1,5 +1,5 @@
 // P31 `a2a whatsnew` (spec 31 T1): render the committed, embedded
-// release-notes corpus (internal/notes over releasenotes.FS) as an
+// release-notes corpus (the adoption unit over releasenotes.FS) as an
 // agent-consumable digest — informational only, a2a never runs a
 // `scope: space` directive itself (schemas/release-notes/v1's own
 // description). This file's only package-level symbols are
@@ -19,42 +19,43 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // whatsnewImpactRank orders a Change's `impact` (schema enum: high, normal,
 // low) high-to-normal-to-low for the text digest; an unrecognized impact
 // (never emitted by a schema-valid corpus, but not this command's job to
 // re-validate) sorts last rather than erroring.
-// whatsnewImpactOrder delegates to notes.ImpactOrder, which owns the rule.
+// whatsnewImpactOrder delegates to adoption.ImpactOrder, which owns the rule.
 // It moved down on 2026-08-29 (ADR-019) because internal/mcp needs the same
 // tie-break and may not import this package; this wrapper stays so the
 // call sites here read unchanged.
-func whatsnewImpactOrder(impact string) int { return notes.ImpactOrder(impact) }
+func whatsnewImpactOrder(impact string) int { return adoption.ImpactOrder(impact) }
 
 // whatsnewDetailWidth is the wrapped-detail line's target column count
 // (indent included).
 const whatsnewDetailWidth = 76
 
 // WhatsnewCommand implements `a2a whatsnew [--since <v>] [--json]` (P31):
-// a thin flags-in/JSON-or-text-out wrapper over internal/notes — zero
+// a thin flags-in/JSON-or-text-out wrapper over the adoption unit — zero
 // business rules live here (ADR-001 "thin frontend").
 type WhatsnewCommand struct {
 	binaryVersion     string
-	load              func() ([]notes.ReleaseNotes, error)
-	loadCurrentIssues func() ([]notes.Change, error)
+	load              func() ([]adoption.Release, error)
+	loadCurrentIssues func() ([]adoption.Change, error)
 }
 
 // NewWhatsnewCommand constructs the whatsnew command. binaryVersion is this
 // build's own version stamp (injected, same convention as
 // NewUpdateCommand/NewDoctorCommand — tests control it directly). load
-// defaults to the real embedded corpus (notes.Load(releasenotes.FS));
+// defaults to the real embedded corpus (adoption.Load over releasenotes.FS);
 // tests override it to drive a fixed corpus.
 func NewWhatsnewCommand(binaryVersion string) *WhatsnewCommand {
 	return &WhatsnewCommand{
 		binaryVersion: binaryVersion,
-		load:          func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) },
-		loadCurrentIssues: func() ([]notes.Change, error) {
-			return notes.LoadCurrentKnownIssues(releasenotes.FS)
+		load:          func() ([]adoption.Release, error) { return adoption.Load(releasenotes.FS, notes.CorpusPattern) },
+		loadCurrentIssues: func() ([]adoption.Change, error) {
+			return adoption.LoadStanding(releasenotes.FS, notes.StandingPath)
 		},
 	}
 }
@@ -74,7 +75,7 @@ func (c *WhatsnewCommand) Run(_ context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("whatsnew", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	sinceFlag := fs.String("since", "", "show notes strictly newer than this version")
-	jsonFlag := fs.Bool("json", false, "machine-readable output ([]notes.ReleaseNotes)")
+	jsonFlag := fs.Bool("json", false, "machine-readable output ([]adoption.Release)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -106,15 +107,15 @@ func (c *WhatsnewCommand) Run(_ context.Context, args []string, stdio IO) int {
 		upto = ""
 	}
 
-	var slice []notes.ReleaseNotes
+	var slice []adoption.Release
 	if *sinceFlag != "" {
-		slice = notes.Since(all, *sinceFlag, upto)
-	} else if rn, ok := notes.Exactly(all, c.binaryVersion); ok {
-		slice = []notes.ReleaseNotes{rn}
+		slice = adoption.Since(all, *sinceFlag, upto)
+	} else if rn, ok := adoption.Exactly(all, c.binaryVersion); ok {
+		slice = []adoption.Release{rn}
 	} else {
-		slice = []notes.ReleaseNotes{}
+		slice = []adoption.Release{}
 	}
-	slice = notes.AttachCurrentKnownIssues(slice, all, currentIssues)
+	slice = adoption.AttachStanding(slice, all, currentIssues)
 
 	if *jsonFlag {
 		enc := json.NewEncoder(stdio.Stdout)
@@ -131,10 +132,10 @@ func (c *WhatsnewCommand) Run(_ context.Context, args []string, stdio IO) int {
 }
 
 // whatsnewRenderText renders the digest: newest release first (slice is
-// version-ascending, notes.Load's own postcondition), each release's
+// version-ascending, adoption.Load's own postcondition), each release's
 // changes ordered high->normal->low impact, and — for any change whose
 // Action.Scope is not "none" — the directive's why/detect/run.
-func whatsnewRenderText(stdio IO, slice []notes.ReleaseNotes, since, binaryVersion string) {
+func whatsnewRenderText(stdio IO, slice []adoption.Release, since, binaryVersion string) {
 	if len(slice) == 0 {
 		if since != "" {
 			_, _ = fmt.Fprintf(stdio.Stdout, "no release notes since %s\n", since)
@@ -148,7 +149,7 @@ func whatsnewRenderText(stdio IO, slice []notes.ReleaseNotes, since, binaryVersi
 		rn := slice[i]
 		_, _ = fmt.Fprintf(stdio.Stdout, "v%s (%s) — %s\n", rn.Version, rn.Released, rn.Headline)
 
-		changes := append([]notes.Change(nil), rn.Changes...)
+		changes := append([]adoption.Change(nil), rn.Changes...)
 		// A known-issue is not a change and must not be read as one: it says
 		// "this is broken right now, use the other thing". Sorted to the TOP
 		// regardless of impact, because a reader who stops after the first line
@@ -156,7 +157,7 @@ func whatsnewRenderText(stdio IO, slice []notes.ReleaseNotes, since, binaryVersi
 		// acting on a surface it should be avoiding gets a wrong answer with no
 		// error. Within each group the existing impact order still applies.
 		sort.SliceStable(changes, func(a, b int) bool {
-			ka, kb := changes[a].Kind == notes.KindKnownIssue, changes[b].Kind == notes.KindKnownIssue
+			ka, kb := changes[a].Kind == adoption.KindKnownIssue, changes[b].Kind == adoption.KindKnownIssue
 			if ka != kb {
 				return ka
 			}
@@ -169,7 +170,7 @@ func whatsnewRenderText(stdio IO, slice []notes.ReleaseNotes, since, binaryVersi
 			// the kind existed — makes a standing limitation indistinguishable
 			// from a feature, and this text is the update notice's own body.
 			label := ch.Impact
-			if ch.Kind == notes.KindKnownIssue {
+			if ch.Kind == adoption.KindKnownIssue {
 				label = "KNOWN ISSUE"
 			}
 			_, _ = fmt.Fprintf(stdio.Stdout, "  [%s] %s\n", label, ch.Subject)
@@ -184,7 +185,7 @@ func whatsnewRenderText(stdio IO, slice []notes.ReleaseNotes, since, binaryVersi
 				if len(ch.Action.Run) > 0 {
 					_, _ = fmt.Fprintf(stdio.Stdout, "      run: %s\n", strings.Join(ch.Action.Run, ", "))
 				}
-			} else if ch.Kind == notes.KindKnownIssue {
+			} else if ch.Kind == adoption.KindKnownIssue {
 				// scope:none normally means "nothing to do", so the why is
 				// suppressed. For a known issue the why IS the payload — it
 				// names the working alternative.

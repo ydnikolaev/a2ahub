@@ -96,7 +96,6 @@ kind-groups: 5
 1 internal/mcp/tools_read.go
 2 internal/mcp/tools_submit.go
 5 internal/mcp/tools_work.go
-3 internal/notes/notes.go
 2 internal/notification/operations.go
 5 internal/notification/types.go
 3 internal/operational/types.go

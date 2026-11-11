@@ -17,7 +17,7 @@
 #      DATE for a version with no `git tag` reachable from this checkout.
 #      Notes may NAME an uncut version (docs/runbooks/release.md Phase 1 step
 #      1); they may not claim it shipped on a date it hasn't. The sentinel
-#      (`released: unreleased` — internal/notes.UnreleasedSentinel,
+#      (`released: unreleased` — adoption.Unreleased (go-foundation),
 #      schemas/release-notes/v1/release-notes.schema.json) is what keeps that
 #      window honest without blocking authoring ahead of the tag.
 #

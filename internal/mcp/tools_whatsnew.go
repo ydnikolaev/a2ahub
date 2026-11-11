@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // WhatsnewInput is a2a_whatsnew's structured input.
@@ -25,8 +25,8 @@ type WhatsnewInput struct {
 // (mirrors NewWhatsnewCommand) so tests drive fixed release history and current
 // limitations independently.
 func newWhatsnewHandler(
-	load func() ([]notes.ReleaseNotes, error),
-	loadCurrentIssues func() ([]notes.Change, error),
+	load func() ([]adoption.Release, error),
+	loadCurrentIssues func() ([]adoption.Change, error),
 ) HandlerFunc {
 	return func(_ context.Context, args json.RawMessage) (any, string, error) {
 		var in WhatsnewInput
@@ -44,13 +44,13 @@ func newWhatsnewHandler(
 		}
 
 		if in.Since != "" {
-			selected := notes.Since(all, in.Since, "")
-			return notes.AttachCurrentKnownIssues(selected, all, currentIssues), "", nil
+			selected := adoption.Since(all, in.Since, "")
+			return adoption.AttachStanding(selected, all, currentIssues), "", nil
 		}
 		if len(all) == 0 {
-			return []notes.ReleaseNotes{}, "", nil
+			return []adoption.Release{}, "", nil
 		}
-		selected := []notes.ReleaseNotes{all[len(all)-1]}
-		return notes.AttachCurrentKnownIssues(selected, all, currentIssues), "", nil
+		selected := []adoption.Release{all[len(all)-1]}
+		return adoption.AttachStanding(selected, all, currentIssues), "", nil
 	}
 }

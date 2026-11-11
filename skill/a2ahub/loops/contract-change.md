@@ -313,6 +313,22 @@ sees you, and that deprecation still reaches your inbox.
    written it refuses naming what to confirm: that `.a2a/config.yaml` exists,
    is valid YAML with a mapping at its root, and is writable.
 
+   **`a2a adapt --require <version|change-id>` asks whether THIS binary is new
+   enough**, for a script or harness that must not run against an older `a2a`
+   first in `PATH`. A version (`0.27.4` or `v0.27.4`) is satisfied when the
+   binary is that release or newer; a change id (`RN-02704-0`, the `id` field
+   `a2a whatsnew --json` and `a2a adapt --json` print) is satisfied only when
+   the binary's own release notes carry that change, released or written
+   ahead — an id in this repository's `adapted_ahead` that the binary lacks
+   means the binary is stale. Either form also exits `1` when the binary is
+   older than this repository's `adapted_through`. It exits `0` when
+   satisfied — even while adoption steps are owed, which is a separate
+   question — and `1` with one stderr line naming the binary's version, its
+   path and what is missing; a malformed argument exits `2`. It prints
+   nothing else, writes nothing, needs no `.a2a/config.yaml` (without one the
+   clock check is skipped), and cannot be combined with `--done` or `--json`. A `dev`
+   build cannot show it is any release, so the version form exits `1` there.
+
    **A repository that never recorded a clock sets the first one by hand
    (D-044).** Its range reaches back to the oldest release, and obligations
    from before it was onboarded describe states it never had, so `--done`
@@ -355,7 +371,9 @@ sees you, and that deprecation still reaches your inbox.
    touches stdout or the exit code. The doctor's `adoption` row says the
    same and FAILs when `.a2a/config.yaml` is gitignored or untracked,
    because a clock that is not committed is lost to every clone and
-   worktree. A re-run of `a2a init`, for example to add a space, keeps the
+   worktree. In a repository with no commit yet, an untracked file is a WARN
+   instead: there is nothing to have committed it with, so commit it with the
+   first one. A gitignored file FAILs either way. A re-run of `a2a init`, for example to add a space, keeps the
    recorded clock.
 
    Two refusals worth knowing before you meet them. A baseline NEWER than

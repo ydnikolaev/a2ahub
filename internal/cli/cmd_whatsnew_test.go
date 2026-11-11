@@ -8,49 +8,49 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // whatsnewFixtureCorpus is a fixed, already version-ascending 3-entry
-// corpus (mirrors notes.Load's own postcondition) covering every impact
+// corpus (mirrors adoption.Load's own postcondition) covering every impact
 // (high/normal/low) and every Action.Scope (space/local/none) the render
 // path branches on.
-func whatsnewFixtureCorpus() []notes.ReleaseNotes {
-	return []notes.ReleaseNotes{
+func whatsnewFixtureCorpus() []adoption.Release {
+	return []adoption.Release{
 		{
 			Schema: "release-notes/v1", Version: "0.2.0", Released: "2026-01-01", Headline: "H2",
-			Changes: []notes.Change{
+			Changes: []adoption.Change{
 				{ID: "A", Kind: "feat", Impact: "low", Subject: "s2-low", Detail: "detail two",
-					Action: notes.Action{Scope: "none", Why: "w2"}},
+					Action: adoption.Action{Scope: "none", Why: "w2"}},
 			},
 		},
 		{
 			Schema: "release-notes/v1", Version: "0.3.0", Released: "2026-02-01", Headline: "H3",
-			Changes: []notes.Change{
+			Changes: []adoption.Change{
 				{ID: "B", Kind: "fix", Impact: "high", Subject: "s3-high", Detail: "detail three high",
-					Action: notes.Action{Scope: "space", Why: "w3", Detect: []string{"a2a outbox --json"}, Run: []string{"a2a lifecycle ack X"}}},
+					Action: adoption.Action{Scope: "space", Why: "w3", Detect: []string{"a2a outbox --json"}, Run: []string{"a2a lifecycle ack X"}}},
 				{ID: "C", Kind: "feat", Impact: "normal", Subject: "s3-normal", Detail: "detail three normal",
-					Action: notes.Action{Scope: "none", Why: "w3n"}},
+					Action: adoption.Action{Scope: "none", Why: "w3n"}},
 			},
 		},
 		{
 			Schema: "release-notes/v1", Version: "0.4.0", Released: "2026-03-01", Headline: "H4",
-			Changes: []notes.Change{
+			Changes: []adoption.Change{
 				{ID: "D", Kind: "feat", Impact: "normal", Subject: "s4-local", Detail: "detail four local",
-					Action: notes.Action{Scope: "local", Why: "w4"}},
+					Action: adoption.Action{Scope: "local", Why: "w4"}},
 			},
 		},
 	}
 }
 
-func whatsnewTestCommand(binaryVersion string, load func() ([]notes.ReleaseNotes, error)) *WhatsnewCommand {
+func whatsnewTestCommand(binaryVersion string, load func() ([]adoption.Release, error)) *WhatsnewCommand {
 	c := NewWhatsnewCommand(binaryVersion)
 	c.load = load
-	c.loadCurrentIssues = func() ([]notes.Change, error) { return nil, nil }
+	c.loadCurrentIssues = func() ([]adoption.Change, error) { return nil, nil }
 	return c
 }
 
-func fixedWhatsnewLoad() ([]notes.ReleaseNotes, error) {
+func fixedWhatsnewLoad() ([]adoption.Release, error) {
 	return whatsnewFixtureCorpus(), nil
 }
 
@@ -127,11 +127,11 @@ func TestWhatsnewSinceWorksOnDevBuildUnbounded(t *testing.T) {
 func TestWhatsnewCurrentIssuesSurviveAnEmptySinceRange(t *testing.T) {
 	t.Parallel()
 	c := whatsnewTestCommand("0.4.0", fixedWhatsnewLoad)
-	c.loadCurrentIssues = func() ([]notes.Change, error) {
-		return []notes.Change{{
-			ID: "KI-MACOS-ADHOC-SIGNING", Kind: notes.KindKnownIssue,
+	c.loadCurrentIssues = func() ([]adoption.Change, error) {
+		return []adoption.Change{{
+			ID: "KI-MACOS-ADHOC-SIGNING", Kind: adoption.KindKnownIssue,
 			Impact: "normal", Subject: "macOS may ask once", Detail: "ad-hoc signed",
-			Action: notes.Action{Scope: "none", Why: "approve only the verified release"},
+			Action: adoption.Action{Scope: "none", Why: "approve only the verified release"},
 		}}, nil
 	}
 
@@ -140,7 +140,7 @@ func TestWhatsnewCurrentIssuesSurviveAnEmptySinceRange(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, errOut.String())
 	}
-	var decoded []notes.ReleaseNotes
+	var decoded []adoption.Release
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("decode JSON: %v\n%s", err, out.String())
 	}
@@ -158,7 +158,7 @@ func TestWhatsnewJSONShape(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, errOut.String())
 	}
-	var decoded []notes.ReleaseNotes
+	var decoded []adoption.Release
 	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 		t.Fatalf("expected valid JSON: %v\noutput: %s", err, out.String())
 	}
@@ -167,7 +167,7 @@ func TestWhatsnewJSONShape(t *testing.T) {
 	}
 	// Regression guard (S8 audit LOW): --json is the agent-facing machine
 	// contract — it must emit snake_case keys and NEVER the internal Raw
-	// byte blob. notes.ReleaseNotes.Raw carries json:"-"; this pins that a
+	// byte blob. adoption.Release.Raw carries json:"-"; this pins that a
 	// future tag removal would break the test, not silently leak.
 	js := out.String()
 	for _, forbidden := range []string{`"Raw"`, `"raw"`, `"Schema"`, `"Changes"`} {
@@ -219,7 +219,7 @@ func TestWhatsnewUsageErrorOnBadFlag(t *testing.T) {
 func TestWhatsnewLoadError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("corpus load boom")
-	c := whatsnewTestCommand("0.4.0", func() ([]notes.ReleaseNotes, error) { return nil, wantErr })
+	c := whatsnewTestCommand("0.4.0", func() ([]adoption.Release, error) { return nil, wantErr })
 	var out, errOut bytes.Buffer
 	code := c.Run(context.Background(), nil, IO{Stdout: &out, Stderr: &errOut})
 	if code != 1 {

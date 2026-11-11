@@ -6,26 +6,26 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/space"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
-func testAdaptCorpus() []notes.ReleaseNotes {
-	return []notes.ReleaseNotes{
-		{Version: "0.1.0", Released: "2026-01-01", Headline: "H1", Changes: []notes.Change{
+func testAdaptCorpus() []adoption.Release {
+	return []adoption.Release{
+		{Version: "0.1.0", Released: "2026-01-01", Headline: "H1", Changes: []adoption.Change{
 			{ID: "A", Kind: "feat", Impact: "low", Subject: "local one", Detail: "d1",
-				Action: notes.Action{Scope: "local", Why: "w1", Run: []string{"echo hi"}}},
+				Action: adoption.Action{Scope: "local", Why: "w1", Run: []string{"echo hi"}}},
 		}},
-		{Version: "0.2.0", Released: "2026-02-01", Headline: "H2", Changes: []notes.Change{
+		{Version: "0.2.0", Released: "2026-02-01", Headline: "H2", Changes: []adoption.Change{
 			{ID: "B", Kind: "fix", Impact: "high", Subject: "space one", Detail: "d2",
-				Action: notes.Action{Scope: "space", Why: "w2"}},
+				Action: adoption.Action{Scope: "space", Why: "w2"}},
 			{ID: "C", Kind: "fix", Impact: "normal", Subject: "not obliging", Detail: "d3",
-				Action: notes.Action{Scope: "none", Why: "w3"}},
+				Action: adoption.Action{Scope: "none", Why: "w3"}},
 		}},
 	}
 }
 
-func noAdaptCurrentIssues() ([]notes.Change, error) { return nil, nil }
+func noAdaptCurrentIssues() ([]adoption.Change, error) { return nil, nil }
 
 func fakeAdaptProjectConfig(baseline string) func(string) (space.ProjectConfig, error) {
 	return func(string) (space.ProjectConfig, error) {
@@ -36,7 +36,7 @@ func fakeAdaptProjectConfig(baseline string) func(string) (space.ProjectConfig, 
 func TestAdaptHandlerReturnsPendingProjectionSortedByGroup(t *testing.T) {
 	t.Parallel()
 	handler := newAdaptHandler(
-		func() ([]notes.ReleaseNotes, error) { return testAdaptCorpus(), nil },
+		func() ([]adoption.Release, error) { return testAdaptCorpus(), nil },
 		noAdaptCurrentIssues,
 		fakeAdaptProjectConfig(""),
 		"0.2.0",
@@ -60,7 +60,7 @@ func TestAdaptHandlerReturnsPendingProjectionSortedByGroup(t *testing.T) {
 	if out.Count != 2 || len(out.Pending) != 2 {
 		t.Fatalf("expected 2 obligations (scope:none excluded), got %#v", out)
 	}
-	// GroupLocalWithRun (0) sorts before GroupSpace (2).
+	// GroupLocalWithRun (0) sorts before GroupParty (2).
 	if out.Pending[0].Change.ID != "A" || out.Pending[1].Change.ID != "B" {
 		t.Fatalf("expected [A, B] group order, got [%s, %s]", out.Pending[0].Change.ID, out.Pending[1].Change.ID)
 	}
@@ -72,7 +72,7 @@ func TestAdaptHandlerReturnsPendingProjectionSortedByGroup(t *testing.T) {
 func TestAdaptHandlerBaselineAheadOfBinaryRefusesNamingBothClocks(t *testing.T) {
 	t.Parallel()
 	handler := newAdaptHandler(
-		func() ([]notes.ReleaseNotes, error) { return testAdaptCorpus(), nil },
+		func() ([]adoption.Release, error) { return testAdaptCorpus(), nil },
 		noAdaptCurrentIssues,
 		fakeAdaptProjectConfig("0.5.0"),
 		"0.2.0",
@@ -91,7 +91,7 @@ func TestAdaptHandlerBaselineAheadOfBinaryRefusesNamingBothClocks(t *testing.T) 
 func TestAdaptHandlerUnusableBinaryVersionRefusesRatherThanEmptyList(t *testing.T) {
 	t.Parallel()
 	handler := newAdaptHandler(
-		func() ([]notes.ReleaseNotes, error) { return testAdaptCorpus(), nil },
+		func() ([]adoption.Release, error) { return testAdaptCorpus(), nil },
 		noAdaptCurrentIssues,
 		fakeAdaptProjectConfig(""),
 		"dev",
@@ -111,7 +111,7 @@ func TestAdaptHandlerLoadErrorPropagates(t *testing.T) {
 	t.Parallel()
 	wantErr := "corpus load boom"
 	handler := newAdaptHandler(
-		func() ([]notes.ReleaseNotes, error) { return nil, &testAdaptLoadError{msg: wantErr} },
+		func() ([]adoption.Release, error) { return nil, &testAdaptLoadError{msg: wantErr} },
 		noAdaptCurrentIssues,
 		fakeAdaptProjectConfig(""),
 		"0.2.0",
@@ -131,7 +131,7 @@ func (e *testAdaptLoadError) Error() string { return e.msg }
 func TestAdaptHandlerRejectsUnknownField(t *testing.T) {
 	t.Parallel()
 	handler := newAdaptHandler(
-		func() ([]notes.ReleaseNotes, error) { return testAdaptCorpus(), nil },
+		func() ([]adoption.Release, error) { return testAdaptCorpus(), nil },
 		noAdaptCurrentIssues,
 		fakeAdaptProjectConfig(""),
 		"0.2.0",

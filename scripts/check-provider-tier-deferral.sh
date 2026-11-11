@@ -157,7 +157,7 @@ added_at() {
 # record)". It had shipped nothing. Nothing had been deferred, because nothing
 # had been cut.
 #
-# The sentinel is not invented here. It is `internal/notes.UnreleasedSentinel`,
+# The sentinel is not invented here. It is `adoption.Unreleased (go-foundation)`,
 # it is in `schemas/release-notes/v1/release-notes.schema.json`, and
 # `scripts/check-release-record.sh`'s own header states its purpose in one
 # line: it "keeps that window honest without blocking authoring ahead of the

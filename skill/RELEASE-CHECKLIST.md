@@ -51,7 +51,7 @@ said it was refused. RN-02702-9 was already in `reference/threads.md`.
 
 1. RN-02702-14: `loops/contract-change.md` still said `--done` runs every
    detect. `runDone` in `internal/cli/cmd_adapt.go` refuses a never-clocked
-   repository first, and `notes.TemplateOnly` items are never run. The refusal
+   repository first, and `adoption.TemplateOnly` items are never run. The refusal
    (`adaptOnboardingProcedure`) and `template_only` were on no page.
 2. RN-02702-12: `a2a space update --check` (`cmd_space.go`, `spacesToCheck` in
    `cmd/a2a/wire.go`) was on no page, nor the `--done` refusal it explains.

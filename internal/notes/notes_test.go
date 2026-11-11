@@ -1,18 +1,16 @@
 package notes
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	"github.com/ydnikolaev/a2ahub/internal/schema"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,15 +20,15 @@ import (
 // this package's own invariants (version matches filename, change ids
 // unique within a file).
 func TestLoad_CorpusIntegrity(t *testing.T) {
-	all, err := Load(releasenotes.FS)
+	all, err := adoption.Load(releasenotes.FS, CorpusPattern)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	// Deliberately hardcoded: this is the tripwire that catches a corpus
 	// file accidentally dropped or mis-ordered. Bump it when you cut a
 	// release — that edit IS the check.
-	if len(all) != 63 {
-		t.Fatalf("Load returned %d entries, want 63: %+v", len(all), all)
+	if len(all) != 64 {
+		t.Fatalf("Load returned %d entries, want 64: %+v", len(all), all)
 	}
 
 	// 0.11.0 is present BEFORE its tag, deliberately: its entries were
@@ -38,7 +36,7 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 	// actually accurate. Its `released:` date is provisional and is corrected
 	// when the tag is cut — and this tripwire is what forces whoever cuts it
 	// to open the file, so the correction cannot be forgotten.
-	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.15.0", "0.15.1", "0.15.2", "0.16.0", "0.16.1", "0.16.2", "0.16.3", "0.17.0", "0.17.1", "0.18.0", "0.18.1", "0.18.2", "0.19.0", "0.19.1", "0.19.2", "0.19.3", "0.19.4", "0.19.5", "0.19.6", "0.19.7", "0.19.8", "0.19.9", "0.19.10", "0.19.11", "0.20.0", "0.21.0", "0.22.0", "0.23.0", "0.24.0", "0.25.0", "0.25.1", "0.25.2", "0.25.3", "0.25.4", "0.25.5", "0.25.6", "0.25.7", "0.25.8", "0.26.0", "0.26.1", "0.26.2", "0.26.3", "0.27.0", "0.27.1", "0.27.2", "0.27.3"}
+	wantVersions := []string{"0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.6.2", "0.6.3", "0.6.4", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.15.0", "0.15.1", "0.15.2", "0.16.0", "0.16.1", "0.16.2", "0.16.3", "0.17.0", "0.17.1", "0.18.0", "0.18.1", "0.18.2", "0.19.0", "0.19.1", "0.19.2", "0.19.3", "0.19.4", "0.19.5", "0.19.6", "0.19.7", "0.19.8", "0.19.9", "0.19.10", "0.19.11", "0.20.0", "0.21.0", "0.22.0", "0.23.0", "0.24.0", "0.25.0", "0.25.1", "0.25.2", "0.25.3", "0.25.4", "0.25.5", "0.25.6", "0.25.7", "0.25.8", "0.26.0", "0.26.1", "0.26.2", "0.26.3", "0.27.0", "0.27.1", "0.27.2", "0.27.3", "0.27.4"}
 	standingListEra := false
 	for i, rn := range all {
 		if rn.Version != wantVersions[i] {
@@ -49,9 +47,9 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 		}
 		if standingListEra {
 			for _, change := range rn.Changes {
-				if change.Kind == KindKnownIssue {
+				if change.Kind == adoption.KindKnownIssue {
 					t.Errorf("%s.yaml: current known issue %q must live only in %s",
-						rn.Version, change.ID, currentKnownIssuesPath)
+						rn.Version, change.ID, StandingPath)
 				}
 			}
 		}
@@ -102,17 +100,17 @@ func TestLoad_CorpusIntegrity(t *testing.T) {
 func TestCurrentKnownIssues_CorpusIntegrity(t *testing.T) {
 	t.Parallel()
 
-	issues, err := LoadCurrentKnownIssues(releasenotes.FS)
+	issues, err := adoption.LoadStanding(releasenotes.FS, StandingPath)
 	if err != nil {
-		t.Fatalf("LoadCurrentKnownIssues: %v", err)
+		t.Fatalf("LoadStanding: %v", err)
 	}
-	raw, err := releasenotes.FS.ReadFile(currentKnownIssuesPath)
+	raw, err := releasenotes.FS.ReadFile(StandingPath)
 	if err != nil {
-		t.Fatalf("read %s: %v", currentKnownIssuesPath, err)
+		t.Fatalf("read %s: %v", StandingPath, err)
 	}
 	var doc any
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		t.Fatalf("%s: yaml.Unmarshal: %v", currentKnownIssuesPath, err)
+		t.Fatalf("%s: yaml.Unmarshal: %v", StandingPath, err)
 	}
 	corpus, err := schema.Load()
 	if err != nil {
@@ -123,16 +121,16 @@ func TestCurrentKnownIssues_CorpusIntegrity(t *testing.T) {
 		t.Fatalf("ValidateKnownIssues: %v", err)
 	}
 	if len(violations) != 0 {
-		t.Fatalf("%s: schema violations: %+v", currentKnownIssuesPath, violations)
+		t.Fatalf("%s: schema violations: %+v", StandingPath, violations)
 	}
 
 	seen := make(map[string]struct{}, len(issues))
 	for _, issue := range issues {
-		if issue.Kind != KindKnownIssue {
-			t.Errorf("%s: %s has kind %q", currentKnownIssuesPath, issue.ID, issue.Kind)
+		if issue.Kind != adoption.KindKnownIssue {
+			t.Errorf("%s: %s has kind %q", StandingPath, issue.ID, issue.Kind)
 		}
 		if _, duplicate := seen[issue.ID]; duplicate {
-			t.Errorf("%s: duplicate issue id %q", currentKnownIssuesPath, issue.ID)
+			t.Errorf("%s: duplicate issue id %q", StandingPath, issue.ID)
 		}
 		seen[issue.ID] = struct{}{}
 	}
@@ -206,7 +204,7 @@ func reusableWorkflowPaths(t *testing.T) []string {
 func TestReusableRefDefaultMatchesTheNewestAuthoredVersion(t *testing.T) {
 	t.Parallel()
 
-	all, err := Load(releasenotes.FS)
+	all, err := adoption.Load(releasenotes.FS, CorpusPattern)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -378,52 +376,11 @@ func TestReusableRefDefault_ScopesToItsOwnInput(t *testing.T) {
 	}
 }
 
-func TestParseReleaseNotes_InvalidYAML(t *testing.T) {
-	_, err := ParseReleaseNotes([]byte("not: [valid: yaml"))
-	if err == nil {
-		t.Fatal("expected an error for malformed yaml")
-	}
-	if !errors.Is(err, ErrReleaseNotesInvalid) {
-		t.Errorf("error = %v, want wrapping ErrReleaseNotesInvalid", err)
-	}
-}
-
-func TestParseReleaseNotes_Valid(t *testing.T) {
-	raw := []byte(`
-schema: release-notes/v1
-version: "1.2.3"
-released: "2026-01-01"
-headline: "test"
-changes:
-  - id: RN-TEST-1
-    kind: feat
-    impact: low
-    subject: "s"
-    detail: "d"
-    action:
-      scope: none
-      why: "y"
-`)
-	rn, err := ParseReleaseNotes(raw)
-	if err != nil {
-		t.Fatalf("ParseReleaseNotes: %v", err)
-	}
-	if rn.Version != "1.2.3" {
-		t.Errorf("Version = %q, want 1.2.3", rn.Version)
-	}
-	if len(rn.Changes) != 1 || rn.Changes[0].ID != "RN-TEST-1" {
-		t.Errorf("Changes = %+v", rn.Changes)
-	}
-	if string(rn.Raw) != string(raw) {
-		t.Error("Raw does not match input bytes")
-	}
-}
-
 // TestParseReleaseNotes_UnreleasedSentinelPassesThrough is the other half of
 // AC2 (one-answer-2026-08 P6): CLI (`a2a whatsnew`), the MCP
 // StructuredContent, and internal/html's ReleaseNote projection all print
-// ReleaseNotes.Released verbatim (they hold no special-case for it), so
-// proving ParseReleaseNotes preserves the sentinel string unmodified is
+// Release.Released verbatim (they hold no special-case for it), so
+// proving adoption.Parse preserves the sentinel string unmodified is
 // sufficient evidence those three surfaces render it as "unreleased" too.
 // RenderMarkdown (this package's own GitHub-Release-body renderer) is the one
 // surface that is NOT a pass-through and gets its own test — see
@@ -444,189 +401,12 @@ changes:
       scope: none
       why: "y"
 `)
-	rn, err := ParseReleaseNotes(raw)
+	rn, err := adoption.Parse(raw)
 	if err != nil {
-		t.Fatalf("ParseReleaseNotes: %v", err)
+		t.Fatalf("adoption.Parse: %v", err)
 	}
-	if rn.Released != UnreleasedSentinel {
-		t.Errorf("Released = %q, want the UnreleasedSentinel %q", rn.Released, UnreleasedSentinel)
-	}
-}
-
-func TestLoad_GlobError(t *testing.T) {
-	// fstest.MapFS never returns an error from fs.Glob for a valid
-	// pattern, so exercise the parse-failure path instead: a malformed
-	// *.yaml file in the fs.FS must surface as an error from Load, not a
-	// silently-dropped entry.
-	fsys := fstest.MapFS{
-		"bad.yaml": &fstest.MapFile{Data: []byte("not: [valid: yaml")},
-	}
-	if _, err := Load(fsys); err == nil {
-		t.Fatal("expected an error for a malformed corpus file")
-	}
-}
-
-func TestLoad_EmptyFS(t *testing.T) {
-	fsys := fstest.MapFS{}
-	all, err := Load(fsys)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if len(all) != 0 {
-		t.Errorf("Load on empty fs = %d entries, want 0", len(all))
-	}
-}
-
-func TestLoad_ReadFileError(t *testing.T) {
-	// A fs.FS whose ReadFile always errors must surface that as Load's
-	// error, never a silently-dropped entry.
-	if _, err := Load(erroringFS{}); err == nil {
-		t.Fatal("expected an error when ReadFile fails")
-	}
-}
-
-// erroringFS is a minimal fs.FS whose Open (and therefore ReadFile) always
-// fails, used to exercise Load's read-error path.
-type erroringFS struct{}
-
-func (erroringFS) Open(name string) (fs.File, error) {
-	return nil, errors.New("erroringFS: open always fails")
-}
-
-func (erroringFS) Glob(pattern string) ([]string, error) {
-	return []string{"0.1.0.yaml"}, nil
-}
-
-func TestSince(t *testing.T) {
-	// Synthetic corpus on purpose. Since is a pure range filter — its
-	// behavior has nothing to do with which releases happen to be shipped,
-	// and pinning it to the real corpus made every release edit this test's
-	// open-ended cases. The corpus itself is guarded by
-	// TestLoad_CorpusIntegrity, which is where that assertion belongs.
-	all := []ReleaseNotes{
-		{Version: "0.2.0"}, {Version: "0.3.0"}, {Version: "0.4.0"},
-	}
-
-	got := versionsOf(Since(all, "0.2.0", "0.4.0"))
-	want := []string{"0.3.0", "0.4.0"}
-	assertVersionsEqual(t, "Since(0.2.0,0.4.0)", got, want)
-
-	got = versionsOf(Since(all, "", "0.3.0"))
-	want = []string{"0.2.0", "0.3.0"}
-	assertVersionsEqual(t, `Since("",0.3.0)`, got, want)
-
-	got = versionsOf(Since(all, "0.3.0", ""))
-	want = []string{"0.4.0"}
-	assertVersionsEqual(t, `Since(0.3.0,"")`, got, want)
-
-	got = versionsOf(Since(all, "", ""))
-	want = []string{"0.2.0", "0.3.0", "0.4.0"}
-	assertVersionsEqual(t, `Since("","")`, got, want)
-}
-
-func TestLoadCurrentKnownIssuesAndAttachIndependentlyOfSince(t *testing.T) {
-	t.Parallel()
-
-	fsys := fstest.MapFS{
-		currentKnownIssuesPath: &fstest.MapFile{Data: []byte(`
-schema: known-issues/v1
-issues:
-  - id: KI-MACOS-ADHOC-SIGNING
-    kind: known-issue
-    impact: normal
-    subject: "macOS may ask once"
-    detail: "The companion is ad-hoc signed."
-    action:
-      scope: none
-      why: "Approve only the verified release."
-`)},
-	}
-	issues, err := LoadCurrentKnownIssues(fsys)
-	if err != nil {
-		t.Fatalf("LoadCurrentKnownIssues: %v", err)
-	}
-	if len(issues) != 1 || issues[0].ID != "KI-MACOS-ADHOC-SIGNING" {
-		t.Fatalf("issues = %+v, want the standing macOS issue", issues)
-	}
-	badFS := fstest.MapFS{
-		currentKnownIssuesPath: &fstest.MapFile{Data: []byte("issues: [not: valid")},
-	}
-	if _, err := LoadCurrentKnownIssues(badFS); !errors.Is(err, ErrKnownIssuesInvalid) {
-		t.Fatalf("malformed current issues error = %v, want ErrKnownIssuesInvalid", err)
-	}
-
-	all := []ReleaseNotes{
-		{Schema: "release-notes/v1", Version: "0.8.0", Changes: []Change{
-			{ID: "RN-0800-8", Kind: KindKnownIssue, Subject: "an old issue declaration"},
-		}},
-		{Schema: "release-notes/v1", Version: "0.9.0", Changes: []Change{
-			{ID: "RN-0900-1", Kind: "fix", Subject: "the next release"},
-		}},
-	}
-
-	// The standing issue is not physically repeated in 0.9.0. It must still
-	// reach an updater crossing 0.8.0 -> 0.9.0.
-	got := AttachCurrentKnownIssues(Since(all, "0.8.0", "0.9.0"), all, issues)
-	if len(got) != 1 || got[0].Version != "0.9.0" {
-		t.Fatalf("attached range = %+v, want only the 0.9.0 release carrier", got)
-	}
-	if len(got[0].Changes) != 2 || got[0].Changes[1].ID != "KI-MACOS-ADHOC-SIGNING" {
-		t.Fatalf("0.9.0 changes = %+v, want the standing issue appended", got[0].Changes)
-	}
-
-	// Even an empty strict version range still reports current limitations:
-	// the newest release is used only as a stable carrier for the unchanged
-	// []ReleaseNotes machine contract.
-	got = AttachCurrentKnownIssues(Since(all, "0.9.0", "0.9.0"), all, issues)
-	if len(got) != 1 || len(got[0].Changes) != 1 || got[0].Changes[0].ID != "KI-MACOS-ADHOC-SIGNING" {
-		t.Fatalf("empty range with standing issue = %+v", got)
-	}
-}
-
-func TestExactly(t *testing.T) {
-	all := mustLoadFixtureCorpus(t)
-
-	rn, ok := Exactly(all, "0.4.0")
-	if !ok {
-		t.Fatal("Exactly(0.4.0): not found")
-	}
-	if rn.Version != "0.4.0" {
-		t.Errorf("Exactly(0.4.0).Version = %q", rn.Version)
-	}
-
-	if _, ok := Exactly(all, "9.9.9"); ok {
-		t.Error("Exactly(9.9.9): expected not found")
-	}
-}
-
-func mustLoadFixtureCorpus(t *testing.T) []ReleaseNotes {
-	t.Helper()
-	all, err := Load(releasenotes.FS)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	return all
-}
-
-func versionsOf(all []ReleaseNotes) []string {
-	out := make([]string, len(all))
-	for i, rn := range all {
-		out[i] = rn.Version
-	}
-	return out
-}
-
-func assertVersionsEqual(t *testing.T, label string, got, want []string) {
-	t.Helper()
-	if len(got) != len(want) {
-		t.Errorf("%s = %v, want %v", label, got, want)
-		return
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			t.Errorf("%s = %v, want %v", label, got, want)
-			return
-		}
+	if rn.Released != adoption.Unreleased {
+		t.Errorf("Released = %q, want the unreleased sentinel %q", rn.Released, adoption.Unreleased)
 	}
 }
 
@@ -644,7 +424,7 @@ func TestParseReleaseNotesRefusesAMalformedReleasedValue(t *testing.T) {
 		refused bool
 	}{
 		{"an ISO date is accepted", "2026-08-13", false},
-		{"the sentinel is accepted", UnreleasedSentinel, false},
+		{"the sentinel is accepted", adoption.Unreleased, false},
 		{"an absent value is accepted — not-yet-chosen is not malformed", "", false},
 		{"free prose is refused", "soon", true},
 		{"a non-ISO date shape is refused", "13-08-2026", true},
@@ -656,7 +436,7 @@ func TestParseReleaseNotesRefusesAMalformedReleasedValue(t *testing.T) {
 			if tc.value != "" {
 				raw += "released: \"" + tc.value + "\"\n"
 			}
-			_, err := ParseReleaseNotes([]byte(raw))
+			_, err := adoption.Parse([]byte(raw))
 			if tc.refused && err == nil {
 				t.Fatalf("released: %q should be refused as malformed, got no error", tc.value)
 			}
@@ -674,7 +454,7 @@ func TestParseReleaseNotesRefusesAMalformedReleasedValue(t *testing.T) {
 // spelling whose exit code answers the question.
 func TestNoDetectRunsASpaceUpdateDryRun(t *testing.T) {
 	t.Parallel()
-	all, err := Load(releasenotes.FS)
+	all, err := adoption.Load(releasenotes.FS, CorpusPattern)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

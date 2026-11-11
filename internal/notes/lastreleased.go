@@ -1,7 +1,7 @@
 //go:build ignore
 
 // lastreleased prints the last published release: the highest version among
-// the dated release notes under the given directory (notes.LastReleased).
+// the dated release notes under the given directory (adoption.LastReleased).
 // `make deliver` (scripts/deliver.sh) stamps a local build with it (D-040), so
 // the stamp follows from the commit being built alone: no tag and no network
 // are read, and no second YAML parser lives in shell (detectcheck.go's
@@ -17,6 +17,7 @@ import (
 	"os"
 
 	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 func main() {
@@ -24,12 +25,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: go run internal/notes/lastreleased.go <releasenotes-dir>")
 		os.Exit(2)
 	}
-	all, err := notes.Load(os.DirFS(os.Args[1]))
+	all, err := adoption.Load(os.DirFS(os.Args[1]), notes.CorpusPattern)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lastreleased: %v\n", err)
 		os.Exit(1)
 	}
-	v, err := notes.LastReleased(all)
+	v, err := adoption.LastReleased(all)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "lastreleased: %v\n", err)
 		os.Exit(1)

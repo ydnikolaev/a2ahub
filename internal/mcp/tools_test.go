@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ydnikolaev/a2ahub/internal/cache"
-	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // TestBuildRegistryExpectedToolCount proves BuildRegistry registers
@@ -423,8 +423,8 @@ func TestAllDecodeSitesRefuseAnUnknownTopLevelKey(t *testing.T) {
 		{"tools_new.go newNewHandler", newNewHandler(NewDeps{})},
 		{"tools_submit.go newSubmitHandler", newSubmitHandler(SubmitDeps{})},
 		{"tools_whatsnew.go newWhatsnewHandler", newWhatsnewHandler(
-			func() ([]notes.ReleaseNotes, error) { return nil, nil },
-			func() ([]notes.Change, error) { return nil, nil },
+			func() ([]adoption.Release, error) { return nil, nil },
+			func() ([]adoption.Change, error) { return nil, nil },
 		)},
 		{"tools_lifecycle.go newLifecycleHandler", newLifecycleHandler(LifecycleVerbTable[0], WriteDeps{})},
 		{"tools_lifecycle.go newRespondHandler", newRespondHandler(WriteDeps{})},

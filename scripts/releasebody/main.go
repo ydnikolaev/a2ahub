@@ -12,6 +12,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/version"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 func main() {
@@ -37,13 +38,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	all, err := notes.Load(releasenotes.FS)
+	all, err := adoption.Load(releasenotes.FS, notes.CorpusPattern)
 	if err != nil {
 		// reason: the exit code still carries the failure if stderr itself is unavailable.
 		_, _ = fmt.Fprintf(stderr, "releasebody: load release-notes corpus: %v\n", err)
 		return 1
 	}
-	var rn notes.ReleaseNotes
+	var rn adoption.Release
 	for _, candidate := range all {
 		if candidate.Version == normalized {
 			rn = candidate
@@ -55,12 +56,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "releasebody: no authored release notes for %s\n", normalized)
 		return 1
 	}
-	currentIssues, err := notes.LoadCurrentKnownIssues(releasenotes.FS)
+	currentIssues, err := adoption.LoadStanding(releasenotes.FS, notes.StandingPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "releasebody: load current known issues: %v\n", err)
 		return 1
 	}
-	rn = notes.AttachCurrentKnownIssues([]notes.ReleaseNotes{rn}, all, currentIssues)[0]
+	rn = adoption.AttachStanding([]adoption.Release{rn}, all, currentIssues)[0]
 
 	body := notes.RenderMarkdown(rn, notes.MarkdownOptions{
 		RepositoryURL: "https://github.com/ydnikolaev/a2ahub",

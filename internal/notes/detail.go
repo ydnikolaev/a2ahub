@@ -3,6 +3,7 @@ package notes
 import (
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/schema"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 type releaseDetailDecoder struct {
@@ -21,7 +22,7 @@ func NewDetailDecoder() (release.DetailDecoder, error) {
 }
 
 func (d releaseDetailDecoder) DecodeAndValidate(raw []byte) (release.Detail, error) {
-	parsed, err := ParseReleaseNotes(raw)
+	parsed, err := adoption.Parse(raw)
 	if err != nil {
 		return release.Detail{}, release.ErrDetailMalformed
 	}

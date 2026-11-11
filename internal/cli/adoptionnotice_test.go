@@ -7,27 +7,29 @@ import (
 	"testing"
 
 	"github.com/ydnikolaev/a2ahub/internal/notes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // adoptionCorpus is two releases, each with one change that obliges the
 // reader and one that does not, plus a change authored ahead of 0.2.0.
-func adoptionCorpus() []notes.ReleaseNotes {
-	owed := func(id string) notes.Change {
-		return notes.Change{ID: id, Kind: "feat", Impact: "normal", Subject: id, Action: notes.Action{Scope: "local", Why: "do it"}}
+func adoptionCorpus() []adoption.Release {
+	owed := func(id string) adoption.Change {
+		return adoption.Change{ID: id, Kind: "feat", Impact: "normal", Subject: id, Action: adoption.Action{Scope: "local", Why: "do it"}}
 	}
-	free := func(id string) notes.Change {
-		return notes.Change{ID: id, Kind: "fix", Impact: "low", Subject: id, Action: notes.Action{Scope: "none", Why: "nothing"}}
+	free := func(id string) adoption.Change {
+		return adoption.Change{ID: id, Kind: "fix", Impact: "low", Subject: id, Action: adoption.Action{Scope: "none", Why: "nothing"}}
 	}
-	return []notes.ReleaseNotes{
-		{Version: "0.1.0", Released: "2026-01-01", Changes: []notes.Change{owed("RN-1"), free("RN-2")}},
-		{Version: "0.2.0", Released: "2026-02-01", Changes: []notes.Change{owed("RN-3"), free("RN-4")}},
-		{Version: "0.3.0", Released: notes.UnreleasedSentinel, Changes: []notes.Change{owed("RN-5")}},
+	return []adoption.Release{
+		{Version: "0.1.0", Released: "2026-01-01", Changes: []adoption.Change{owed("RN-1"), free("RN-2")}},
+		{Version: "0.2.0", Released: "2026-02-01", Changes: []adoption.Change{owed("RN-3"), free("RN-4")}},
+		{Version: "0.3.0", Released: adoption.Unreleased, Changes: []adoption.Change{owed("RN-5")}},
 	}
 }
 
 // The binary is per machine and adoption is per repository, so the notice is
 // the only thing that tells a repository the binary moved under it
-// (D-043). Each row is one state of the repository's own clock.
+// (D-043). Each row is one state of the repository's own clock, read through
+// a2a's own policy and verbs.
 func TestAdoptionNotice(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -53,7 +55,7 @@ func TestAdoptionNotice(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := AdoptionNotice(adoptionCorpus(), nil, tc.through, tc.ahead, tc.binary, "/opt/a2a")
+			got := adoption.Notice(adoptionCorpus(), nil, adoption.Clock{Through: tc.through, Ahead: tc.ahead}, tc.binary, "/opt/a2a", notes.Policy(), notes.Verbs())
 			if tc.want == nil {
 				if got != "" {
 					t.Fatalf("want silence, got %q", got)

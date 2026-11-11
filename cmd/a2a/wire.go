@@ -413,7 +413,7 @@ func buildCommands() map[string]command {
 	m["submit"] = runSubmit
 	m["feedback"] = runFeedback
 	m["whatsnew"] = func(args []string, stdout, stderr io.Writer) int {
-		// Bare version (like doctor/update): notes.Since/Exactly compare a
+		// Bare version (like doctor/update): adoption.Since/Exactly compare a
 		// bare major.minor.patch, not the "a2a x.y.z (sha)" stamp.
 		return cli.NewWhatsnewCommand(version).Run(context.Background(), args, stdio(stdout, stderr))
 	}

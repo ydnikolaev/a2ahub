@@ -2,7 +2,7 @@
 // specs/13-adapt-from-a-baseline.md): a filtered, ordered, imperative
 // projection of the release-note corpus down to what OBLIGES the reader —
 // `action.scope != "none"`, already labelled by the corpus itself
-// (internal/notes.Change.Action; this file classifies nothing) — walked
+// (adoption.Change.Action; this file classifies nothing) — walked
 // from the REPOSITORY's own `adapted_through` baseline (internal/space.
 // ProjectConfig), never from the binary's own version history (the "two
 // clocks" the spec's own title names). This file's only package-level
@@ -30,22 +30,24 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 	"gopkg.in/yaml.v3"
 )
 
-// AdaptCommand implements `a2a adapt [--done] [--json]` (P13 T1): a
-// thin flags-in/JSON-or-text-out wrapper over internal/notes.Pending —
-// zero business rules live here (ADR-001 "thin frontend"); the group
-// assignment lives in internal/notes, and the one thing this file DOES
-// decide is the within-group tie-break, because it reuses
-// cmd_whatsnew.go's whatsnewImpactOrder (internal/notes cannot import this
-// package — dependency direction — so the final sort happens here).
+// AdaptCommand implements `a2a adapt [--done] [--json]` and
+// `a2a adapt --require <version|change-id>` (P13 T1, D6): a thin
+// flags-in/JSON-or-text-out wrapper over adoption.Pending with a2a's own
+// notes.Policy — zero business rules live here (ADR-001 "thin frontend");
+// the group assignment lives in the adoption unit, and the one thing this
+// file DOES decide is the within-group tie-break, because it reuses
+// cmd_whatsnew.go's whatsnewImpactOrder (adoption.ImpactOrder), so the final
+// sort happens here.
 type AdaptCommand struct {
 	binaryVersion     string
 	projectConfigPath string
 
-	load              func() ([]notes.ReleaseNotes, error)
-	loadCurrentIssues func() ([]notes.Change, error)
+	load              func() ([]adoption.Release, error)
+	loadCurrentIssues func() ([]adoption.Change, error)
 	loadProjectConfig func(path string) (space.ProjectConfig, error)
 
 	// readFile/writeFile back adaptSaveAdaptedThrough's single-key YAML
@@ -56,10 +58,14 @@ type AdaptCommand struct {
 	writeFile func(path string, data []byte, perm os.FileMode) error
 
 	// detectRun executes one detect: command for `--done` (AC-7). nil
-	// defaults to notes.DefaultDetectRunner (a real shell); tests inject a
+	// defaults to adoption.DefaultDetectRunner (a real shell); tests inject a
 	// fake so the corpus's own prose/placeholder detect strings (e.g.
 	// "a2a submit <id>") are never actually exec'd by a test run.
-	detectRun notes.DetectRunner
+	detectRun adoption.DetectRunner
+
+	// execPath names the running binary in --require's refusal, the same
+	// os.Executable seam DoctorCommand uses for the clock-ahead sentence.
+	execPath func() (string, error)
 }
 
 // NewAdaptCommand constructs the adapt command. binaryVersion is this
@@ -73,13 +79,14 @@ func NewAdaptCommand(binaryVersion, projectConfigPath string) *AdaptCommand {
 	return &AdaptCommand{
 		binaryVersion:     binaryVersion,
 		projectConfigPath: projectConfigPath,
-		load:              func() ([]notes.ReleaseNotes, error) { return notes.Load(releasenotes.FS) },
-		loadCurrentIssues: func() ([]notes.Change, error) {
-			return notes.LoadCurrentKnownIssues(releasenotes.FS)
+		load:              func() ([]adoption.Release, error) { return adoption.Load(releasenotes.FS, notes.CorpusPattern) },
+		loadCurrentIssues: func() ([]adoption.Change, error) {
+			return adoption.LoadStanding(releasenotes.FS, notes.StandingPath)
 		},
 		loadProjectConfig: space.LoadProjectConfig,
 		readFile:          os.ReadFile,
 		writeFile:         os.WriteFile,
+		execPath:          os.Executable,
 	}
 }
 
@@ -93,9 +100,9 @@ func (c *AdaptCommand) Synopsis() string {
 
 // adaptJSONItem is one `--json` pending obligation.
 type adaptJSONItem struct {
-	Version string       `json:"version"`
-	Group   int          `json:"group"`
-	Change  notes.Change `json:"change"`
+	Version string          `json:"version"`
+	Group   int             `json:"group"`
+	Change  adoption.Change `json:"change"`
 }
 
 // adaptJSON is `a2a adapt --json`'s machine-readable shape. Verdict
@@ -132,19 +139,30 @@ type adaptDoneJSON struct {
 // config load failure, a refused baseline (AC-10), or --done's refusal
 // (AC-7); 0 = success INCLUDING "nothing pending" (AC-9: zero only when no
 // obligation remains; non-zero otherwise, so a caller that always exits 0
-// is exactly the reader an agent may ignore).
+// is exactly the reader an agent may ignore). --require answers a different
+// question and has its own codes; see runRequire.
 func (c *AdaptCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	fs := flag.NewFlagSet("adapt", flag.ContinueOnError)
 	fs.SetOutput(stdio.Stderr)
 	doneFlag := fs.Bool("done", false, "record adapted_through at this binary's version; refuses if a pending detect: still fires")
 	jsonFlag := fs.Bool("json", false, "machine-readable output")
+	requireFlag := fs.String("require", "", "exit 0 when this binary satisfies `version|change-id`: a version X.Y.Z it is not older than, or a change id it carries or this repository adopted ahead; exit 1 when not; writes nothing and ignores pending steps")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a adapt [--done] [--json]")
-		_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
+		adaptUsage(stdio)
 		return 2
+	}
+	requireSet := false
+	fs.Visit(func(f *flag.Flag) { requireSet = requireSet || f.Name == "require" })
+	if requireSet {
+		if *doneFlag || *jsonFlag {
+			_, _ = fmt.Fprintln(stdio.Stderr, "adapt: --require cannot be combined with --done or --json")
+			adaptUsage(stdio)
+			return 2
+		}
+		return c.runRequire(*requireFlag, stdio)
 	}
 
 	all, err := c.load()
@@ -167,9 +185,9 @@ func (c *AdaptCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	// init` yet is "never adapted", not a fatal error.
 	cfg, _ := c.loadProjectConfig(c.projectConfigPath)
 
-	proj, err := notes.Pending(all, currentIssues, cfg.AdaptedThrough, c.binaryVersion, cfg.AdaptedAhead)
+	proj, err := adoption.Pending(all, currentIssues, adaptClock(cfg), c.binaryVersion, notes.Policy())
 	if err != nil {
-		if errors.Is(err, notes.ErrBaselineAheadOfBinary) {
+		if errors.Is(err, adoption.ErrClockAheadOfBinary) {
 			_, _ = fmt.Fprintf(stdio.Stderr,
 				"adapt: adapted_through (v%s) is newer than the running binary (v%s) — refusing to walk backwards\n",
 				cfg.AdaptedThrough, c.binaryVersion)
@@ -197,6 +215,160 @@ func (c *AdaptCommand) Run(ctx context.Context, args []string, stdio IO) int {
 	return 1
 }
 
+// adaptUsage prints the verb's usage and the docs topic that explains it.
+func adaptUsage(stdio IO) {
+	_, _ = fmt.Fprintln(stdio.Stderr, "usage: a2a adapt [--done] [--json] | a2a adapt --require <version|change-id>")
+	_, _ = fmt.Fprintln(stdio.Stderr, workflowLine("loop-contract-change"))
+}
+
+// adaptClock is the repository's adoption clock as .a2a/config.yaml records
+// it: adapted_through and the change ids adopted ahead of a release.
+func adaptClock(cfg space.ProjectConfig) adoption.Clock {
+	return adoption.Clock{Through: cfg.AdaptedThrough, Ahead: cfg.AdaptedAhead}
+}
+
+// runRequire implements `a2a adapt --require <arg>` (D6): an exit-code probe
+// a script runs before it relies on something. arg is a version (X.Y.Z, an
+// optional leading v) or a change id (RN-<digits>-<suffix>). Exit 0: this
+// binary is not older than the version, or it carries the change in its own
+// embedded corpus (dated or authored ahead) — and, either way, it is not
+// older than this repository's adoption clock. Exit 1: not satisfied, with
+// one stderr line naming this binary's version and path and what is missing.
+// Exit 2: arg is neither.
+//
+// It is a question about the BINARY. A repository's adapted_ahead naming an
+// id this binary does not carry is exactly the stale-binary case, so it
+// never satisfies the change form. Pending adoption steps do not change the
+// answer (plain `adapt` exits 1 while they remain), and it writes nothing.
+// With no readable .a2a/config.yaml, or no adapted_through in it, the clock
+// check is skipped and the version form needs no config at all. A build
+// whose version is not comparable (`dev`) cannot show it is new enough, so
+// the version form fails closed with exit 1; the clock check is skipped for
+// it, because there is nothing to compare. Versions compare through the
+// adoption unit, the one comparison adoption uses.
+func (c *AdaptCommand) runRequire(arg string, stdio IO) int {
+	exe := "a2a"
+	if c.execPath != nil {
+		if p, err := c.execPath(); err == nil {
+			exe = p
+		}
+	}
+	switch {
+	case adaptIsRequireVersion(arg):
+		want := strings.TrimPrefix(arg, "v")
+		older, err := adoption.OlderThan(c.binaryVersion, want)
+		if err != nil {
+			_, _ = fmt.Fprintf(stdio.Stderr,
+				"adapt --require: this binary (a2a %s at %s) is not a release build, so it cannot show it is v%s or newer — install a released a2a\n",
+				c.binaryVersion, exe, want)
+			return 1
+		}
+		if older {
+			_, _ = fmt.Fprintf(stdio.Stderr,
+				"adapt --require: this binary (a2a %s at %s) is older than the required v%s — update a2a, or check which a2a comes first in PATH\n",
+				c.binaryVersion, exe, want)
+			return 1
+		}
+	case adaptIsRequireChangeID(arg):
+		all, err := c.load()
+		if err != nil {
+			return adaptRefuse(stdio,
+				"adapt --require: load this binary's own embedded release-note corpus",
+				err.Error(),
+				"this is a defect in the a2a binary itself, not this repository — run `a2a version` for the exact build and file it against a2ahub",
+			)
+		}
+		if !adaptCorpusCarries(all, arg) {
+			_, _ = fmt.Fprintf(stdio.Stderr,
+				"adapt --require: this binary (a2a %s at %s) does not carry change %s — update a2a, or check which a2a comes first in PATH\n",
+				c.binaryVersion, exe, arg)
+			return 1
+		}
+	default:
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"adapt --require: %q is neither a version (X.Y.Z) nor a change id (RN-<digits>-<suffix>, the `id` field `a2a whatsnew --json` and `a2a adapt --json` print)\n", arg)
+		adaptUsage(stdio)
+		return 2
+	}
+	// Best-effort, as plain adapt reads it: no config is no clock.
+	cfg, err := c.loadProjectConfig(c.projectConfigPath)
+	if err != nil || cfg.AdaptedThrough == "" {
+		return 0
+	}
+	older, err := adoption.OlderThan(c.binaryVersion, cfg.AdaptedThrough)
+	if err != nil {
+		if _, binErr := adoption.OlderThan(c.binaryVersion, c.binaryVersion); binErr != nil {
+			return 0 // a dev build: nothing to compare, the version form already judged it
+		}
+		// Fail closed: a clock this binary cannot read cannot show the
+		// binary is not behind it.
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"adapt --require: this repository's adapted_through %q is not a version, so this binary (v%s at %s) cannot show it is not behind it — run `a2a doctor`\n",
+			cfg.AdaptedThrough, c.binaryVersion, exe)
+		return 1
+	}
+	if older {
+		_, _ = fmt.Fprintf(stdio.Stderr,
+			"adapt --require: this repository adapted through v%s, newer than this binary (v%s at %s) — update a2a, or check which a2a comes first in PATH\n",
+			cfg.AdaptedThrough, c.binaryVersion, exe)
+		return 1
+	}
+	return 0
+}
+
+// adaptCorpusCarries reports whether any release in all carries change id.
+func adaptCorpusCarries(all []adoption.Release, id string) bool {
+	for _, rn := range all {
+		for _, ch := range rn.Changes {
+			if ch.ID == id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// adaptIsRequireVersion reports whether arg is X.Y.Z with an optional
+// leading v: exactly three dot-separated runs of digits.
+func adaptIsRequireVersion(arg string) bool {
+	parts := strings.Split(strings.TrimPrefix(arg, "v"), ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if !adaptAllOf(p, "0123456789") {
+			return false
+		}
+	}
+	return true
+}
+
+// adaptIsRequireChangeID reports whether arg is a release-note change id as
+// the corpus spells them: "RN-", a run of digits, "-", and a run of letters
+// and digits (RN-02703-4, RN-0270-9b).
+func adaptIsRequireChangeID(arg string) bool {
+	rest, ok := strings.CutPrefix(arg, "RN-")
+	if !ok {
+		return false
+	}
+	release, suffix, ok := strings.Cut(rest, "-")
+	return ok && adaptAllOf(release, "0123456789") &&
+		adaptAllOf(suffix, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+}
+
+// adaptAllOf reports whether s is non-empty and made only of runes in set.
+func adaptAllOf(s, set string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !strings.ContainsRune(set, r) {
+			return false
+		}
+	}
+	return true
+}
+
 // adaptOnboardingProcedure is D-044's first-clock procedure, worded for the
 // repository's session: the evidence to read, where to write the value, and
 // the one case where the running binary is the answer. It names no value it
@@ -207,10 +379,10 @@ func adaptOnboardingProcedure(binaryVersion string) string {
 		"a repository onboarded by this binary takes %s. Then run `a2a adapt`, which lists only what came after it", binaryVersion)
 }
 
-// adaptSortItems orders items by Group (internal/notes' own assignment)
+// adaptSortItems orders items by Group (the adoption unit's own assignment)
 // then, within a group, by whatsnewImpactOrder (cmd_whatsnew.go) — REUSED,
 // not re-derived (P13 spec §5).
-func adaptSortItems(items []notes.PendingItem) {
+func adaptSortItems(items []adoption.PendingItem) {
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Group != items[j].Group {
 			return items[i].Group < items[j].Group
@@ -221,9 +393,9 @@ func adaptSortItems(items []notes.PendingItem) {
 
 // adaptEncodeJSON writes proj as adaptJSON and returns the matching exit
 // code (AC-9's "--json carries the same verdict as the exit code").
-func adaptEncodeJSON(proj notes.Projection, stdio IO) int {
+func adaptEncodeJSON(proj adoption.Projection, stdio IO) int {
 	out := adaptJSON{
-		Baseline:          proj.Baseline,
+		Baseline:          proj.Clock.Through,
 		BinaryVersion:     proj.BinaryVersion,
 		Releases:          proj.Releases,
 		StartedFromOldest: proj.StartedFromOldest,
@@ -260,9 +432,9 @@ const (
 // adaptBaselineLabel is the version adaptRenderText's header names as
 // "since v<label>" — the recorded baseline when one exists, otherwise the
 // oldest embedded note the walk actually started from.
-func adaptBaselineLabel(proj notes.Projection) string {
-	if proj.Baseline != "" {
-		return proj.Baseline
+func adaptBaselineLabel(proj adoption.Projection) string {
+	if proj.Clock.Through != "" {
+		return proj.Clock.Through
 	}
 	return proj.Oldest
 }
@@ -270,7 +442,7 @@ func adaptBaselineLabel(proj notes.Projection) string {
 // adaptRenderText renders the human digest: the directive (AC-3 opens
 // with it), each obligation in Pending/adaptSortItems' own order, and a
 // closing line naming the outstanding count (AC-3 closes with it).
-func adaptRenderText(stdio IO, proj notes.Projection, binaryVersion string) {
+func adaptRenderText(stdio IO, proj adoption.Projection, binaryVersion string) {
 	if len(proj.Items) == 0 {
 		_, _ = fmt.Fprintln(stdio.Stdout, "a2a adapt: nothing to adapt — every change in range is scope: none.")
 		return
@@ -290,7 +462,7 @@ func adaptRenderText(stdio IO, proj notes.Projection, binaryVersion string) {
 	for i, item := range proj.Items {
 		ch := item.Change
 		label := ch.Impact
-		if ch.Kind == notes.KindKnownIssue {
+		if ch.Kind == adoption.KindKnownIssue {
 			label = "KNOWN ISSUE"
 		}
 		_, _ = fmt.Fprintf(stdio.Stdout, "[%d] (%s, v%s) %s\n", i+1, label, item.Version, ch.Subject)
@@ -317,9 +489,9 @@ func adaptRenderText(stdio IO, proj notes.Projection, binaryVersion string) {
 // runDone implements `a2a adapt --done` (AC-6, AC-7, AC-8): run every
 // detect: in the pending set first and refuse NAMING the change if one
 // still fires (or could not be run at all — never conflated, see
-// notes.DetectRunner's own doc); otherwise record adapted_through and say,
+// adoption.DetectRunner's own doc); otherwise record adapted_through and say,
 // honestly, how much of that record is verified.
-func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio IO, jsonMode bool) int {
+func (c *AdaptCommand) runDone(ctx context.Context, proj adoption.Projection, stdio IO, jsonMode bool) int {
 	// A never-clocked repository is refused before any detect: runs (D-044,
 	// amending spec 13's "absent field walks from the oldest note" for
 	// --done; the listing still walks). Its projection reaches back to
@@ -342,7 +514,7 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 			adaptOnboardingProcedure(c.binaryVersion),
 		)
 	}
-	if result := notes.CheckDetects(ctx, proj.Items, c.detectRun); result != nil {
+	if result := adoption.CheckDetects(ctx, proj.Items, c.detectRun); result != nil {
 		if result.Err != nil {
 			if jsonMode {
 				return adaptEncodeDoneJSON(stdio, adaptDoneJSON{
@@ -367,7 +539,7 @@ func (c *AdaptCommand) runDone(ctx context.Context, proj notes.Projection, stdio
 		return 1
 	}
 
-	templateOnly := notes.TemplateOnly(proj.Items)
+	templateOnly := adoption.TemplateOnly(proj.Items)
 	verified := 0
 	for _, item := range proj.Items {
 		if len(item.Change.Action.Detect) > 0 {

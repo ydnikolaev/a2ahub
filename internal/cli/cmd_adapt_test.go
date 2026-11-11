@@ -15,6 +15,7 @@ import (
 	"github.com/ydnikolaev/a2ahub/internal/release"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/releasenotes"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,10 +23,10 @@ import (
 // fixed adapted_through baseline, bypassing the real embedded corpus and
 // the real filesystem (the same DI shape whatsnewTestCommand/
 // newTestUpdateCommand already use in this package).
-func adaptTestCommand(binaryVersion, baseline string, load func() ([]notes.ReleaseNotes, error)) *AdaptCommand {
+func adaptTestCommand(binaryVersion, baseline string, load func() ([]adoption.Release, error)) *AdaptCommand {
 	c := NewAdaptCommand(binaryVersion, "/fake/.a2a/config.yaml")
 	c.load = load
-	c.loadCurrentIssues = func() ([]notes.Change, error) { return nil, nil }
+	c.loadCurrentIssues = func() ([]adoption.Change, error) { return nil, nil }
 	c.loadProjectConfig = func(string) (space.ProjectConfig, error) {
 		return space.ProjectConfig{AdaptedThrough: baseline}, nil
 	}
@@ -35,12 +36,12 @@ func adaptTestCommand(binaryVersion, baseline string, load func() ([]notes.Relea
 // adaptDatedCorpus is the real corpus without a note authored ahead of its tag.
 // Such a note changes with every commit that adds to it, and it would surface
 // for the old binary the real-corpus pins name. They judge dated notes only.
-func adaptDatedCorpus() ([]notes.ReleaseNotes, error) {
-	all, err := notes.Load(releasenotes.FS)
+func adaptDatedCorpus() ([]adoption.Release, error) {
+	all, err := adoption.Load(releasenotes.FS, notes.CorpusPattern)
 	if err != nil {
 		return nil, err
 	}
-	return slices.DeleteFunc(all, func(rn notes.ReleaseNotes) bool { return rn.Released == notes.UnreleasedSentinel }), nil
+	return slices.DeleteFunc(all, func(rn adoption.Release) bool { return rn.Released == adoption.Unreleased }), nil
 }
 
 // adaptFixtureCorpus is a small synthetic corpus covering every group the
@@ -48,28 +49,28 @@ func adaptDatedCorpus() ([]notes.ReleaseNotes, error) {
 // only (group 2), and a space change with a detect: (group 3) — plus one
 // scope:none change that must never surface, and one release entirely
 // before the baseline this file's tests use.
-func adaptFixtureCorpus() []notes.ReleaseNotes {
-	return []notes.ReleaseNotes{
-		{Version: "0.10.0", Changes: []notes.Change{
+func adaptFixtureCorpus() []adoption.Release {
+	return []adoption.Release{
+		{Version: "0.10.0", Changes: []adoption.Change{
 			{ID: "OLD", Kind: "feat", Impact: "high", Subject: "before the baseline", Detail: "d",
-				Action: notes.Action{Scope: "local", Why: "w"}},
+				Action: adoption.Action{Scope: "local", Why: "w"}},
 		}},
-		{Version: "0.20.0", Changes: []notes.Change{
+		{Version: "0.20.0", Changes: []adoption.Change{
 			{ID: "RUNNABLE", Kind: "feat", Impact: "high", Subject: "a command exists", Detail: "d",
-				Action: notes.Action{Scope: "local", Why: "w", Run: []string{"a2a doctor"}}},
+				Action: adoption.Action{Scope: "local", Why: "w", Run: []string{"a2a doctor"}}},
 		}},
-		{Version: "0.21.0", Changes: []notes.Change{
+		{Version: "0.21.0", Changes: []adoption.Change{
 			{ID: "DETECTED", Kind: "fix", Impact: "normal", Subject: "space obligation with a detect", Detail: "d",
-				Action: notes.Action{Scope: "space", Why: "w", Detect: []string{"check-it"}}},
+				Action: adoption.Action{Scope: "space", Why: "w", Detect: []string{"check-it"}}},
 			{ID: "PROSE", Kind: "feat", Impact: "low", Subject: "prose only", Detail: "d",
-				Action: notes.Action{Scope: "local", Why: "w"}},
+				Action: adoption.Action{Scope: "local", Why: "w"}},
 			{ID: "IGNORED", Kind: "feat", Impact: "low", Subject: "never obliges anything", Detail: "d",
-				Action: notes.Action{Scope: "none", Why: "w"}},
+				Action: adoption.Action{Scope: "none", Why: "w"}},
 		}},
 	}
 }
 
-func fixedAdaptLoad() ([]notes.ReleaseNotes, error) { return adaptFixtureCorpus(), nil }
+func fixedAdaptLoad() ([]adoption.Release, error) { return adaptFixtureCorpus(), nil }
 
 // newAdaptFileStore is an in-memory readFile/writeFile pair — the same
 // role a temp file would play, without touching disk. get() lets a test
@@ -239,7 +240,7 @@ func adaptDoneTestCommand(t *testing.T, binaryVersion, initialConfig string) (*A
 	read, write, get := newAdaptFileStore(initialConfig)
 	c := NewAdaptCommand(binaryVersion, "/fake/.a2a/config.yaml")
 	c.load = fixedAdaptLoad
-	c.loadCurrentIssues = func() ([]notes.Change, error) { return nil, nil }
+	c.loadCurrentIssues = func() ([]adoption.Change, error) { return nil, nil }
 	c.readFile = read
 	c.writeFile = write
 	c.loadProjectConfig = func(path string) (space.ProjectConfig, error) {
@@ -363,12 +364,12 @@ func TestAdaptDoneUnverifiedWhenNoDetectAtAll(t *testing.T) {
 func TestAdaptDoneRecordsATemplateDetectOnTheAgentsWord(t *testing.T) {
 	t.Parallel()
 	c, get := adaptDoneTestCommand(t, "0.20.0", "system: sys\nspaces: []\nadapted_through: \"0.10.0\"\n")
-	c.load = func() ([]notes.ReleaseNotes, error) {
-		return []notes.ReleaseNotes{{Version: "0.20.0", Changes: []notes.Change{
+	c.load = func() ([]adoption.Release, error) {
+		return []adoption.Release{{Version: "0.20.0", Changes: []adoption.Change{
 			{ID: "TEMPLATED", Kind: "policy", Impact: "high", Subject: "s", Detail: "d",
-				Action: notes.Action{Scope: "local", Why: "w", Detect: []string{"a2a submit <id>   # names every field"}}},
+				Action: adoption.Action{Scope: "local", Why: "w", Detect: []string{"a2a submit <id>   # names every field"}}},
 			{ID: "PROBED", Kind: "fix", Impact: "normal", Subject: "s", Detail: "d",
-				Action: notes.Action{Scope: "local", Why: "w", Detect: []string{"real-probe"}}},
+				Action: adoption.Action{Scope: "local", Why: "w", Detect: []string{"real-probe"}}},
 		}}}, nil
 	}
 	c.detectRun = func(_ context.Context, cmd string) (bool, error) {
@@ -442,15 +443,15 @@ func TestAdaptDoneNothingPending(t *testing.T) {
 // record without firing the recorded change again.
 func TestAdaptDoneRecordsAuthoredAhead(t *testing.T) {
 	t.Parallel()
-	local := func(id string) notes.Change {
-		return notes.Change{ID: id, Kind: "feat", Impact: "normal", Subject: id, Detail: "d",
-			Action: notes.Action{Scope: "local", Why: "w"}}
+	local := func(id string) adoption.Change {
+		return adoption.Change{ID: id, Kind: "feat", Impact: "normal", Subject: id, Detail: "d",
+			Action: adoption.Action{Scope: "local", Why: "w"}}
 	}
-	corpus := []notes.ReleaseNotes{
+	corpus := []adoption.Release{
 		{Version: "0.27.1", Released: "2026-10-30"},
-		{Version: "0.27.2", Released: notes.UnreleasedSentinel, Changes: []notes.Change{local("FIRST")}},
+		{Version: "0.27.2", Released: adoption.Unreleased, Changes: []adoption.Change{local("FIRST")}},
 	}
-	load := func() ([]notes.ReleaseNotes, error) { return corpus, nil }
+	load := func() ([]adoption.Release, error) { return corpus, nil }
 
 	c, get := adaptDoneTestCommand(t, "0.27.1", "system: sys\nspaces: []\nadapted_through: \"0.27.1\"\n")
 	c.load = load
@@ -483,7 +484,7 @@ func TestAdaptDoneRecordsAuthoredAhead(t *testing.T) {
 	}
 
 	corpus[1].Released = "2026-11-02"
-	corpus = append(corpus, notes.ReleaseNotes{Version: "0.27.3", Released: notes.UnreleasedSentinel})
+	corpus = append(corpus, adoption.Release{Version: "0.27.3", Released: adoption.Unreleased})
 	c.binaryVersion = "0.27.2"
 	if code, out := run(); code != 0 || strings.Contains(out, "FIRST") || strings.Contains(out, "LATER") {
 		t.Fatalf("after the release: exit %d, stdout %q; want exit 0 with nothing re-fired", code, out)
@@ -598,7 +599,7 @@ func TestAdaptUsageErrorOnBadFlag(t *testing.T) {
 func TestAdaptLoadError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("corpus load exploded")
-	c := adaptTestCommand("0.21.0", "0.10.0", func() ([]notes.ReleaseNotes, error) { return nil, wantErr })
+	c := adaptTestCommand("0.21.0", "0.10.0", func() ([]adoption.Release, error) { return nil, wantErr })
 	var out, errOut bytes.Buffer
 	code := c.Run(context.Background(), nil, IO{Stdout: &out, Stderr: &errOut})
 	if code != 1 {
@@ -687,7 +688,7 @@ func TestAdaptSynopsisAndName(t *testing.T) {
 
 func TestAdaptRefusesCorpusLoadFailure(t *testing.T) {
 	t.Parallel()
-	c := adaptTestCommand("0.21.0", "0.10.0", func() ([]notes.ReleaseNotes, error) {
+	c := adaptTestCommand("0.21.0", "0.10.0", func() ([]adoption.Release, error) {
 		return nil, errors.New("corpus.yaml: boom")
 	})
 	var out, errOut bytes.Buffer
@@ -727,5 +728,163 @@ func TestAdaptDoneRefusesUnwritableConfig(t *testing.T) {
 	}
 	if !strings.Contains(text, "a2a init") {
 		t.Fatalf("expected the refusal to name its next step, got: %s", text)
+	}
+}
+
+// adaptRequireCommand is an AdaptCommand for --require: a corpus with one
+// dated and one authored-ahead note, a clock that still owes a step (so plain
+// adapt would exit 1), adapted_ahead naming one id, and writes that fail the
+// test, because --require must never write.
+func adaptRequireCommand(t *testing.T, binaryVersion string) *AdaptCommand {
+	t.Helper()
+	c := NewAdaptCommand(binaryVersion, "/fake/.a2a/config.yaml")
+	c.load = func() ([]adoption.Release, error) {
+		return []adoption.Release{
+			{Version: "0.20.0", Released: "2026-01-01", Changes: []adoption.Change{
+				{ID: "RN-02000-1", Kind: "feat", Impact: "high", Subject: "owed", Detail: "d",
+					Action: adoption.Action{Scope: "local", Why: "w"}},
+			}},
+			{Version: "0.21.0", Released: adoption.Unreleased, Changes: []adoption.Change{
+				{ID: "RN-02100-0", Kind: "feat", Impact: "low", Subject: "ahead", Detail: "d",
+					Action: adoption.Action{Scope: "none", Why: "w"}},
+			}},
+		}, nil
+	}
+	c.loadCurrentIssues = func() ([]adoption.Change, error) { return nil, nil }
+	c.loadProjectConfig = func(string) (space.ProjectConfig, error) {
+		return space.ProjectConfig{AdaptedThrough: "0.10.0", AdaptedAhead: []string{"RN-09900-7"}}, nil
+	}
+	c.readFile = func(string) ([]byte, error) {
+		t.Error("--require read the config file for writing")
+		return nil, errors.New("no")
+	}
+	c.writeFile = func(string, []byte, os.FileMode) error { t.Error("--require wrote a file"); return errors.New("no") }
+	c.detectRun = func(context.Context, string) (bool, error) { t.Error("--require ran a detect"); return false, nil }
+	c.execPath = func() (string, error) { return "/opt/a2a", nil }
+	return c
+}
+
+// TestAdaptRequire covers every exit of `a2a adapt --require` (D6). Each
+// satisfied row exits 0 although the clock still owes a step, which plain
+// adapt would answer with exit 1.
+func TestAdaptRequire(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		binary     string
+		args       []string
+		clock      string // adapted_through; empty means the fixture's 0.10.0
+		code       int
+		wantStderr []string
+	}{
+		{name: "this binary's own version", binary: "0.20.0", args: []string{"--require", "0.20.0"}, code: 0},
+		{name: "an older version, with a leading v", binary: "0.20.0", args: []string{"--require", "v0.19.3"}, code: 0},
+		{name: "the = form", binary: "0.20.0", args: []string{"--require=0.2.0"}, code: 0},
+		{name: "a newer version is not satisfied and names the binary", binary: "0.20.0", args: []string{"--require", "99.0.0"}, code: 1,
+			wantStderr: []string{"a2a 0.20.0 at /opt/a2a", "older than the required v99.0.0"}},
+		{name: "a dev build cannot show it is new enough", binary: "dev", args: []string{"--require", "0.1.0"}, code: 1,
+			wantStderr: []string{"a2a dev at /opt/a2a", "not a release build", "v0.1.0"}},
+		{name: "a dated change in the corpus", binary: "0.20.0", args: []string{"--require", "RN-02000-1"}, code: 0},
+		{name: "a change authored ahead and embedded", binary: "0.20.0", args: []string{"--require", "RN-02100-0"}, code: 0},
+		{name: "adapted_ahead naming a change this binary lacks is the stale-binary case", binary: "0.20.0", args: []string{"--require", "RN-09900-7"}, code: 1,
+			wantStderr: []string{"a2a 0.20.0 at /opt/a2a", "does not carry change RN-09900-7"}},
+		{name: "the version form refuses a binary older than the repository's clock", binary: "0.20.0", clock: "0.25.0", args: []string{"--require", "0.19.0"}, code: 1,
+			wantStderr: []string{"adapted through v0.25.0", "newer than this binary (v0.20.0 at /opt/a2a)"}},
+		{name: "the change form refuses a binary older than the repository's clock", binary: "0.20.0", clock: "0.25.0", args: []string{"--require", "RN-02000-1"}, code: 1,
+			wantStderr: []string{"adapted through v0.25.0", "newer than this binary (v0.20.0 at /opt/a2a)"}},
+		{name: "a clock equal to the binary is satisfied", binary: "0.20.0", clock: "0.20.0", args: []string{"--require", "0.20.0"}, code: 0},
+		{name: "a clock this binary cannot read fails closed", binary: "0.20.0", clock: "0.20.x", args: []string{"--require", "0.20.0"}, code: 1,
+			wantStderr: []string{`adapted_through "0.20.x" is not a version`, "v0.20.0 at /opt/a2a"}},
+		{name: "a dev build skips a clock it cannot compare", binary: "dev", clock: "0.20.0", args: []string{"--require", "RN-02000-1"}, code: 0},
+		{name: "a dev build still answers the change form from its corpus", binary: "dev", args: []string{"--require", "RN-02000-1"}, code: 0},
+		{name: "an unknown change is not satisfied and names what is missing", binary: "0.20.0", args: []string{"--require", "RN-09999-1"}, code: 1,
+			wantStderr: []string{"a2a 0.20.0 at /opt/a2a", "does not carry change RN-09999-1"}},
+		{name: "a two-part version is malformed", binary: "0.20.0", args: []string{"--require", "1.2"}, code: 2,
+			wantStderr: []string{`"1.2" is neither a version`, "usage: a2a adapt"}},
+		{name: "free text is malformed", binary: "0.20.0", args: []string{"--require", "latest"}, code: 2,
+			wantStderr: []string{`"latest" is neither`}},
+		{name: "a standing known-issue id is not a change id", binary: "0.20.0", args: []string{"--require", "KI-MACOS-ADHOC-SIGNING"}, code: 2},
+		{name: "an empty value is malformed", binary: "0.20.0", args: []string{"--require="}, code: 2},
+		{name: "a missing value is a usage error", binary: "0.20.0", args: []string{"--require"}, code: 2},
+		{name: "--done is mutually exclusive", binary: "0.20.0", args: []string{"--require", "0.20.0", "--done"}, code: 2,
+			wantStderr: []string{"cannot be combined with --done or --json"}},
+		{name: "--json is rejected", binary: "0.20.0", args: []string{"--json", "--require", "0.20.0"}, code: 2,
+			wantStderr: []string{"cannot be combined with --done or --json"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := adaptRequireCommand(t, tc.binary)
+			if tc.clock != "" {
+				c.loadProjectConfig = func(string) (space.ProjectConfig, error) {
+					return space.ProjectConfig{AdaptedThrough: tc.clock, AdaptedAhead: []string{"RN-09900-7"}}, nil
+				}
+			}
+			var stdout, stderr bytes.Buffer
+			code := c.Run(context.Background(), tc.args, IO{Stdout: &stdout, Stderr: &stderr})
+			if code != tc.code {
+				t.Fatalf("exit = %d, want %d\nstderr: %s", code, tc.code, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("--require printed on stdout: %q", stdout.String())
+			}
+			if tc.code == 0 && stderr.Len() != 0 {
+				t.Errorf("a satisfied --require printed on stderr: %q", stderr.String())
+			}
+			if tc.code == 1 && strings.Count(stderr.String(), "\n") != 1 {
+				t.Errorf("an unsatisfied --require must print exactly one stderr line, got %q", stderr.String())
+			}
+			for _, w := range tc.wantStderr {
+				if !strings.Contains(stderr.String(), w) {
+					t.Errorf("stderr %q lacks %q", stderr.String(), w)
+				}
+			}
+		})
+	}
+}
+
+// TestAdaptRequireVersionNeedsNoProjectConfig: with no .a2a/config.yaml the
+// clock check is skipped silently and the version form answers from the
+// binary alone, without loading the corpus.
+func TestAdaptRequireVersionNeedsNoProjectConfig(t *testing.T) {
+	t.Parallel()
+	c := adaptRequireCommand(t, "0.20.0")
+	c.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, os.ErrNotExist }
+	c.load = func() ([]adoption.Release, error) {
+		t.Error("the version form loaded the corpus")
+		return nil, nil
+	}
+	var stdout, stderr bytes.Buffer
+	if code := c.Run(context.Background(), []string{"--require", "0.20.0"}, IO{Stdout: &stdout, Stderr: &stderr}); code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr %q", code, stderr.String())
+	}
+}
+
+// TestAdaptRequireChangeWithoutProjectConfig: with no config the change form
+// still answers from the corpus alone, and a miss is a miss, not an error.
+func TestAdaptRequireChangeWithoutProjectConfig(t *testing.T) {
+	t.Parallel()
+	c := adaptRequireCommand(t, "0.20.0")
+	c.loadProjectConfig = func(string) (space.ProjectConfig, error) { return space.ProjectConfig{}, os.ErrNotExist }
+	for id, want := range map[string]int{"RN-02000-1": 0, "RN-09900-7": 1} {
+		var stdout, stderr bytes.Buffer
+		if code := c.Run(context.Background(), []string{"--require", id}, IO{Stdout: &stdout, Stderr: &stderr}); code != want {
+			t.Errorf("%s: exit = %d, want %d; stderr %q", id, code, want, stderr.String())
+		}
+	}
+}
+
+// TestAdaptRequireCorpusLoadFailureRefuses: a corpus that will not load is a
+// defect in the binary, named as such, never read as "change missing".
+func TestAdaptRequireCorpusLoadFailureRefuses(t *testing.T) {
+	t.Parallel()
+	c := adaptRequireCommand(t, "0.20.0")
+	c.load = func() ([]adoption.Release, error) { return nil, errors.New("boom") }
+	var stdout, stderr bytes.Buffer
+	if code := c.Run(context.Background(), []string{"--require", "RN-02000-1"}, IO{Stdout: &stdout, Stderr: &stderr}); code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "boom") || !strings.Contains(stderr.String(), "defect in the a2a binary") {
+		t.Fatalf("stderr %q does not name the load failure", stderr.String())
 	}
 }

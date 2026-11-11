@@ -24,6 +24,26 @@ stdout 'ADAPT THIS REPOSITORY'
 stdout 'never recorded adapted_through'
 stdout 'obligations since'
 
+# 1a. --require answers "is THIS binary new enough" on its own, with no clock
+#     recorded and steps still owed (stanza 1 just exited 1 for them): satisfied
+#     is 0, a newer version or an unknown change is 1 naming the binary, and a
+#     malformed argument is a usage error. RN-02703-4 is in the embedded corpus
+#     whatever the stamp says, because the corpus ships with the binary. It
+#     writes nothing: the config still records no clock afterwards.
+exec a2a adapt --require 0.19.0
+! stdout .
+! stderr .
+! exec a2a adapt --require 99.0.0
+stderr 'a2a 0.19.0 at '
+stderr 'older than the required v99.0.0'
+exec a2a adapt --require RN-02703-4
+! stdout .
+! exec a2a adapt --require RN-99999-1
+stderr 'does not carry change RN-99999-1'
+! exec a2a adapt --require nonsense
+stderr 'is neither a version'
+! grep 'adapted_' .a2a/config.yaml
+
 # 2. A baseline equal to the running binary, and --done having recorded whatever
 #    note the corpus holds ahead of its tag right now: nothing is outstanding,
 #    and the verb exits 0. This is the half that proves the exit code carries

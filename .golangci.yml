@@ -244,10 +244,9 @@ linters:
           list-mode: strict
           allow:
             - $gostd
-            - gopkg.in/yaml.v3
+            - github.com/ydnikolaev/go-foundation/units/adoption
             - github.com/ydnikolaev/a2ahub/internal/release$
             - github.com/ydnikolaev/a2ahub/internal/schema$
-            - github.com/ydnikolaev/a2ahub/internal/version$
         internal-surface:
           files:
             - "**/internal/surface/*.go"
@@ -289,6 +288,7 @@ linters:
           list-mode: strict
           allow:
             - $gostd
+            - github.com/ydnikolaev/go-foundation/units/adoption
             - github.com/ydnikolaev/a2ahub/releasenotes
             - github.com/ydnikolaev/a2ahub/schemas
             - github.com/ydnikolaev/a2ahub/skill
@@ -326,6 +326,7 @@ linters:
           list-mode: strict
           allow:
             - $gostd
+            - github.com/ydnikolaev/go-foundation/units/adoption
             - github.com/ydnikolaev/a2ahub/releasenotes
             - github.com/ydnikolaev/a2ahub/skill
             - gopkg.in/yaml.v3
@@ -356,6 +357,7 @@ linters:
           list-mode: strict
           allow:
             - $gostd
+            - github.com/ydnikolaev/go-foundation/units/adoption
             - github.com/ydnikolaev/a2ahub/releasenotes
             - github.com/ydnikolaev/a2ahub/skill
             - github.com/yuin/goldmark

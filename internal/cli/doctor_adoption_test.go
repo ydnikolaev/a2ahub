@@ -10,31 +10,40 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ydnikolaev/a2ahub/internal/notes"
 	"github.com/ydnikolaev/a2ahub/internal/space"
 	"github.com/ydnikolaev/a2ahub/testkit/gitfixture"
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // TestDoctorCheckAdoption drives the "adoption" row through each state of the
 // repository's clock and of git's view of the file it lives in (D-043).
 func TestDoctorCheckAdoption(t *testing.T) {
 	t.Parallel()
-	tracked := doctorClockFile{Tracked: true}
+	tracked := adoption.ClockFileStatus{Tracked: true}
 	cases := []struct {
 		name    string
 		through string
 		ahead   []string
 		binary  string
-		file    doctorClockFile
+		file    adoption.ClockFileStatus
 		gitErr  error
 		status  doctorCheckStatus
 		want    []string
 	}{
 		{name: "an ignored clock fails and names the rule and the re-include", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
-			file: doctorClockFile{IgnoredBy: ".gitignore:67:/.a2a/*"}, status: doctorCheckFail,
+			file: adoption.ClockFileStatus{IgnoredBy: ".gitignore:67:/.a2a/*"}, status: doctorCheckFail,
 			want: []string{".a2a/config.yaml", "ignored by .gitignore:67:/.a2a/*", "`!/.a2a/config.yaml`", "commit"}},
-		{name: "an untracked clock fails", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
-			file: doctorClockFile{}, status: doctorCheckFail, want: []string{"not committed"}},
+		{name: "an ignored clock fails even before the first commit", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
+			file: adoption.ClockFileStatus{IgnoredBy: ".gitignore:1:/.a2a/*", Unborn: true}, status: doctorCheckFail,
+			want: []string{"ignored by .gitignore:1:/.a2a/*"}},
+		{name: "an untracked clock fails once the repository has commits", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
+			file: adoption.ClockFileStatus{}, status: doctorCheckFail, want: []string{"not committed, so the clock is machine-local"}},
+		{name: "an untracked clock before the first commit warns", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
+			file: adoption.ClockFileStatus{Unborn: true}, status: doctorCheckWarn,
+			want: []string{".a2a/config.yaml", "not committed yet", "no commit", "with the first one"}},
+		{name: "an untracked clock before the first commit warns and names pending steps", through: "0.1.0", binary: "0.2.0",
+			file: adoption.ClockFileStatus{Unborn: true}, status: doctorCheckWarn,
+			want: []string{"not committed yet", "pending since v0.1.0", "`a2a adapt`"}},
 		{name: "pending steps are advisory, not a failure", through: "0.1.0", binary: "0.2.0",
 			file: tracked, status: doctorCheckUnverified, want: []string{"pending since v0.1.0", "`a2a adapt`"}},
 		{name: "a repository ahead of the binary fails and names the executable", through: "0.9.0", binary: "0.2.0",
@@ -42,7 +51,7 @@ func TestDoctorCheckAdoption(t *testing.T) {
 		{name: "settled and committed passes", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
 			file: tracked, status: doctorCheckPass},
 		{name: "outside git a settled clock passes and says the commit half does not apply", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
-			gitErr: errDoctorNotAGitRepo, status: doctorCheckPass, want: []string{"not a git work tree", "does not apply"}},
+			gitErr: adoption.ErrNotAGitRepo, status: doctorCheckPass, want: []string{"not a git work tree", "does not apply"}},
 		{name: "a git probe that failed is not a pass", through: "0.2.0", ahead: []string{"RN-5"}, binary: "0.2.0",
 			gitErr: errors.New("git: broken"), status: doctorCheckUnverified, want: []string{"could not tell whether .a2a/config.yaml is committed", "git: broken"}},
 		{name: "a dev build cannot judge", through: "0.1.0", binary: "dev",
@@ -52,10 +61,10 @@ func TestDoctorCheckAdoption(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cmd := NewDoctorCommand(nil, tc.binary, "/repo/.a2a/config.yaml", "", "/repo")
-			cmd.loadNotes = func() ([]notes.ReleaseNotes, error) { return adoptionCorpus(), nil }
-			cmd.loadKnownIssues = func() ([]notes.Change, error) { return nil, nil }
+			cmd.loadNotes = func() ([]adoption.Release, error) { return adoptionCorpus(), nil }
+			cmd.loadKnownIssues = func() ([]adoption.Change, error) { return nil, nil }
 			cmd.execPath = func() (string, error) { return "/opt/a2a", nil }
-			cmd.clockFile = func(context.Context, string, string) (doctorClockFile, error) { return tc.file, tc.gitErr }
+			cmd.clockFile = func(context.Context, string, string) (adoption.ClockFileStatus, error) { return tc.file, tc.gitErr }
 			status, detail := cmd.doctorCheckAdoption(context.Background(), space.ProjectConfig{AdaptedThrough: tc.through, AdaptedAhead: tc.ahead})
 			if status != tc.status {
 				t.Fatalf("status = %s, want %s (detail %q)", status, tc.status, detail)
@@ -79,7 +88,7 @@ func TestDoctorAdoptionPendingKeepsExitZero(t *testing.T) {
 			return space.ProjectConfig{AdaptedThrough: through, AdaptedAhead: []string{"RN-5"}}, nil
 		}
 		cmd.loadMachineConfig = func(string) (space.MachineConfig, error) { return space.MachineConfig{}, nil }
-		cmd.loadNotes = func() ([]notes.ReleaseNotes, error) { return adoptionCorpus(), nil }
+		cmd.loadNotes = func() ([]adoption.Release, error) { return adoptionCorpus(), nil }
 		cmd.binaryVersion = "0.2.0"
 		cmd.lookupGit = func() error { return nil }
 		var stdout, stderr bytes.Buffer
@@ -101,10 +110,12 @@ func TestDoctorAdoptionPendingKeepsExitZero(t *testing.T) {
 	}
 }
 
-// TestRunDoctorClockFileAgainstRealGit runs the probe against a real work
-// tree once per answer, because its exit-code reading is the part a fake
-// cannot prove.
-func TestRunDoctorClockFileAgainstRealGit(t *testing.T) {
+// TestDoctorAdoptionAgainstRealGit drives the adoption row over a real work
+// tree through each state of the clock's file, because reading git's exit
+// codes (an unborn HEAD among them) is the part a fake cannot prove. Before
+// the first commit an untracked clock is WARN; after it, the same file is
+// FAIL; an ignored one is FAIL quoting the rule; a committed one passes.
+func TestDoctorAdoptionAgainstRealGit(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -126,22 +137,36 @@ func TestRunDoctorClockFileAgainstRealGit(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-
-	if got, err := runDoctorClockFile(ctx, root, cfg); err != nil || got.Tracked || got.IgnoredBy != "" {
-		t.Fatalf("untracked: %+v, %v", got, err)
+	row := func() (doctorCheckStatus, string) {
+		t.Helper()
+		cmd := NewDoctorCommand(nil, "0.2.0", cfg, "", root)
+		cmd.loadNotes = func() ([]adoption.Release, error) { return adoptionCorpus(), nil }
+		cmd.loadKnownIssues = func() ([]adoption.Change, error) { return nil, nil }
+		return cmd.doctorCheckAdoption(ctx, space.ProjectConfig{AdaptedThrough: "0.2.0", AdaptedAhead: []string{"RN-5"}})
 	}
+	expect := func(label string, want doctorCheckStatus, fragment string) {
+		t.Helper()
+		status, detail := row()
+		if status != want || !strings.Contains(detail, fragment) {
+			t.Fatalf("%s: status %s detail %q, want %s containing %q", label, status, detail, want, fragment)
+		}
+	}
+
+	expect("untracked, no commit yet", doctorCheckWarn, "not committed yet")
+	if err := os.WriteFile(filepath.Join(root, "README"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn("add", "--", "README")
+	gitIn("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "first")
+	expect("untracked after the first commit", doctorCheckFail, "not committed, so the clock is machine-local")
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("/.a2a/*\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := runDoctorClockFile(ctx, root, cfg); err != nil || got.IgnoredBy != ".gitignore:1:/.a2a/*" {
-		t.Fatalf("ignored: %+v, %v", got, err)
-	}
+	expect("ignored", doctorCheckFail, "ignored by .gitignore:1:/.a2a/*")
 	gitIn("add", "-f", "--", cfg)
-	if got, err := runDoctorClockFile(ctx, root, cfg); err != nil || !got.Tracked {
-		t.Fatalf("tracked: %+v, %v", got, err)
-	}
+	expect("tracked", doctorCheckPass, "")
 	outside := t.TempDir()
-	if _, err := runDoctorClockFile(ctx, outside, filepath.Join(outside, "config.yaml")); !errors.Is(err, errDoctorNotAGitRepo) {
-		t.Fatalf("outside a work tree: err = %v, want errDoctorNotAGitRepo", err)
+	if _, err := adoption.ClockFile(ctx, outside, filepath.Join(outside, "config.yaml")); !errors.Is(err, adoption.ErrNotAGitRepo) {
+		t.Fatalf("outside a work tree: err = %v, want adoption.ErrNotAGitRepo", err)
 	}
 }

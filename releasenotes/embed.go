@@ -11,8 +11,10 @@
 // itself, exactly the placement constraint schemas/embed.go's own doc
 // comment records for the same reason.
 //
-// internal/notes is this package's consumer: it parses every embedded
-// *.yaml into a notes.ReleaseNotes and range-queries the result.
+// Its consumers read it through the go-foundation adoption unit
+// (adoption.Load with internal/notes.CorpusPattern, adoption.LoadStanding with
+// internal/notes.StandingPath), which parses every embedded *.yaml into an
+// adoption.Release.
 package releasenotes
 
 import "embed"

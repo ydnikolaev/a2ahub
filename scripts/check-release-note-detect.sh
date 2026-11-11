@@ -10,7 +10,7 @@
 #
 # It parses NO YAML itself (D-7, the internal/lane/lanecheck.go / check-
 # lane-declarations.sh precedent): the corpus already has a typed parser
-# (internal/notes.Load), so this `go run`s internal/notes/detectcheck.go
+# (adoption.Load, go-foundation), so this `go run`s internal/notes/detectcheck.go
 # and does plain set arithmetic on its line-per-id output. A bash
 # reimplementation of "walk every change, read action.scope/detect" would
 # be a second hand-written copy of the schema's own shape.

@@ -3,6 +3,8 @@ package notes
 import (
 	"fmt"
 	"strings"
+
+	"github.com/ydnikolaev/go-foundation/units/adoption"
 )
 
 // MarkdownOptions carries release-page facts that do not belong to the
@@ -16,7 +18,7 @@ type MarkdownOptions struct {
 // RenderMarkdown projects one authored release-notes document into the human
 // GitHub Release body. The YAML corpus remains the SSOT; this renderer adds only
 // stable navigation and install/verification framing.
-func RenderMarkdown(rn ReleaseNotes, opts MarkdownOptions) string {
+func RenderMarkdown(rn adoption.Release, opts MarkdownOptions) string {
 	repositoryURL := strings.TrimRight(opts.RepositoryURL, "/")
 	if repositoryURL == "" {
 		repositoryURL = "https://github.com/ydnikolaev/a2ahub"
@@ -27,9 +29,9 @@ func RenderMarkdown(rn ReleaseNotes, opts MarkdownOptions) string {
 		projectURL = "https://a2ahub.dev"
 	}
 
-	var changed, known []Change
+	var changed, known []adoption.Change
 	for _, change := range rn.Changes {
-		if change.Kind == KindKnownIssue {
+		if change.Kind == adoption.KindKnownIssue {
 			known = append(known, change)
 			continue
 		}
@@ -41,9 +43,9 @@ func RenderMarkdown(rn ReleaseNotes, opts MarkdownOptions) string {
 	// The sentinel is not a date, so "_Released unreleased._" would be a
 	// grammar-garbled restatement of the field name rather than a sentence —
 	// this is the one renderer where the value is prose, not a pass-through
-	// (see UnreleasedSentinel's doc comment: CLI/MCP/HTML print it verbatim
-	// and that reads fine there; a full sentence needs its own phrasing).
-	if rn.Released == UnreleasedSentinel {
+	// (CLI/MCP/HTML print adoption.Unreleased verbatim and that reads fine
+	// there; a full sentence needs its own phrasing).
+	if rn.Released == adoption.Unreleased {
 		b.WriteString("_Not yet released._\n\n")
 	} else {
 		fmt.Fprintf(&b, "_Released %s._\n\n", rn.Released)
@@ -81,7 +83,7 @@ func RenderMarkdown(rn ReleaseNotes, opts MarkdownOptions) string {
 	return b.String()
 }
 
-func renderMarkdownChange(b *strings.Builder, change Change, known bool) {
+func renderMarkdownChange(b *strings.Builder, change adoption.Change, known bool) {
 	fmt.Fprintf(b, "### %s\n\n", change.Subject)
 	if known {
 		fmt.Fprintf(b, "`known issue` · `%s impact`\n\n", change.Impact)
