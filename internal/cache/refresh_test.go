@@ -543,7 +543,15 @@ func TestSyncIfStale_BudgetExhaustion_NamesUnattemptedMirrors(t *testing.T) {
 	// the production 10s/5s meant spending 13s of wall clock on arithmetic
 	// nobody was asserting. Shortened by the same ratio (2:1), so the second
 	// attempt still exhausts the budget exactly as it does in production.
-	const testTotalBudget, testPerMirrorTimeout = 100 * time.Millisecond, 50 * time.Millisecond
+	//
+	// The ratio fixes the order; the per-mirror timeout is the test's only
+	// slack. The second mirror must START before the budget runs out, so the
+	// first mirror's timeout may fire at most one per-mirror timeout late. At
+	// 50ms that slack was lost under the 3x ./... flaky scan in the container
+	// on 2026-11-11 ("does not name the skipped mirror (sp3)": sp2 was skipped).
+	// A timer never fires early, so only lateness matters, and 400ms of it
+	// covers contention for under a second of wall clock.
+	const testTotalBudget, testPerMirrorTimeout = 800 * time.Millisecond, 400 * time.Millisecond
 	store.SetSyncBudgetsForTest(testTotalBudget, testPerMirrorTimeout)
 	store.SetCloneOrFetchForTest(func(ctx context.Context, dir, repoURL string, _ host.Credential) error {
 		<-ctx.Done() // models a hung/unreachable fetch: only gives up when its own per-mirror timeout fires
