@@ -10077,7 +10077,7 @@
     },
     {
       "version": "0.27.4",
-      "released": "unreleased",
+      "released": "2026-11-11",
       "headline": "a script can ask whether this a2a is new enough, and a new repository's clock warns instead of failing",
       "changes": [
         {
@@ -10111,6 +10111,20 @@
           "action": {
             "scope": "none",
             "why": "Nothing is owed, unless `adapted_through` was written by hand with a leading zero (write it as `0.27.3`), or a script matches the old error text.\n"
+          }
+        },
+        {
+          "id": "RN-02704-3",
+          "kind": "policy",
+          "impact": "low",
+          "subject": "this release was proved without the GitHub live matrix",
+          "detail": "This release changes only how a2a reads its own release notes and the repository's adoption clock: `adapt`, `whatsnew`, the adoption notice and doctor's adoption row. It was cut on the provider-deferred tier, by the operator's written authorization: the logic tier, the full container suite and the release preflight were run; the live matrix was not.\nNot proven for this release: branch protection blocking until green, `enforce_admins` binding a participant while skipping an admin, a cross-section authorization decision surviving a privileged re-trigger, GitHub serving a check computed against a stale ref, a direct push to `main` being refused, the shipped Actions workflow running `a2a validate --ci`, compound check-run name resolution, and a space's own CI having no unexplained failures. The last live run against GitHub is dated 2026-08-02 (v0.18.2). No code on the write path or the GitHub host changed since v0.27.3.\n",
+          "affects": [
+            "a2a binary"
+          ],
+          "action": {
+            "scope": "none",
+            "why": "Nothing to do. Recorded so the omission is readable rather than assumed.\n"
           }
         },
         {
