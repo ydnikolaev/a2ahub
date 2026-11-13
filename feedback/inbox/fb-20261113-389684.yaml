@@ -1,0 +1,19 @@
+
+feedback: v1
+id: fb-20261113-389684
+kind: feature
+severity: minor
+title: 'Local space: no verb to offboard a participant (status left)'
+summary: "A local space has no verb to set a participant's manifest status to `left`. onboarding.md says offboarding is setting that status (G4), and a local space refuses a raw git push (pre-receive hook: lands writes only through a2a). `a2a space set` takes only gates and flow, and `a2a space update` only diffs the embedded template. So a duplicate participant, registered by `space join` under a second id for the same repository, cannot be retired. Mail sent to it is lost: the repository's inbox reads only its own system id. Observed in a local space: one repository under a hyphenated and an unhyphenated id, six requests sent to the dead id."
+context:
+    a2a_version: 0.27.4
+    os_arch: darwin/arm64
+    surface: cli
+proposal: "`a2a space leave <system> [--space <id>] --approve` (G4): it sets `status: left` in space.yaml through the normal write path, keeps the section read-only, and makes `new`/`validate` refuse a `to:` naming a participant whose status is left. Optionally, `space join` could warn when the joining repository's config path already maps to another system id."
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
