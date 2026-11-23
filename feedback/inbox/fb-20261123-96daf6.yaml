@@ -1,0 +1,28 @@
+
+feedback: v1
+id: fb-20261123-96daf6
+kind: friction
+severity: minor
+title: submit names one placeholder per refusal; four placeholders cost four submits
+summary: "a2a submit on a work_request draft refuses with POL-010 naming only the first template placeholder still present (expected_response.shape, then interim_behavior, then needed_by). Each fix needs another submit to learn the next one. An agent drafting with `a2a new` spends one round trip per placeholder; a draft with four unfilled fields took four submits."
+context:
+    a2a_version: 0.27.4
+    os_arch: darwin/arm64
+    surface: cli
+    command: "a2a submit <work_request draft id>"
+    error_code: "POL-010"
+evidence:
+    steps:
+        - "a2a new work_request --to <system> --field title=... --field category=fix --acceptance-criterion ... --body-file <f>"
+        - "a2a validate <id> (reports valid: true)"
+        - "a2a submit <id> (POL-010 expected_response.shape); fill it; submit again (POL-010 interim_behavior); fill; submit again (POL-010 needed_by)"
+    expected: "one refusal listing every placeholder still present, each with its --field fix; and a2a validate reporting them too, since it said valid"
+    actual: "one placeholder per refusal; a2a validate says valid: true on the same draft"
+proposal: "collect every POL-010 hit in one pass and print them all; run the same placeholder check in a2a validate (or a2a new could refuse to draft without the required response fields)"
+checks:
+    docs_consulted: true
+    grounded_in_real_work: true
+    not_space_specific: true
+    no_sensitive_content: true
+    duplicates_checked: true
+status: new
